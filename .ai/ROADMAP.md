@@ -17,9 +17,9 @@ No sustituye la documentación técnica de cada módulo.
 
 # Estado general del proyecto
 
-**Estado actual:** Fase de construcción.
+**Estado actual:** E001 — Foundation.
 
-Actualmente se está desarrollando la infraestructura base del sistema.
+La documentación base del proyecto ha sido completada y el desarrollo de la infraestructura inicial del sistema es el siguiente paso.
 
 ---
 
@@ -56,8 +56,8 @@ No se comenzará un nuevo entregable hasta haber validado el anterior.
 
 | Código | Entregable | Estado |
 |---------|------------|--------|
-| E000 | Preparación del proyecto y documentación IA | 🟡 En progreso |
-| E001 | Foundation (estructura base del sistema) | ⏳ Pendiente |
+| E000 | Preparación del proyecto y documentación IA | ✅ Completado |
+| E001 | Foundation (estructura base del sistema) | 🟡 En progreso |
 | E002 | Autenticación | ⏳ Pendiente |
 | E003 | Gestión de usuarios | ⏳ Pendiente |
 | E004 | Portal del Representante | ⏳ Pendiente |
@@ -77,22 +77,25 @@ No se comenzará un nuevo entregable hasta haber validado el anterior.
 
 # Entregable actual
 
-## E000 — Preparación del proyecto
+## E001 — Foundation
 
 Objetivo:
 
-Construir la documentación base que servirá como referencia para el desarrollo.
+Construir la infraestructura mínima necesaria para comenzar el desarrollo funcional del sistema.
 
 Incluye:
 
-- PROJECT_CONTEXT.md
-- ARCHITECTURE.md
-- DOMAIN_MODEL.md
-- CODING_STANDARDS.md
-- ROADMAP.md
-- DECISIONS.md
-- PROMPT_TEMPLATE.md
-- README.md
+- estructura del proyecto;
+- Composer;
+- PSR-4;
+- configuración;
+- router;
+- bootstrap;
+- controlador base;
+- vistas base;
+- conexión PDO;
+- manejo de errores;
+- entorno de desarrollo funcional.
 
 Estado:
 
@@ -102,25 +105,9 @@ En progreso.
 
 # Próximo entregable
 
-## E001 — Foundation
+## E002 — Autenticación
 
-Objetivo:
-
-Construir la infraestructura mínima necesaria para comenzar el desarrollo funcional del sistema.
-
-Al finalizar deberá existir:
-
-- estructura de carpetas;
-- Composer;
-- PSR-4;
-- bootstrap;
-- configuración;
-- router;
-- controlador base;
-- vistas base;
-- manejo de errores;
-- conexión PDO;
-- entorno de desarrollo funcionando.
+Implementar el sistema de autenticación del proyecto respetando la arquitectura definida y utilizando la infraestructura creada durante E001.
 
 ---
 
