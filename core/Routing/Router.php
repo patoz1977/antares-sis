@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Core\Routing;
 
+use Core\Http\Response;
+
 class Router
 {
     private array $routes = [];
@@ -19,12 +21,22 @@ class Router
 
         if (isset($this->routes[$method][$uri])) {
             $handler = $this->routes[$method][$uri];
-            $handler();
+            $result = $handler();
+
+            $response = new Response();
+
+            if (is_string($result)) {
+                $response->content($result)->send();
+
+                return;
+            }
+
+            $response->send();
 
             return;
         }
 
-        http_response_code(404);
-        echo 'Route not found';
+        $response = new Response();
+        $response->status(404)->content('Route not found')->send();
     }
 }
