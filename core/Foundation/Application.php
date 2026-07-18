@@ -12,12 +12,14 @@ class Application
     private array $config;
     private Router $router;
     private Request $request;
+    private Kernel $kernel;
 
     public function __construct(array $config)
     {
         $this->config = $config;
         $this->router = new Router();
         $this->request = new Request();
+        $this->kernel = new Kernel($this->request, $this->router);
     }
 
     public function config(?string $key = null, mixed $default = null): mixed
@@ -42,5 +44,10 @@ class Application
     public function request(): Request
     {
         return $this->request;
+    }
+
+    public function kernel(): Kernel
+    {
+        return $this->kernel;
     }
 }
