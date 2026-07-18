@@ -4,17 +4,20 @@ declare(strict_types=1);
 
 namespace Core\Foundation;
 
+use Core\Http\Request;
 use Core\Routing\Router;
 
 class Application
 {
     private array $config;
     private Router $router;
+    private Request $request;
 
     public function __construct(array $config)
     {
         $this->config = $config;
         $this->router = new Router();
+        $this->request = new Request();
     }
 
     public function config(?string $key = null, mixed $default = null): mixed
@@ -34,5 +37,10 @@ class Application
     public function router(): Router
     {
         return $this->router;
+    }
+
+    public function request(): Request
+    {
+        return $this->request;
     }
 }
