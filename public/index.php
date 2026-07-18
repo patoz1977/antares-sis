@@ -4,21 +4,11 @@ declare(strict_types=1);
 
 $app = require dirname(__DIR__) . '/bootstrap/app.php';
 
-$html = <<<HTML
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <title>{$app->config('app_name')}</title>
-</head>
-<body>
-    <h1>Application initialized</h1>
-    <p>App Name: {$app->config('app_name')}</p>
-    <p>Environment: {$app->config('environment')}</p>
-    <p>Timezone: {$app->config('timezone')}</p>
-    <p>Locale: {$app->config('locale')}</p>
-</body>
-</html>
-HTML;
+$uri = $_SERVER['REQUEST_URI'] ?? '/';
+$uri = parse_url($uri, PHP_URL_PATH) ?: '/';
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$router = $app->router();
 
-echo $html;
+require dirname(__DIR__) . '/routes/web.php';
+
+$router->dispatch($method, $uri);
