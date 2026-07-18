@@ -5,6 +5,8 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 require_once __DIR__ . '/helpers.php';
 
+use Core\Foundation\Application;
+
 // Load .env file from project root
 $root = dirname(__DIR__);
 $envFile = $root . DIRECTORY_SEPARATOR . '.env';
@@ -67,4 +69,6 @@ if (!setlocale(LC_ALL, $locale)) {
     setlocale(LC_ALL, 'C');
 }
 
-return $config;
+$app = new Application($config);
+
+return $app;

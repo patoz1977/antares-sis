@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-**Proyecto:** Antares SIS  
+**Proyecto:** Antares SIS
 **Versión:** 1.0
 
 ---
@@ -213,40 +213,36 @@ Toda nueva dependencia deberá ser aprobada antes de incorporarse.
 # Estructura del proyecto
 
 ```
-app/
-    Core/
-    Controllers/
-    Services/
-    Repositories/
-    Models/
-    Middleware/
-    Requests/
-    Responses/
-    Views/
-
-config/
-
-database/
-    migrations/
-    seeders/
-
-public/
-
-resources/
-    assets/
-
-storage/
-    logs/
-    cache/
-    uploads/
-
-tests/
-
-docs/
-
-.ai/
-
-vendor/
+AntaresSIS/
+│
+├── core/              # Framework propio
+│
+├── app/               # Código de la aplicación
+│   ├── Console/
+│   ├── Contracts/
+│   ├── Controllers/
+│   ├── DTO/
+│   ├── Exceptions/
+│   ├── Helpers/
+│   ├── Http/
+│   │   ├── Middleware/
+│   │   ├── Requests/
+│   │   └── Responses/
+│   ├── Models/
+│   ├── Providers/
+│   ├── Repositories/
+│   ├── Services/
+│   └── Validation/
+│
+├── bootstrap/
+├── config/
+├── database/
+├── public/
+├── resources/
+├── routes/
+├── storage/
+├── tests/
+└── vendor/
 ```
 
 ---
@@ -423,6 +419,43 @@ No se permitirá:
 - duplicación de lógica;
 - dependencias circulares;
 - acoplamiento innecesario.
+
+---
+
+## Separación entre Framework y Aplicación
+
+El proyecto se divide en dos capas claramente diferenciadas.
+
+### Core
+
+La carpeta `core/` contiene la infraestructura del framework desarrollada para Antares SIS.
+
+Ejemplos:
+
+- Application
+- Router
+- Request
+- Response
+- Container
+- ErrorHandler
+
+El código ubicado en `core/` debe ser reutilizable y no debe contener reglas de negocio.
+
+### App
+
+La carpeta `app/` contiene exclusivamente el código específico de la aplicación.
+
+Incluye:
+
+- Controllers
+- Services
+- Repositories
+- Models
+- Validations
+
+Las clases de `app/` pueden depender de `core/`.
+
+Las clases de `core/` nunca deberán depender de `app/`.
 
 ---
 

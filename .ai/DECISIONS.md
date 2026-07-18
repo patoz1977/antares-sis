@@ -1,6 +1,6 @@
 # DECISIONS
 
-**Proyecto:** Antares SIS  
+**Proyecto:** Antares SIS
 **Versión:** 1.0
 
 ---
@@ -245,6 +245,43 @@ Mantener una carpeta `.ai` con la documentación de referencia utilizada tanto p
 - Reducción de decisiones repetitivas.
 - Incorporación más rápida de nuevos colaboradores.
 
+---
+
+## ADR-0007
+
+### Estado
+
+Aprobada
+
+### Fecha
+
+2026-07
+
+### Contexto
+
+El objetivo del proyecto es desarrollar un Sistema de Información Escolar comercial con soporte para múltiples instituciones y White Label.
+
+Utilizar el nombre "Antares" como namespace del framework acoplaría la infraestructura a una institución específica.
+
+### Decisión
+
+Separar la infraestructura del framework de la aplicación mediante dos namespaces independientes:
+
+```text
+Core\
+App\
+```
+
+El namespace `Core` contendrá exclusivamente la infraestructura técnica del framework.
+
+El namespace `App` contendrá toda la lógica específica de la aplicación.
+
+### Consecuencias
+
+- El framework podrá reutilizarse en cualquier institución.
+- La marca Antares queda limitada a la configuración del producto.
+- Se facilita el mantenimiento y la evolución del núcleo.
+- Se reduce el acoplamiento entre infraestructura y dominio.
 ---
 
 # Reglas de mantenimiento

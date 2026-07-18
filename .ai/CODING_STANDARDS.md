@@ -1,6 +1,6 @@
 # CODING_STANDARDS
 
-**Proyecto:** Antares SIS  
+**Proyecto:** Antares SIS
 **Versión:** 1.0
 
 ---
@@ -83,7 +83,58 @@ App\Core
 No se utilizarán clases en el espacio global.
 
 ---
+## Organización del código
 
+El proyecto utiliza dos namespaces principales:
+
+```text
+Core\
+App\
+```
+
+### Core
+
+Contiene la infraestructura del framework.
+
+Ejemplos:
+
+- Application
+- Router
+- Request
+- Response
+- Container
+- ErrorHandler
+
+No debe contener lógica de negocio.
+
+### App
+
+Contiene la implementación funcional del sistema.
+
+Ejemplos:
+
+- Controllers
+- Services
+- Repositories
+- Models
+
+Puede utilizar clases de `Core`.
+
+### Regla de dependencia
+
+La dependencia permitida es únicamente:
+
+```text
+App
+ │
+ ▼
+Core
+```
+
+Nunca en sentido contrario.
+
+Esto garantiza que el framework permanezca reutilizable y desacoplado de la implementación específica.
+---
 # Autoload
 
 Todo el proyecto utilizará Composer con PSR-4.

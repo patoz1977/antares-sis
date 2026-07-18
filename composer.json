@@ -16,10 +16,11 @@
     "require-dev": {},
     "autoload": {
         "psr-4": {
-            "Antares\\": "app/"
+            "App\\": "app/",
+            "Core\\": "core/"
         },
         "files": [
-            "app/Helpers/helpers.php"
+            "core/Helpers/helpers.php"
         ]
     },
     "autoload-dev": {
