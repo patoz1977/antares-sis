@@ -22,6 +22,19 @@ class View
         ob_start();
         include $viewPath;
 
-        return (string) ob_get_clean();
+        $content = (string) ob_get_clean();
+
+        $title = $data['title'] ?? 'School Information System';
+
+        $layoutPath = $basePath . '/resources/views/layouts/app.php';
+
+        if (is_file($layoutPath)) {
+            ob_start();
+            include $layoutPath;
+
+            return (string) ob_get_clean();
+        }
+
+        return $content;
     }
 }
