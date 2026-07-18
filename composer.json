@@ -1,0 +1,36 @@
+{
+    "name": "antares/sis",
+    "description": "Antares School Information System",
+    "type": "project",
+    "license": "proprietary",
+    "keywords": [
+        "school",
+        "sis",
+        "education",
+        "php",
+        "antares"
+    ],
+    "require": {
+        "php": "^8.2"
+    },
+    "require-dev": {},
+    "autoload": {
+        "psr-4": {
+            "Antares\\": "app/"
+        },
+        "files": [
+            "app/Helpers/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
