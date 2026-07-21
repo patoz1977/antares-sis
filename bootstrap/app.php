@@ -5,6 +5,10 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 require_once __DIR__ . '/helpers.php';
 
+use Core\Container\Container;
+use Core\Database\ConnectionFactory;
+use Core\Database\ConnectionManager;
+use Core\Database\DatabaseConfig;
 use Core\Foundation\Application;
 
 // Load .env file from project root
@@ -69,6 +73,21 @@ if (!setlocale(LC_ALL, $locale)) {
     setlocale(LC_ALL, 'C');
 }
 
-$app = new Application($config);
+$databaseConfigValues = require $root . '/config/database.php';
+
+$databaseConfigValues['username'] = (string) ($databaseConfigValues['username'] ?? '');
+$databaseConfigValues['password'] = (string) ($databaseConfigValues['password'] ?? '');
+$databaseConfigValues['database'] = (string) ($databaseConfigValues['database'] ?? '');
+$databaseConfigValues['host'] = (string) ($databaseConfigValues['host'] ?? '');
+$databaseConfigValues['charset'] = (string) ($databaseConfigValues['charset'] ?? 'utf8mb4');
+
+$databaseConfig = new DatabaseConfig($databaseConfigValues);
+
+$container = new Container();
+$container->instance(DatabaseConfig::class, $databaseConfig);
+$container->singleton(ConnectionFactory::class, ConnectionFactory::class);
+$container->singleton(ConnectionManager::class, ConnectionManager::class);
+
+$app = new Application($config, $container);
 
 return $app;
