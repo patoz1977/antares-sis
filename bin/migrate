@@ -1,0 +1,10 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$app = require dirname(__DIR__) . '/bootstrap/app.php';
+$container = $app->container();
+
+$runner = $container->make(Core\Database\MigrationRunner::class);
+$runner->run();
