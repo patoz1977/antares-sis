@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT
 
 **Proyecto:** Antares SIS  
-**Versión:** 1.0  
+**Versión:** 1.1  
 **Estado:** Activo
 
 ---
@@ -12,7 +12,7 @@ Este documento es el punto de entrada para cualquier asistente de inteligencia a
 
 Antes de generar, modificar o eliminar código, la IA deberá leer este documento y utilizarlo como contexto general del proyecto.
 
-Este documento no contiene toda la documentación técnica. Su función es indicar la visión general del sistema y los documentos que deben consultarse para cada tarea.
+Su función es proporcionar la visión global del sistema e indicar qué documentación especializada debe consultarse según la naturaleza de cada tarea.
 
 ---
 
@@ -53,7 +53,7 @@ Los objetivos principales son:
 
 La primera fase del proyecto desarrolla el Portal del Representante.
 
-Las funcionalidades iniciales incluyen:
+Funcionalidades iniciales:
 
 - Autenticación.
 - Gestión de familias.
@@ -66,160 +66,36 @@ Las funcionalidades iniciales incluyen:
 - Facturación.
 - Revisión administrativa.
 
-Los módulos futuros se incorporarán posteriormente.
-
 ---
 
-# Principios del proyecto
+# Documentación oficial del proyecto
 
-Todo el desarrollo deberá respetar los siguientes principios.
+Antes de generar código, la IA deberá identificar qué documentos son relevantes para la tarea.
 
-## Simplicidad
+- Contexto general → PROJECT_CONTEXT.md
+- Arquitectura → ARCHITECTURE.md
+- Reglas del negocio → DOMAIN_MODEL.md
+- Diseño físico → DATABASE_DESIGN.md
+- Relaciones entre tablas → ERD.md
+- Catálogos → CATALOGS.md
+- Seguridad → SECURITY_GUIDELINES.md
+- Estándares de programación → CODING_STANDARDS.md
+- Decisiones arquitectónicas → DECISIONS.md
+- Planificación → ROADMAP.md
 
-La solución más simple que resuelva correctamente el problema será la preferida.
-
-No debe agregarse complejidad innecesaria.
-
----
-
-## Mantenibilidad
-
-El código deberá ser sencillo de comprender.
-
-Las clases pequeñas son preferibles a clases muy grandes.
-
-Las responsabilidades deben estar claramente separadas.
-
----
-
-## Escalabilidad
-
-Toda funcionalidad deberá permitir el crecimiento futuro del sistema.
-
-Las decisiones de diseño deberán favorecer la incorporación de nuevos módulos.
-
----
-
-## Reutilización
-
-Las soluciones deberán poder utilizarse por cualquier institución educativa.
-
-No deberán incorporarse reglas específicas del Colegio Antares dentro del código.
-
----
-
-## Consistencia
-
-Todo el proyecto deberá seguir las mismas convenciones.
-
-No deberán coexistir múltiples estilos de programación.
-
----
-
-# Arquitectura
-
-La arquitectura del sistema está definida en:
-
-ARCHITECTURE.md
-
-No debe modificarse sin una decisión explícita del proyecto.
-
----
-
-# Modelo de dominio
-
-Las entidades, relaciones y reglas del negocio se encuentran definidas en:
-
-DOMAIN_MODEL.md
-
-Toda implementación deberá respetar dicho modelo.
-
----
-
-# Estándares de programación
-
-Las convenciones de código se encuentran definidas en:
-
-CODING_STANDARDS.md
-
-Toda implementación deberá cumplirlas.
-
----
-
-# Roadmap
-
-El estado del proyecto se encuentra definido en:
-
-ROADMAP.md
-
-No deberán implementarse funcionalidades pertenecientes a entregables futuros.
-
----
-
-# Decisiones arquitectónicas
-
-Las decisiones relevantes del proyecto se registran en:
-
-DECISIONS.md
-
-Antes de modificar una decisión existente deberá consultarse dicho documento.
+No deberá generarse código sin consultar previamente la documentación pertinente.
 
 ---
 
 # Flujo de trabajo
 
-Cada entregable seguirá el siguiente proceso:
-
 1. Definición del objetivo.
-2. Generación del código.
-3. Revisión técnica.
-4. Pruebas.
-5. Correcciones.
-6. Commit.
-
-No deberá omitirse ninguna etapa.
-
----
-
-# Convenciones generales
-
-## Idioma
-
-La documentación del proyecto se escribirá en español.
-
-El código fuente se escribirá en inglés.
-
-La interfaz del usuario se desarrollará inicialmente en español.
-
----
-
-## Frameworks
-
-No deberán introducirse frameworks distintos de los aprobados por el proyecto.
-
----
-
-## Arquitectura
-
-No deberán inventarse nuevas capas arquitectónicas.
-
----
-
-## Dependencias
-
-Toda nueva dependencia deberá estar justificada.
-
----
-
-## Refactorización
-
-No deberá modificarse código estable sin una razón funcional.
-
----
-
-## Compatibilidad
-
-El sistema deberá funcionar en hosting compartido.
+2. Revisión de la documentación aplicable.
+3. Generación del código.
+4. Revisión técnica.
+5. Pruebas.
+6. Correcciones.
+7. Commit.
 
 ---
 
@@ -228,43 +104,43 @@ El sistema deberá funcionar en hosting compartido.
 Antes de comenzar cualquier tarea:
 
 1. Leer PROJECT_CONTEXT.md.
-2. Consultar los documentos especializados necesarios.
-3. Respetar la arquitectura existente.
-4. Mantener la consistencia del proyecto.
-5. No inventar nuevas convenciones.
-6. No modificar el alcance del entregable.
+2. Identificar los documentos especializados necesarios.
+3. Consultarlos antes de generar código.
+4. Respetar la arquitectura existente.
+5. Mantener la consistencia del proyecto.
+6. No inventar nuevas convenciones.
+7. No modificar el alcance del entregable.
 
-Cuando exista una duda sobre arquitectura o reglas de negocio:
+Si existe una duda sobre arquitectura o reglas de negocio:
 
-Detener la generación de código y solicitar una decisión.
-
-Nunca asumir.
-
-Nunca improvisar.
+- Detener la generación de código.
+- Solicitar una decisión.
+- Nunca asumir.
+- Nunca improvisar.
 
 ---
 
 # Documentos del proyecto
 
-La carpeta `.ai` contiene los siguientes documentos:
-
 - PROJECT_CONTEXT.md
 - ARCHITECTURE.md
 - DOMAIN_MODEL.md
+- DATABASE_DESIGN.md
+- ERD.md
+- CATALOGS.md
+- SECURITY_GUIDELINES.md
 - CODING_STANDARDS.md
 - ROADMAP.md
 - DECISIONS.md
 - PROMPT_TEMPLATE.md
 - README.md
 
-Cada documento tiene una responsabilidad específica.
-
-No deberá duplicarse información entre ellos.
+Cada documento tiene una responsabilidad específica y no deberá duplicar información contenida en otro.
 
 ---
 
 # Estado del documento
 
-Versión: 1.0
+**Versión:** 1.1
 
-Este documento deberá modificarse únicamente cuando cambie la visión general del proyecto o la forma de trabajo.
+Este documento deberá modificarse únicamente cuando cambie la visión general del proyecto o la forma oficial de trabajo.

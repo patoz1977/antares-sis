@@ -1,7 +1,7 @@
 # ARCHITECTURE
 
 **Proyecto:** Antares SIS
-**Versión:** 1.0
+**Versión:** 1.1
 
 ---
 
@@ -334,6 +334,8 @@ Toda implementación deberá contemplar:
 - Validación de entrada
 - Autorización por roles
 
+Los lineamientos específicos de seguridad se documentan en `SECURITY_GUIDELINES.md`.
+
 ---
 
 # Auditoría
@@ -457,6 +459,32 @@ Las clases de `app/` pueden depender de `core/`.
 
 Las clases de `core/` nunca deberán depender de `app/`.
 
+
+---
+
+# Documentación Arquitectónica
+
+Toda implementación deberá respetar la documentación oficial del proyecto.
+
+Antes de desarrollar una funcionalidad deberán revisarse, según corresponda:
+
+- PROJECT_CONTEXT.md
+- ARCHITECTURE.md
+- DOMAIN_MODEL.md
+- DATABASE_DESIGN.md
+- ERD.md
+- CATALOGS.md
+- CODING_STANDARDS.md
+- SECURITY_GUIDELINES.md
+- DECISIONS.md
+
+Cada documento posee una responsabilidad específica y no deberá duplicar información contenida en otro.
+
+El modelo físico oficial se define en `DATABASE_DESIGN.md`.
+
+`ERD.md` constituye la representación visual oficial de dicho modelo y deberá mantenerse siempre sincronizado con él.
+
+
 ---
 
 # Evolución de la arquitectura
@@ -469,6 +497,6 @@ No deberán realizarse cambios arquitectónicos durante un entregable funcional 
 
 # Estado del documento
 
-Versión 1.0
+**Versión:** 1.1
 
 Este documento constituye la referencia oficial para toda decisión técnica del proyecto.

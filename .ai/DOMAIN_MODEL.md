@@ -1,523 +1,1087 @@
-# DOMAIN_MODEL
+# DOMAIN MODEL
 
-**Proyecto:** Antares SIS  
-**Versión:** 1.0
-
----
-
-# Propósito
-
-Este documento define el modelo de dominio del proyecto Antares SIS.
-
-Describe las entidades principales, sus relaciones y las reglas de negocio que deberán respetarse durante el desarrollo.
-
-No representa el diseño físico de la base de datos. Su objetivo es modelar el negocio.
+**Versión:** 2.0
+**Estado:** Aprobado
+**Última actualización:** Julio 2026
 
 ---
 
-# Visión del dominio
+# 1. Propósito
 
-Antares SIS es un Sistema de Gestión Escolar (School Information System - SIS) orientado a administrar los procesos académicos y administrativos de una institución educativa.
+Este documento define el modelo de dominio del Sistema de Información Escolar (SIS).
 
-El dominio se organiza en módulos funcionales independientes, relacionados entre sí mediante entidades comunes.
+Su objetivo es establecer un lenguaje común entre el negocio, la arquitectura del sistema y las herramientas de desarrollo asistidas por IA (ChatGPT y GitHub Copilot).
 
-La primera fase del proyecto implementará el Portal del Representante y el proceso de matrícula en línea.
+Este documento constituye la fuente oficial para comprender:
 
----
+- las entidades del negocio;
+- las responsabilidades de cada entidad;
+- las relaciones entre ellas;
+- los límites del dominio;
+- las reglas generales del negocio.
 
-# Principios del modelo de dominio
-
-- Cada entidad representa un concepto real del negocio.
-- Las relaciones deben reflejar la realidad institucional.
-- No se duplicará información.
-- Cada dato tendrá una única fuente de verdad.
-- El modelo debe permitir crecer sin rediseños importantes.
+No describe la implementación física de la base de datos ni detalles específicos del framework. Esas decisiones se documentan en `DATABASE_DESIGN.md`.
 
 ---
 
-# Entidades principales
+# 2. Objetivos del modelo
 
-## Institution
+El modelo de dominio debe cumplir los siguientes objetivos:
 
-Representa una institución educativa.
+- representar fielmente la operación de una institución educativa;
+- evitar duplicación de información;
+- separar claramente identidad, autenticación y reglas del negocio;
+- facilitar la evolución futura del producto;
+- soportar múltiples instituciones mediante una única base de código;
+- mantener independencia entre el dominio y la tecnología utilizada.
+
+El dominio debe permanecer estable aunque cambien:
+
+- la base de datos;
+- el framework;
+- el motor de autenticación;
+- la interfaz de usuario.
+
+---
+
+# 3. Alcance
+
+Este documento describe únicamente el dominio correspondiente al MVP.
+
+Incluye:
+
+- autenticación;
+- representantes;
+- estudiantes;
+- familias;
+- matrícula en línea;
+- información médica;
+- contactos de emergencia;
+- personas autorizadas para retiro;
+- transporte escolar;
+- revisión administrativa.
+
+No forma parte del dominio actual:
+
+- facturación;
+- contabilidad;
+- pagos;
+- nómina;
+- biblioteca;
+- calificaciones;
+- asistencia;
+- recursos humanos.
+
+Estos módulos podrán incorporarse posteriormente sin alterar los principios definidos en este documento.
+
+---
+
+# 4. Principios del modelo
+
+## 4.1 White Label
+
+El sistema es un producto comercial para múltiples instituciones educativas.
+
+Todo el código debe ser reutilizable.
+
+Nunca se deben incorporar nombres, configuraciones o reglas específicas de una institución dentro del dominio.
+
+---
+
+## 4.2 Una base de datos por institución
+
+Cada institución utiliza:
+
+- una base de datos propia;
+- un archivo `.env` propio;
+- una configuración independiente.
+
+Por esta razón el dominio **no** incluye una entidad `Institution`.
+
+Tampoco existirán campos como:
+
+- institution_id
+- school_id
+- tenant_id
+
+en las tablas del negocio.
+
+---
+
+## 4.3 Separación de responsabilidades
+
+El dominio distingue claramente entre:
+
+- identidad;
+- autenticación;
+- roles;
+- relaciones.
+
+Estas responsabilidades nunca deben mezclarse dentro de una misma entidad.
+
+---
+
+## 4.4 Person como fuente única de identidad
+
+Toda persona física existe una sola vez dentro del sistema.
+
+Una persona puede desempeñar distintos roles durante su ciclo de vida sin duplicar su información personal.
 
 Ejemplos:
 
-- Colegio Antares
-- Unidad Educativa Demo
+- estudiante;
+- representante;
+- contacto de emergencia;
+- autorizado para retiro;
+- futuro docente;
+- futuro empleado.
 
-Responsabilidades:
-
-- Identidad institucional.
-- Configuración.
-- Personalización visual.
-- Parámetros generales.
+Toda la información personal reside exclusivamente en la entidad **Person**.
 
 ---
 
-## AcademicYear
+## 4.5 User no representa una persona
 
-Representa un período académico.
+Una cuenta de usuario únicamente representa credenciales de acceso.
+
+Las credenciales nunca contienen información personal.
+
+Toda cuenta pertenece exactamente a una persona.
+
+Una persona puede existir sin tener una cuenta de usuario.
+
+---
+
+## 4.6 Roles de negocio
+
+Los roles representan responsabilidades dentro del sistema.
+
+Un rol agrega comportamiento.
+
+No representa identidad.
+
+Los principales roles del MVP son:
+
+- Representative
+- Student
+
+En futuras versiones podrán existir:
+
+- Teacher
+- Staff
+- Administrator
+- Applicant
+- Alumni
+
+---
+
+## 4.7 Relaciones del dominio
+
+No toda interacción entre personas constituye un rol.
+
+Muchas representan únicamente una relación del negocio.
 
 Ejemplos:
 
-- 2026-2027
-- 2027-2028
+- contacto de emergencia;
+- persona autorizada para retiro;
+- parentesco;
+- representante principal.
 
-Responsabilidades:
-
-- Fechas oficiales.
-- Estado del período.
-- Configuración académica.
+Estas relaciones se modelan mediante entidades asociativas y nunca duplican información personal.
 
 ---
 
-## Campus
+# 5. Lenguaje Ubicuo (Ubiquitous Language)
 
-Representa una sede física.
+Todos los desarrolladores, herramientas de IA y documentación utilizarán el mismo vocabulario.
 
-Una institución puede tener múltiples sedes.
+| Concepto | Definición |
+|----------|------------|
+| User | Cuenta de acceso al sistema. |
+| Person | Persona física identificable. |
+| Representative | Rol que administra estudiantes y realiza la matrícula. |
+| Student | Rol correspondiente al alumno matriculado. |
+| Family | Unidad familiar utilizada para agrupar representantes y estudiantes. |
+| Enrollment | Proceso de matrícula. |
+| Emergency Contact | Persona que puede ser contactada ante una emergencia. |
+| Authorized Pickup | Persona autorizada para retirar al estudiante. |
+| Medical Record | Información médica del estudiante. |
+| Transport | Información del transporte escolar. |
+| Catalog | Lista configurable de valores del sistema. |
 
----
-
-## Grade
-
-Representa un grado académico.
-
-Ejemplos:
-
-- Inicial 2
-- Primero EGB
-- Segundo Bachillerato
-
----
-
-## Section
-
-Representa un paralelo.
-
-Ejemplos:
-
-- A
-- B
-- C
+Todo el código, documentación y conversaciones técnicas deberán utilizar estos términos.
 
 ---
 
-## Student
+# 6. Bounded Contexts
 
-Representa un estudiante.
+El dominio se divide en contextos claramente separados.
 
-Información típica:
+## Identity
 
-- identificación
-- nombres
-- apellidos
-- fecha de nacimiento
-- sexo
-- fotografía
-- estado
+Responsable de la identidad y autenticación.
 
----
+Entidades principales:
 
-## Guardian
-
-Representa al representante legal o responsable económico.
-
-Un representante puede estar asociado a varios estudiantes.
+- User
+- Person
 
 ---
 
-## Family
+## Family Management
 
-Agrupa estudiantes pertenecientes al mismo núcleo familiar.
+Responsable de organizar la unidad familiar.
 
-Facilita:
+Entidades principales:
 
-- facturación
-- descuentos
-- comunicación
-- matrícula
+- Family
+- Representative
+
+---
+
+## Academic Core
+
+Responsable de representar a los estudiantes.
+
+Entidades principales:
+
+- Student
+
+---
+
+## Student Profile
+
+Responsable de toda la información complementaria del estudiante.
+
+Incluye:
+
+- Medical Record
+- Emergency Contacts
+- Authorized Pickups
+- Transport
 
 ---
 
 ## Enrollment
 
-Representa el proceso de matrícula de un estudiante.
+Responsable del proceso completo de matrícula.
 
-Incluye:
-
-- período académico
-- grado
-- paralelo
-- estado
-- fecha
-
-Cada estudiante tendrá una matrícula por período académico.
+Será desarrollado en entregables posteriores.
 
 ---
 
-## MedicalRecord
+## Catalogs
+
+Responsable de toda la información configurable.
+
+Ningún módulo del sistema debe almacenar listas fijas cuando puedan representarse mediante catálogos.
+
+---
+
+# 7. Actores del dominio
+
+## Secretaría
+
+Responsabilidades:
+
+- crear personas;
+- crear representantes;
+- crear estudiantes;
+- crear familias;
+- crear usuarios;
+- asociar representantes con familias;
+- asociar estudiantes con familias;
+- iniciar procesos de matrícula;
+- revisar información enviada;
+- aprobar matrícula;
+- solicitar correcciones;
+- bloquear procesos cuando sea necesario.
+
+La Secretaría es responsable de la creación inicial de la información.
+
+---
+
+## Representante
+
+Responsabilidades:
+
+- iniciar sesión;
+- administrar su propia información;
+- administrar la información permitida de los estudiantes asociados;
+- actualizar contactos;
+- actualizar información médica;
+- actualizar transporte;
+- aceptar documentos institucionales;
+- cargar documentos;
+- enviar la matrícula para revisión.
+
+El representante nunca administra información de estudiantes ajenos a su familia.
+
+---
+
+## Estudiante
+
+El estudiante representa al alumno matriculado.
+
+No administra información dentro del MVP.
+
+Toda la información del estudiante es gestionada por Secretaría o por sus representantes autorizados.
+
+---
+
+# 8. Aggregates
+
+El dominio se organiza utilizando los principios de Domain-Driven Design (DDD).
+
+Cada Aggregate representa un conjunto coherente de entidades que deben mantener consistencia transaccional.
+
+Los Aggregates definidos para el MVP son:
+
+- Identity
+- Family
+- Student
+- Student Profile
+- Enrollment (implementación posterior)
+- Catalogs
+
+Cada Aggregate posee un único Aggregate Root responsable de mantener la consistencia de sus entidades internas.
+
+---
+
+# 9. Aggregate: Identity
+
+## Objetivo
+
+Administrar la identidad de las personas y sus credenciales de acceso.
+
+Este Aggregate es independiente del resto del sistema.
+
+Toda autenticación comienza aquí.
+
+---
+
+## Aggregate Root
+
+**Person**
+
+---
+
+## Entidades
+
+### Person
+
+Representa una persona física.
+
+Toda persona registrada en el sistema existe una única vez.
+
+Toda la información personal reside exclusivamente aquí.
+
+Ejemplos:
+
+- nombres
+- apellidos
+- documento de identidad
+- fecha de nacimiento
+- sexo
+- nacionalidad
+- teléfonos
+- correo electrónico
+- dirección
+
+Una Person puede existir sin tener acceso al sistema.
+
+---
+
+### User
+
+Representa una cuenta de acceso.
+
+No representa una persona.
+
+Responsabilidades:
+
+- autenticación
+- recuperación de contraseña
+- bloqueo
+- activación
+- último acceso
+- credenciales
+
+Toda cuenta pertenece exactamente a una Person.
+
+Una Person puede no tener User.
+
+Dentro del MVP solamente los representantes tendrán User.
+
+En futuras versiones existirán cuentas para:
+
+- docentes
+- administrativos
+- directivos
+
+---
+
+## Reglas
+
+- No puede existir un User sin Person.
+- La información personal nunca se almacena en User.
+- Una Person puede existir sin User.
+- La autenticación depende únicamente de User.
+
+---
+
+# 10. Aggregate: Family
+
+## Objetivo
+
+Representar la unidad familiar.
+
+Este Aggregate organiza las relaciones entre representantes y estudiantes.
+
+No almacena información personal.
+
+---
+
+## Aggregate Root
+
+**Family**
+
+---
+
+## Entidades
+
+### Family
+
+Representa una unidad familiar.
+
+Una familia puede contener:
+
+- uno o varios representantes;
+- uno o varios estudiantes.
+
+No representa parentescos.
+
+Representa únicamente la agrupación administrativa utilizada por la institución.
+
+---
+
+### Representative
+
+Representa el rol de negocio del representante.
+
+Representative es un Business Role.
+
+No representa una persona física ni constituye una especialización de Person.
+
+Toda la información personal permanece en Person.
+
+Representative únicamente encapsula comportamiento y reglas propias del representante dentro del dominio.
+
+No contiene datos personales.
+
+Toda su identidad proviene de Person.
+
+Responsabilidades:
+
+- administrar estudiantes;
+- completar matrícula;
+- aceptar contratos;
+- cargar documentos;
+- actualizar información permitida.
+
+Un representante siempre está asociado a una Person.
+
+---
+
+## Relaciones
+
+Family es el Aggregate Root de este contexto.
+
+Las asociaciones entre Family y sus integrantes se implementan mediante entidades de relación que forman parte del Aggregate.
+
+Conceptualmente existen dos tipos de asociación:
+
+- Family ↔ Representative
+- Family ↔ Student
+
+Estas relaciones permiten:
+
+- que una Family tenga uno o varios Representatives;
+- que una Family tenga uno o varios Students;
+- que un Representative pueda pertenecer a varias Family cuando las reglas institucionales lo permitan;
+- que un Student pueda cambiar de Family cuando exista una razón administrativa.
+
+La implementación física de estas asociaciones se documentará en `DATABASE_DESIGN.md`.
+
+El dominio considera estas relaciones parte del Aggregate Family y no relaciones directas entre Representative y Student.
+
+---
+
+## Reglas
+
+- Toda Family debe tener al menos un Representative activo.
+- Un Representative pertenece a una Person.
+- El rol Representative nunca duplica información personal.
+
+---
+
+# 11. Aggregate: Student
+
+## Objetivo
+
+Representar al alumno matriculado.
+
+El estudiante constituye el núcleo funcional del sistema escolar.
+
+---
+
+## Aggregate Root
+
+**Student**
+
+---
+
+## Entidades
+
+### Student
+
+Representa el rol académico de una Person.
+
+No almacena datos personales.
+
+Toda información de identidad pertenece a Person.
+
+Información propia del estudiante:
+
+- código institucional
+- estado académico
+- fecha de ingreso
+- nivel
+- grado
+- paralelo
+- observaciones académicas futuras
+
+---
+
+## Relaciones
+
+Todo Student pertenece exactamente a una Person.
+
+Todo Student pertenece al menos a una Family.
+
+Un Student puede tener varios Representatives mediante la Family.
+
+---
+
+## Reglas
+
+- No existe Student sin Person.
+- No existe Student sin Family.
+- Toda información personal permanece en Person.
+
+---
+
+# 12. Aggregate: Student Profile
+
+## Objetivo
+
+Administrar toda la información complementaria del estudiante.
+
+Este Aggregate concentra la mayor parte del Portal del Representante.
+
+---
+
+## Aggregate Root
+
+**Student**
+
+---
+
+## Entidades
+
+### MedicalRecord
 
 Información médica del estudiante.
 
 Ejemplos:
 
 - alergias
-- medicamentos
 - enfermedades
+- medicamentos
 - restricciones
-
----
-
-## EmergencyContact
-
-Persona autorizada para ser contactada en caso de emergencia.
-
-Un estudiante puede tener varios contactos.
-
----
-
-## AuthorizedPickup
-
-Persona autorizada para retirar al estudiante.
-
-Puede incluir:
-
-- parentesco
-- fotografía
-- documento
+- seguro médico
 - observaciones
 
 ---
 
-## Transportation
+### StudentEmergencyContact
+
+Relaciona un Student con una Person.
+
+No representa un rol.
+
+Representa una relación del negocio.
+
+Información propia de la relación:
+
+- prioridad
+- parentesco
+- observaciones
+- estado
+
+Una misma Person puede ser contacto de emergencia de múltiples estudiantes.
+
+---
+
+### StudentAuthorizedPickup
+
+Relaciona un Student con una Person autorizada para retirarlo.
+
+Información propia:
+
+- autorización permanente
+- vigencia
+- observaciones
+- estado
+
+Una Person puede estar autorizada para retirar varios estudiantes.
+
+---
+
+### Transport
 
 Información del transporte escolar.
 
-Puede ser:
-
-- institucional
-- externo
-- particular
-
----
-
-## Invoice
-
-Documento de facturación.
-
----
-
-## Payment
-
-Registro de pagos.
-
----
-
-## User
-
-Cuenta utilizada para acceder al sistema.
-
-No representa una persona.
-
-Representa credenciales.
-
----
-
-## Role
-
-Rol asignado a un usuario.
-
 Ejemplos:
 
-- Administrador
-- Representante
-- Secretaría
-- Tesorería
+- utiliza transporte
+- ruta
+- empresa
+- conductor
+- observaciones
+
+El modelo podrá ampliarse posteriormente.
 
 ---
 
-## Permission
+## Reglas
 
-Permiso específico del sistema.
-
----
-
-# Relaciones principales
-
-## Institution
-
-Tiene muchos:
-
-- AcademicYear
-- Campus
-- Users
+- Los contactos nunca duplican información personal.
+- Las personas autorizadas nunca duplican información personal.
+- Todas las referencias apuntan hacia Person.
+- Toda la información pertenece al Student.
 
 ---
 
-## AcademicYear
+# 13. Aggregate: Enrollment
 
-Tiene muchos:
+Este Aggregate será desarrollado durante el módulo de matrícula.
 
-- Enrollments
+Será responsable de administrar:
 
----
+- borradores;
+- envíos;
+- revisión;
+- observaciones;
+- aprobación;
+- correcciones;
+- historial del proceso.
 
-## Family
-
-Tiene muchos:
-
-- Students
-
----
-
-## Guardian
-
-Puede representar:
-
-- uno o varios estudiantes.
+Su diseño completo se documentará en el entregable correspondiente.
 
 ---
 
-## Student
+# 14. Aggregate: Catalogs
 
-Pertenece a:
+Este Aggregate centraliza toda la información configurable.
 
-- Family
+El objetivo es evitar valores codificados ("hardcoded") dentro del dominio.
 
-Tiene:
+Ejemplos de catálogos:
 
-- MedicalRecord
-- varios EmergencyContact
-- varios AuthorizedPickup
-- varias Enrollment
+- sexo
+- parentesco
+- tipo de identificación
+- nacionalidad
+- provincias
+- ciudades
+- tipos de sangre
+- aseguradoras
+- niveles educativos
+- grados
+- paralelos
+- estados
 
----
-
-## Enrollment
-
-Pertenece a:
-
-- Student
-- AcademicYear
-- Grade
-- Section
-
----
-
-## User
-
-Tiene uno o varios Roles.
+La implementación física se documentará en `CATALOGS.md`.
 
 ---
 
-## Role
+# 15. Modelo Conceptual
 
-Tiene múltiples Permissions.
+```text
+                    User
+                     │
+                     │
+                     ▼
+                  Person
+                 /      \
+                /        \
+               ▼          ▼
+      Representative    Student
+              ▲             ▲
+              │             │
+              └──────┬──────┘
+                     │
+                  Family
+                     │
+      ┌──────────────┴──────────────┐
+      │                             │
+      ▼                             ▼
+StudentEmergencyContact   StudentAuthorizedPickup
+      │                             │
+      ▼                             ▼
+    Person                        Person
 
----
-
-# Reglas de negocio
-
-## Matrícula
-
-Un estudiante solamente podrá tener una matrícula activa por período académico.
-
----
-
-## Representantes
-
-Un representante podrá estar asociado a múltiples estudiantes.
-
-Un estudiante podrá tener varios representantes.
-
-Siempre deberá existir al menos un representante principal.
-
----
-
-## Contactos de emergencia
-
-Cada estudiante deberá tener al menos un contacto de emergencia.
-
----
-
-## Personas autorizadas
-
-El retiro del estudiante únicamente podrá realizarlo una persona autorizada.
-
----
-
-## Información médica
-
-Toda actualización deberá conservar historial cuando la funcionalidad de auditoría esté disponible.
+Student
+   │
+   ├──────────────► MedicalRecord
+   │
+   └──────────────► Transport
+```
 
 ---
 
-## Facturación
+# 16. Dependencias entre Aggregates
 
-La factura pertenece a una familia.
+| Aggregate | Depende de |
+|-----------|------------|
+| Identity | Ninguno |
+| Family | Identity |
+| Student | Identity, Family |
+| Student Profile | Student, Identity |
+| Enrollment | Student, Family |
+| Catalogs | Ninguno |
 
-No al estudiante.
+Las dependencias siempre deben apuntar hacia Aggregates más estables.
+
+Identity constituye el núcleo del dominio y no depende de ningún otro Aggregate.
 
 ---
+# 17. Reglas Generales del Dominio
 
-## Pagos
+Las siguientes reglas son invariantes del modelo y deberán respetarse durante todo el ciclo de vida del sistema.
 
-Un pago podrá cubrir:
+## Identidad
 
-- una factura;
-- varias facturas;
-- un saldo parcial.
+- Toda persona existe una única vez en el sistema.
+- Ninguna entidad distinta de Person almacena información personal.
+- El documento de identidad debe ser único cuando exista.
+- Una Person puede desempeñar múltiples roles simultáneamente.
 
 ---
 
 ## Usuarios
 
-Las credenciales pertenecen al usuario.
-
-Los datos personales pertenecen a la persona.
-
-Nunca deberán mezclarse ambos conceptos.
+- Un User siempre pertenece a una Person.
+- Una Person puede existir sin User.
+- Las credenciales nunca se almacenan fuera de User.
+- El bloqueo de una cuenta no elimina la Person.
 
 ---
 
-# Estados
+## Representantes
+
+- Todo Representative pertenece a una Person.
+- Todo Representative debe pertenecer al menos a una Family.
+- Un Representative puede pertenecer a múltiples Family cuando la institución lo permita.
+- El acceso al Portal del Representante depende exclusivamente de un User activo.
+
+---
+
+## Estudiantes
+
+- Todo Student pertenece a una Person.
+- Todo Student pertenece al menos a una Family.
+- Un Student puede estar asociado a varios Representatives a través de su Family.
+- Ningún dato personal del estudiante debe duplicarse fuera de Person.
+
+---
+
+## Familias
+
+- Una Family representa una unidad administrativa.
+- Una Family no representa parentescos.
+- Los parentescos se modelan mediante relaciones y catálogos.
+- Una Family debe tener al menos un Representative activo.
+
+---
+
+## Contactos de emergencia
+
+- Todo contacto de emergencia es una Person existente.
+- Una Person puede ser contacto de múltiples estudiantes.
+- Un Student puede tener múltiples contactos de emergencia.
+- La prioridad de contacto pertenece a la relación y no a la Person.
+
+---
+
+## Personas autorizadas para retiro
+
+- Toda persona autorizada es una Person existente.
+- Una autorización pertenece a un Student.
+- Una Person puede estar autorizada para retirar a varios estudiantes.
+- Las autorizaciones podrán tener vigencia y estado.
+
+---
+
+## Información médica
+
+- Todo MedicalRecord pertenece a un único Student.
+- Durante el MVP existirá un único expediente médico vigente por estudiante. La administración de historial médico se incorporará en futuras versiones.
+- Los documentos médicos se almacenarán fuera del dominio (infraestructura de archivos).
+
+---
+
+## Transporte
+
+- La información de transporte pertenece al Student.
+- El modelo deberá permitir futuras ampliaciones sin romper compatibilidad.
+
+---
+
+# 18. Reglas de Acceso
+
+El dominio define responsabilidades; la autorización será implementada por la capa de aplicación.
+
+## Secretaría
+
+Puede:
+
+- crear personas;
+- crear representantes;
+- crear estudiantes;
+- crear familias;
+- crear usuarios;
+- iniciar matrículas;
+- revisar información;
+- aprobar;
+- rechazar;
+- solicitar correcciones.
+
+---
+
+## Representante
+
+Puede:
+
+- actualizar su información;
+- actualizar información autorizada de sus estudiantes;
+- administrar contactos;
+- administrar autorizaciones de retiro;
+- administrar información médica;
+- administrar transporte;
+- aceptar documentos;
+- enviar matrícula.
+
+No puede:
+
+- modificar estudiantes ajenos;
+- modificar información académica;
+- modificar configuraciones institucionales.
+
+---
+
+## Estudiante
+
+Durante el MVP no posee acceso al sistema.
+
+---
+
+# 19. Invariantes
+
+Las siguientes condiciones siempre deben cumplirse.
+
+## Identity
+
+- User → Person es obligatorio.
+- Person existe una sola vez.
+
+---
+
+## Family
+
+- Toda Family tiene al menos un Representative.
+- Todo Representative pertenece a una Person.
+
+---
 
 ## Student
 
-Posibles estados:
+- Todo Student pertenece a una Person.
+- Todo Student pertenece a una Family.
 
-- Activo
-- Inactivo
-- Retirado
-- Graduado
+---
+
+## Student Profile
+
+- Todo contacto referencia una Person.
+- Toda autorización referencia una Person.
+- Todo registro médico pertenece a un Student.
+
+---
+
+# 20. Eventos de Dominio
+
+Aunque inicialmente no se implementará Event Sourcing, el dominio reconoce los siguientes eventos.
+
+## Identity
+
+- PersonCreated
+- PersonUpdated
+- UserCreated
+- UserActivated
+- UserDisabled
+
+---
+
+## Family
+
+- FamilyCreated
+- RepresentativeAssigned
+- RepresentativeRemoved
+
+---
+
+## Student
+
+- StudentCreated
+- StudentActivated
+- StudentInactive
+
+---
+
+## Student Profile
+
+- MedicalInformationUpdated
+- EmergencyContactAdded
+- EmergencyContactRemoved
+- AuthorizedPickupAdded
+- AuthorizedPickupRemoved
+- TransportUpdated
 
 ---
 
 ## Enrollment
 
-Posibles estados:
-
-- Borrador
-- Pendiente
-- En revisión
-- Aprobada
-- Rechazada
-- Anulada
+- EnrollmentStarted
+- EnrollmentUpdated
+- EnrollmentSubmitted
+- EnrollmentReturned
+- EnrollmentApproved
+- EnrollmentRejected
 
 ---
 
-## AcademicYear
+# 21. Principios de Evolución
 
-Posibles estados:
+El modelo deberá evolucionar respetando las siguientes reglas.
 
-- Planificación
-- Activo
-- Cerrado
+## Nuevos roles
 
----
-
-# Auditoría
-
-Las entidades críticas deberán poder registrar:
-
-- creación
-- modificación
-- eliminación lógica
-- usuario responsable
-- fecha y hora
-
----
-
-# Eliminación lógica
-
-Las entidades funcionales utilizarán Soft Delete cuando corresponda.
-
-No deberán eliminarse físicamente registros históricos importantes.
+Los nuevos roles deberán derivar de Person.
 
 Ejemplos:
 
-- estudiantes
-- matrículas
-- facturas
-- pagos
+- Teacher
+- Staff
+- Alumni
+- Applicant
+
+Nunca deberán duplicar información personal.
 
 ---
 
-# Convenciones para identificadores
+## Nuevos módulos
 
-Cada entidad tendrá una clave primaria única.
+Los nuevos módulos deberán consumir el dominio existente.
 
-Las claves primarias serán enteros autoincrementales durante la primera versión del sistema.
-
-En el futuro podrán sustituirse por UUID sin afectar el dominio.
+No deberán crear entidades paralelas para representar personas.
 
 ---
 
-# Convenciones para nombres
+## Nuevas funcionalidades
 
-Las entidades utilizarán nombres en singular.
+Toda nueva funcionalidad deberá responder primero a las siguientes preguntas:
 
-Ejemplos:
-
-Correcto:
-
-- Student
-- Family
-- Enrollment
-
-Incorrecto:
-
-- Students
-- Families
-- Enrollments
+1. ¿Existe ya una entidad que represente este concepto?
+2. ¿Es un nuevo rol?
+3. ¿Es una relación?
+4. ¿Es simplemente un atributo?
+5. ¿Debe convertirse en un nuevo Aggregate?
 
 ---
 
-# Reglas para relaciones
+# 22. Principios para el Desarrollo
 
-Las relaciones deberán representarse mediante claves foráneas.
+Todo desarrollo futuro deberá respetar las siguientes reglas.
 
-No deberán duplicarse datos ya existentes en otras entidades.
+## No duplicar información
 
----
-
-# Extensibilidad
-
-El modelo deberá permitir incorporar nuevos módulos sin alterar las entidades existentes.
-
-Ejemplos:
-
-- Biblioteca
-- Inventario
-- Recursos Humanos
-- CRM
-- Portal Docente
-- Portal del Estudiante
-- Nómina
-- Admisiones
+La duplicación de datos personales está prohibida.
 
 ---
 
-# Restricciones
+## No mezclar responsabilidades
 
-No deberán implementarse reglas de negocio directamente en la base de datos.
-
-Las reglas del dominio pertenecen a la capa de Services.
-
-La base de datos garantizará únicamente la integridad de la información.
+Cada Aggregate posee una única responsabilidad principal.
 
 ---
 
-# Evolución
+## No acoplar módulos
 
-Toda modificación importante del modelo de dominio deberá registrarse previamente en `DECISIONS.md`.
+Los módulos deben comunicarse mediante el dominio y nunca mediante dependencias innecesarias.
 
 ---
 
-# Estado del documento
+## Mantener independencia tecnológica
 
-Versión 1.0
+El dominio no depende de:
 
-Este documento constituye la referencia oficial del dominio del negocio para Antares SIS.
+- MySQL;
+- PHP;
+- Bootstrap;
+- Alpine.js;
+- Framework MVC;
+- infraestructura.
+
+La implementación puede cambiar sin modificar este documento.
+
+---
+
+# 23. Resumen del Modelo
+
+El modelo del dominio se construye sobre seis conceptos fundamentales.
+
+| Concepto | Responsabilidad |
+|----------|-----------------|
+| Person | Identidad de toda persona. |
+| User | Acceso y autenticación. |
+| Representative | Business Role que habilita a una Person para administrar estudiantes y procesos de matrícula. |
+| Student | Business Role que representa al alumno dentro del dominio académico. |
+| Family | Unidad administrativa que agrupa representantes y estudiantes. |
+| Student Profile | Información complementaria del estudiante. |
+
+Toda la información del sistema deriva de estos conceptos.
+
+---
+
+# 24. Estado del Documento
+
+Versión: **2.0**
+
+Estado: **Aprobado**
+
+Este documento constituye la referencia oficial para el diseño funcional del Sistema de Información Escolar (SIS).
+
+Toda modificación futura del dominio deberá reflejarse primero en este documento antes de implementarse en código o en la base de datos.

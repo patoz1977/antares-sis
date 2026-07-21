@@ -1,0 +1,427 @@
+# Guía de Seguridad (SECURITY_GUIDELINES)
+
+**Versión:** 1.0
+**Estado:** Aprobado
+**Última actualización:** Julio 2026
+
+---
+
+# 1. Objetivo
+
+Este documento establece las directrices de seguridad que deberán cumplirse durante el diseño, desarrollo, despliegue y mantenimiento de Antares SIS.
+
+Su objetivo es garantizar que todos los módulos del sistema adopten criterios de seguridad homogéneos desde su concepción.
+
+Este documento complementa `ARCHITECTURE.md`, `CODING_STANDARDS.md` y `DATABASE_DESIGN.md`.
+
+---
+
+# 2. Alcance
+
+Estas directrices aplican a:
+
+- Framework.
+- Aplicaciones White Label.
+- Panel Administrativo.
+- APIs.
+- Servicios internos.
+- Procesos Batch.
+- Integraciones externas.
+
+Toda funcionalidad desarrollada deberá cumplir este documento.
+
+---
+
+# 2.1 Jerarquía de Aplicación
+
+Las presentes directrices son de cumplimiento obligatorio para todo el proyecto.
+
+En caso de conflicto entre documentos:
+
+1. SECURITY_GUIDELINES.md
+2. ARCHITECTURE.md
+3. CODING_STANDARDS.md
+4. Implementación
+
+La implementación nunca podrá contradecir las reglas definidas en este documento.
+
+---
+
+# 3. Principios de Seguridad
+
+El sistema se basa en los siguientes principios:
+
+- Security by Design.
+- Least Privilege.
+- Defense in Depth.
+- Secure by Default.
+- Fail Secure.
+- Zero Trust.
+- Separation of Responsibilities.
+- Traceability.
+
+---
+
+# 4. Modelo de Seguridad
+
+La seguridad del sistema se organiza en varias capas:
+
+1. Infraestructura.
+2. Red.
+3. Aplicación.
+4. Base de datos.
+5. Autenticación.
+6. Autorización.
+7. Auditoría.
+8. Monitoreo.
+
+Ninguna capa sustituye a otra.
+
+---
+
+# 5. Responsabilidades
+
+## Framework
+
+El framework deberá proporcionar mecanismos seguros para:
+
+- Routing.
+- Request Validation.
+- Authentication.
+- Authorization.
+- Session Management.
+- CSRF Protection.
+- XSS Protection.
+- SQL Injection Prevention.
+- Error Handling.
+- Secure Configuration.
+- Encryption Services.
+
+---
+
+## Aplicaciones
+
+Cada aplicación deberá:
+
+- validar toda entrada;
+- respetar permisos;
+- registrar auditoría;
+- evitar lógica insegura;
+- utilizar exclusivamente componentes oficiales del framework.
+
+# 6. Autenticación
+
+Toda autenticación deberá realizarse mediante los componentes oficiales del framework.
+
+No se permitirá implementar mecanismos alternativos fuera de la infraestructura de seguridad.
+
+## Requisitos
+
+La autenticación multifactor (MFA) deberá poder incorporarse sin cambios arquitectónicos en el framework.
+
+
+- autenticación mediante credenciales seguras;
+- contraseñas almacenadas exclusivamente mediante algoritmos criptográficos robustos;
+- renovación de sesión después del inicio de sesión;
+- invalidación completa durante el cierre de sesión;
+- expiración automática por inactividad;
+- protección frente a ataques de fuerza bruta.
+
+---
+
+# 7. Autorización
+
+El acceso a los recursos deberá controlarse mediante permisos explícitos.
+
+La autorización nunca deberá implementarse únicamente desde la interfaz de usuario.
+
+Toda operación deberá validar los permisos correspondientes antes de ejecutarse.
+
+## Principios
+
+- denegación por defecto;
+- mínimo privilegio;
+- separación entre autenticación y autorización;
+- permisos centralizados;
+- verificación en servidor.
+
+---
+
+# 8. Gestión de Sesiones
+
+Las sesiones deberán cumplir los siguientes requisitos:
+
+- identificadores criptográficamente seguros;
+- cookies con atributos `HttpOnly`;
+- cookies con atributo `Secure` cuando exista HTTPS;
+- atributo `SameSite` configurado adecuadamente;
+- expiración configurable;
+- regeneración del identificador después del inicio de sesión;
+- destrucción completa al cerrar sesión.
+
+No deberá almacenarse información sensible directamente en la sesión.
+
+---
+
+# 9. Validación de Entradas
+
+Toda información recibida por el sistema deberá validarse antes de ser utilizada.
+
+La validación deberá realizarse siempre en el servidor, independientemente de cualquier validación implementada en el cliente.
+
+## Tipos de validación
+
+- tipo de dato;
+- longitud;
+- formato;
+- rango;
+- obligatoriedad;
+- unicidad cuando corresponda;
+- integridad referencial.
+
+Toda entrada deberá considerarse potencialmente maliciosa hasta ser validada.
+
+---
+
+# 10. Protección frente a Vulnerabilidades
+
+El framework deberá incorporar mecanismos de protección frente a las vulnerabilidades más comunes.
+
+Como mínimo deberá contemplarse protección contra:
+
+- SQL Injection;
+- Cross-Site Scripting (XSS);
+- Cross-Site Request Forgery (CSRF);
+- Session Fixation;
+- Session Hijacking;
+- Clickjacking;
+- Open Redirect;
+- File Inclusion;
+- Path Traversal.
+
+La mitigación de estas amenazas deberá formar parte de la infraestructura común del framework y no depender de implementaciones particulares de cada módulo.
+
+# 11. Protección de Datos
+
+Toda información administrada por el sistema deberá protegerse durante su almacenamiento, transmisión y procesamiento.
+
+## Principios
+
+- confidencialidad;
+- integridad;
+- disponibilidad;
+- minimización de datos;
+- necesidad de acceso;
+- trazabilidad.
+
+La información sensible únicamente podrá ser accesible por usuarios autorizados.
+
+---
+
+# 12. Manejo de Contraseñas
+
+Las contraseñas deberán cumplir una política institucional definida por la aplicación.
+
+Como mínimo:
+
+- longitud mínima configurable;
+- complejidad configurable;
+- almacenamiento mediante algoritmos criptográficos seguros;
+- nunca almacenarse en texto plano;
+- nunca enviarse por correo electrónico;
+- nunca registrarse en logs.
+
+El framework nunca deberá exponer el valor original de una contraseña.
+
+---
+
+# 13. Gestión de Errores
+
+Los errores deberán proporcionar información suficiente para el diagnóstico sin revelar información sensible.
+
+En ambientes de producción:
+
+- no deberán mostrarse excepciones al usuario;
+- no deberán mostrarse consultas SQL;
+- no deberán mostrarse rutas del servidor;
+- no deberán mostrarse trazas internas.
+
+La información técnica deberá registrarse únicamente en los mecanismos de logging autorizados.
+
+---
+
+# 14. Auditoría
+
+Toda operación relevante deberá poder ser auditada.
+
+Como mínimo deberán registrarse:
+
+- autenticaciones;
+- cierres de sesión;
+- creación de registros;
+- modificaciones;
+- eliminaciones;
+- cambios de permisos;
+- operaciones administrativas.
+
+Los registros de auditoría deberán ser inmutables desde la aplicación.
+
+---
+
+# 15. Logging
+
+El sistema utilizará un mecanismo centralizado de registro de eventos.
+
+Los logs deberán clasificarse, como mínimo, en:
+
+- información;
+- advertencias;
+- errores;
+- eventos de seguridad.
+
+Nunca deberán registrarse:
+
+- contraseñas;
+- tokens completos;
+- datos financieros sensibles;
+- información médica confidencial;
+- datos personales innecesarios.
+
+---
+
+# 16. Archivos
+
+Toda carga de archivos deberá validarse antes de almacenarse.
+
+Como mínimo deberá verificarse:
+
+- tipo de archivo;
+- extensión;
+- tamaño;
+- nombre seguro;
+- ubicación de almacenamiento.
+
+Los archivos cargados por usuarios nunca deberán ejecutarse como código del servidor.
+
+---
+
+# 17. APIs
+
+Toda API deberá cumplir las mismas políticas de seguridad que la aplicación web.
+
+Como mínimo:
+
+- autenticación;
+- autorización;
+- validación de entradas;
+- respuestas controladas;
+- limitación de solicitudes cuando corresponda;
+- auditoría de operaciones.
+
+No deberán existir endpoints públicos sin una justificación arquitectónica documentada.
+
+Toda comunicación con APIs deberá realizarse mediante HTTPS/TLS en ambientes de producción.
+
+# 18. Dependencias Externas
+
+Toda dependencia incorporada al proyecto deberá cumplir criterios mínimos de seguridad y mantenimiento.
+
+Como regla general:
+
+- utilizar únicamente dependencias activamente mantenidas;
+- evitar librerías sin comunidad o abandonadas;
+- minimizar el número de dependencias;
+- mantener versiones soportadas;
+- aplicar actualizaciones de seguridad oportunamente.
+
+La incorporación de una nueva dependencia deberá justificarse técnicamente y documentarse cuando tenga impacto arquitectónico.
+
+---
+
+# 19. Configuración del Sistema
+
+La configuración sensible del sistema no deberá almacenarse en el código fuente.
+
+Como mínimo deberán mantenerse fuera del repositorio:
+
+- credenciales de bases de datos;
+- claves de cifrado;
+- tokens;
+- secretos de autenticación;
+- credenciales SMTP;
+- claves de servicios externos.
+
+La configuración deberá obtenerse desde el mecanismo oficial de configuración del framework.
+
+---
+
+# 20. Base de Datos
+
+La base de datos deberá cumplir las siguientes directrices:
+
+- utilizar consultas parametrizadas;
+- evitar SQL construido mediante concatenación;
+- aplicar restricciones de integridad;
+- utilizar claves foráneas cuando corresponda;
+- minimizar privilegios de las cuentas de conexión;
+- proteger respaldos y copias de seguridad.
+
+Las cuentas utilizadas por la aplicación nunca deberán poseer privilegios administrativos sobre el servidor de base de datos.
+
+La información especialmente sensible podrá cifrarse en reposo cuando los requisitos funcionales o normativos así lo exijan.
+
+---
+
+# 21. Desarrollo Seguro
+
+Todo desarrollo deberá seguir las prácticas definidas en `CODING_STANDARDS.md`.
+
+Adicionalmente:
+
+- evitar código duplicado;
+- eliminar código muerto;
+- no dejar funcionalidades incompletas en producción;
+- documentar decisiones relevantes;
+- revisar el impacto de seguridad antes de cada cambio significativo.
+
+La seguridad forma parte del proceso de desarrollo y no constituye una fase posterior.
+
+---
+
+# 22. Relación con otros Documentos
+
+Este documento se complementa con:
+
+- `ARCHITECTURE.md`
+- `DATABASE_DESIGN.md`
+- `CODING_STANDARDS.md`
+- `DECISIONS.md`
+
+Las reglas aquí definidas son transversales y deberán aplicarse en todos los módulos del sistema.
+
+---
+
+# 23. Revisión y Cumplimiento
+
+Las presentes directrices deberán revisarse ante cualquiera de las siguientes situaciones:
+
+- incorporación de nuevas tecnologías;
+- cambios relevantes en la arquitectura;
+- aparición de vulnerabilidades críticas;
+- cambios regulatorios aplicables.
+
+Las excepciones deberán documentarse y aprobarse mediante `DECISIONS.md`.
+
+---
+
+# 24. Evolución del Documento
+
+Las presentes directrices constituyen la línea base de seguridad de Antares SIS.
+
+Toda modificación que altere la arquitectura de seguridad deberá:
+
+1. documentarse en `DECISIONS.md`;
+2. actualizar este documento cuando corresponda;
+3. reflejarse en la implementación del framework.
+
+Este documento deberá evolucionar junto con la arquitectura del sistema, preservando la coherencia entre diseño, implementación y operación.

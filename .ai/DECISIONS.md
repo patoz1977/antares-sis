@@ -1,7 +1,9 @@
 # DECISIONS
 
 **Proyecto:** Antares SIS
-**Versión:** 1.0
+**Versión:** 1.1
+**Estado:** Aprobado
+**Última actualización:** Julio 2026
 
 ---
 
@@ -10,6 +12,8 @@
 Este documento registra las decisiones arquitectónicas y técnicas relevantes del proyecto.
 
 Su objetivo es conservar el contexto detrás de cada decisión importante para evitar que, con el tiempo, se desconozca por qué fue adoptada.
+
+Las ADR (Architecture Decision Records) constituyen la memoria arquitectónica oficial del proyecto.
 
 No se registrarán cambios menores de implementación.
 
@@ -284,6 +288,59 @@ El namespace `App` contendrá toda la lógica específica de la aplicación.
 - Se reduce el acoplamiento entre infraestructura y dominio.
 ---
 
+## ADR-0008
+
+### Estado
+
+Aprobada
+
+### Fecha
+
+2026-07
+
+### Contexto
+
+El modelo de datos constituye uno de los activos más críticos del proyecto y debe permanecer consistente durante toda su evolución.
+
+### Decisión
+
+Establecer `DATABASE_DESIGN.md` como la única fuente oficial del modelo físico de la base de datos y `ERD.md` como su representación gráfica oficial.
+
+### Consecuencias
+
+- Se elimina la ambigüedad entre documentos.
+- Toda modificación del esquema deberá actualizar primero la documentación.
+- Las herramientas de IA disponen de una referencia única para generar código.
+
+---
+
+## ADR-0009
+
+### Estado
+
+Aprobada
+
+### Fecha
+
+2026-07
+
+### Contexto
+
+El proyecto se desarrollará utilizando ChatGPT y GitHub Copilot Agent como asistentes permanentes.
+
+### Decisión
+
+Toda propuesta generada por IA deberá cumplir las reglas establecidas en `AI_DATABASE_RULES.md`, `CODING_STANDARDS.md` y `SECURITY_GUIDELINES.md` antes de incorporarse al repositorio.
+
+### Consecuencias
+
+- Mayor consistencia entre generaciones de código.
+- Reducción de errores arquitectónicos.
+- Menor necesidad de correcciones posteriores.
+
+
+---
+
 # Reglas de mantenimiento
 
 Las decisiones existentes no deberán modificarse para cambiar su significado histórico.
@@ -327,8 +384,10 @@ Cuando exista una discrepancia entre documentos, deberá revisarse si correspond
 
 ---
 
-# Estado del documento
+# Evolución del Documento
 
-Versión 1.0
+Las ADR son acumulativas y no deben eliminarse.
 
-Este documento constituye el registro oficial de decisiones arquitectónicas del proyecto Antares SIS.
+Cuando una decisión quede sin efecto, deberá conservarse por razones históricas y sustituirse mediante una nueva ADR que la referencie.
+
+Este documento constituye la memoria arquitectónica oficial del proyecto y complementa al resto de la documentación de la carpeta `.ai`.

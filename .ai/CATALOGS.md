@@ -1,0 +1,320 @@
+# Catálogos del Sistema (CATALOGS)
+
+**Versión:** 1.0
+**Estado:** Aprobado
+**Última actualización:** Julio 2026
+
+---
+
+# 1. Objetivo
+
+Este documento define la arquitectura de los catálogos utilizados por Antares SIS.
+
+Su propósito es establecer un modelo uniforme para la definición, organización, mantenimiento y utilización de los catálogos del sistema, garantizando consistencia, reutilización y facilidad de evolución.
+
+Este documento complementa `DATABASE_DESIGN.md`, pero no lo reemplaza.
+
+---
+
+# 2. Alcance
+
+Este documento define:
+
+- la clasificación de los catálogos;
+- las reglas para su diseño;
+- las convenciones de nomenclatura;
+- los catálogos oficiales del sistema;
+- las reglas para incorporar nuevos catálogos.
+
+No define:
+
+- reglas de negocio;
+- interfaces de usuario;
+- permisos;
+- datos iniciales (seeders).
+
+---
+
+# 3. Relación con la documentación
+
+La información de catálogos se distribuye de la siguiente manera:
+
+- `DOMAIN_MODEL.md` define los conceptos del negocio.
+- `DATABASE_DESIGN.md` define las tablas físicas.
+- `ERD.md` representa gráficamente las relaciones.
+- `CATALOGS.md` define la arquitectura y organización de todos los catálogos del sistema.
+
+Ante cualquier discrepancia sobre la estructura física prevalece siempre `DATABASE_DESIGN.md`.
+
+---
+
+# 4. Objetivos de los Catálogos
+
+Los catálogos tienen como finalidad:
+
+- eliminar valores codificados ("hardcoded");
+- normalizar la información;
+- facilitar la configuración del sistema;
+- favorecer la reutilización;
+- simplificar la internacionalización;
+- reducir duplicación de datos;
+- mejorar la mantenibilidad del sistema.
+
+---
+
+# 5. Principios de Diseño
+
+Todo catálogo deberá cumplir los siguientes principios:
+
+- responsabilidad única;
+- reutilización;
+- independencia funcional;
+- nomenclatura consistente;
+- estabilidad;
+- extensibilidad;
+- trazabilidad.
+
+Los catálogos representan conocimiento institucional permanente y no lógica de negocio.
+
+---
+
+# 6. Clasificación de Catálogos
+
+Los catálogos del sistema se clasifican en:
+
+## 6.1 Catálogos Base
+
+Infraestructura utilizada por todo el sistema.
+
+Ejemplos:
+
+- status_types
+- statuses
+
+---
+
+## 6.2 Catálogos Generales
+
+Información reutilizable por múltiples módulos.
+
+Ejemplos:
+
+- document_types
+- genders
+- nationalities
+- relationship_types
+- blood_types
+
+---
+
+## 6.3 Catálogos Funcionales
+
+Información propia de un dominio específico.
+
+Ejemplos:
+
+- transport_types
+- enrollment_statuses
+- attendance_statuses
+- grading_scales
+- payment_methods
+
+---
+
+## 6.4 Catálogos Configurables
+
+Catálogos cuya información podrá ser administrada por usuarios autorizados del sistema.
+
+Su disponibilidad dependerá del módulo correspondiente.
+
+
+Un catálogo configurable no implica que toda institución pueda modificar su estructura.
+
+Únicamente podrán administrarse sus registros cuando el módulo correspondiente lo permita.
+
+---
+
+## 6.5 Relación entre categorías
+
+Las categorías definidas en este documento constituyen una clasificación arquitectónica.
+
+No representan herencia entre tablas ni implican diferencias estructurales en la base de datos.
+
+Todos los catálogos mantienen una estructura física homogénea; únicamente cambia su responsabilidad dentro del sistema.
+
+---
+
+# 7. Estructura Estándar de los Catálogos
+
+Todos los catálogos deberán seguir una estructura homogénea para facilitar su mantenimiento, reutilización y comprensión.
+
+Como regla general, un catálogo deberá contener únicamente la información necesaria para identificar y describir cada opción.
+
+La estructura física definitiva de cada tabla se documentará en `DATABASE_DESIGN.md`.
+
+---
+
+## 7.1 Campos Comunes
+
+Siempre que aplique, un catálogo utilizará los siguientes campos:
+
+| Campo | Descripción |
+|--------|-------------|
+| id | Clave primaria. |
+| code | Código único y estable utilizado por el sistema. |
+| name | Nombre visible para los usuarios. |
+| description | Descripción opcional. |
+| display_order | Orden sugerido de presentación. |
+| is_active | Indica si el registro puede utilizarse. |
+
+Los campos estándar de auditoría se documentan exclusivamente en `DATABASE_DESIGN.md`.
+
+---
+
+## 7.2 Convenciones de Nomenclatura
+
+Todos los catálogos deberán cumplir las siguientes reglas:
+
+- nombres en inglés;
+- plural;
+- formato `snake_case`;
+- descriptivos;
+- sin abreviaturas;
+- sin prefijos.
+
+Ejemplos:
+
+- document_types
+- genders
+- nationalities
+- relationship_types
+- blood_types
+- transport_types
+
+---
+
+## 7.3 Uso de Códigos
+
+El campo `code` constituye el identificador funcional del catálogo.
+
+Debe cumplir las siguientes reglas:
+
+- único dentro del catálogo;
+- estable en el tiempo;
+- independiente del idioma;
+- no reutilizable después de eliminado.
+
+El valor de `code` nunca deberá depender del idioma de presentación ni de información susceptible de cambiar con el tiempo.
+
+Los procesos del sistema deberán depender del `code`, nunca del `name`.
+
+---
+
+# 8. Catálogos Base del Sistema
+
+Los siguientes catálogos forman parte de la infraestructura común del sistema.
+
+## 8.1 status_types
+
+Agrupa categorías de estados.
+
+Ejemplos:
+
+- General
+- Academic
+- Financial
+- Enrollment
+
+---
+
+## 8.2 statuses
+
+Define los estados disponibles para cada categoría.
+
+Ejemplos:
+
+- Active
+- Inactive
+- Pending
+- Suspended
+- Archived
+- Deleted
+
+Cada estado pertenece exactamente a un `status_type`.
+
+La incorporación de nuevos catálogos base será excepcional y requerirá una decisión arquitectónica documentada en `DECISIONS.md`.
+
+---
+
+# 9. Catálogos Generales del MVP
+
+Los siguientes catálogos podrán ser utilizados por múltiples módulos del sistema.
+
+| Catálogo | Uso principal |
+|----------|---------------|
+| document_types | Tipos de documento de identidad |
+| genders | Género |
+| nationalities | Nacionalidad |
+| relationship_types | Relaciones familiares y personales |
+| blood_types | Tipo de sangre |
+| transport_types | Tipo de transporte |
+
+Estos catálogos deberán mantenerse independientes de cualquier módulo funcional específico.
+
+# 10. Reglas para la Creación de Nuevos Catálogos
+
+Todo nuevo catálogo deberá cumplir las siguientes reglas:
+
+1. Responder a una necesidad de negocio claramente identificada.
+2. Evitar duplicar información existente.
+3. Ser reutilizable por uno o varios módulos cuando sea posible.
+4. Mantener independencia respecto a la lógica de negocio.
+5. Definirse primero en `CATALOGS.md`.
+6. Incorporarse posteriormente a `DATABASE_DESIGN.md`.
+7. Reflejarse finalmente en `ERD.md` cuando genere relaciones.
+8. No crear un catálogo cuando una enumeración interna del sistema sea suficiente y no exista necesidad de administración, configuración o reutilización.
+
+No deberán crearse catálogos únicamente para almacenar un conjunto reducido de valores cuando estos formen parte de una regla interna del sistema y no requieran administración ni reutilización.
+
+---
+
+# 11. Buenas Prácticas
+
+Todos los catálogos deberán seguir las siguientes buenas prácticas:
+
+- utilizar claves primarias sustitutas (`id`);
+- utilizar `code` como identificador funcional;
+- mantener nombres descriptivos;
+- evitar dependencias circulares entre catálogos;
+- evitar información redundante;
+- documentar claramente su propósito;
+- reutilizar catálogos existentes antes de crear nuevos.
+
+Los valores de un catálogo representan información institucional y no deben utilizarse para implementar lógica de negocio.
+
+---
+
+# 12. Relación con el Modelo Físico
+
+Cada catálogo deberá tener correspondencia directa con una tabla documentada en `DATABASE_DESIGN.md`.
+
+Las relaciones entre catálogos y entidades del sistema deberán representarse posteriormente en `ERD.md`.
+
+Este documento no sustituye la definición física de las tablas, sino que establece la arquitectura y organización de los catálogos utilizados por el sistema.
+
+Las decisiones arquitectónicas relacionadas con la creación, modificación o eliminación de catálogos base deberán registrarse también en `DECISIONS.md`.
+
+---
+
+# 13. Evolución del Documento
+
+Este documento evolucionará conforme se incorporen nuevos módulos al sistema.
+
+Todo nuevo catálogo deberá:
+
+- clasificarse dentro de una de las categorías definidas en este documento;
+- mantener las convenciones de nomenclatura establecidas;
+- evitar duplicidad funcional con otros catálogos;
+- documentarse antes de su implementación.
+
+El objetivo permanente de este documento es constituir la referencia oficial para el diseño, organización y evolución de todos los catálogos utilizados por Antares SIS.

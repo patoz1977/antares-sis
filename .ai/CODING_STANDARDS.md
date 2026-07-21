@@ -1,7 +1,9 @@
 # CODING_STANDARDS
 
 **Proyecto:** Antares SIS
-**Versión:** 1.0
+**Versión:** 1.1
+**Estado:** Aprobado
+**Última actualización:** Julio 2026
 
 ---
 
@@ -12,6 +14,19 @@ Este documento define los estándares de programación del proyecto Antares SIS.
 Todo código incorporado al repositorio deberá cumplir estas normas, independientemente de si fue escrito por una persona o generado mediante inteligencia artificial.
 
 El objetivo es mantener un código consistente, legible y fácil de mantener.
+
+
+---
+
+# Relación con la Arquitectura
+
+Este documento complementa:
+
+- ARCHITECTURE.md
+- SECURITY_GUIDELINES.md
+- DATABASE_DESIGN.md
+
+En caso de conflicto, prevalecerán las decisiones arquitectónicas y de seguridad definidas en dichos documentos.
 
 ---
 
@@ -132,6 +147,8 @@ Core
 ```
 
 Nunca en sentido contrario.
+
+`Core` no deberá depender de clases ubicadas en `App` ni contener reglas específicas del dominio.
 
 Esto garantiza que el framework permanezca reutilizable y desacoplado de la implementación específica.
 ---
@@ -283,7 +300,8 @@ No deberán:
 
 - validar reglas;
 - calcular información;
-- tomar decisiones del negocio.
+- tomar decisiones del negocio;
+- iniciar o confirmar transacciones de negocio complejas fuera de la capa Service.
 
 ---
 
@@ -411,6 +429,8 @@ echo "Error";
 ```
 
 como mecanismo de control.
+
+Las excepciones deberán conservar el contexto suficiente para facilitar el diagnóstico mediante el sistema centralizado de logging.
 
 ---
 
@@ -619,6 +639,14 @@ Todo el código deberá respetar:
 
 ---
 
+# Inteligencia Artificial
+
+Todo código generado mediante herramientas de IA deberá revisarse antes de incorporarse al repositorio.
+
+La generación automática de código no exime del cumplimiento de estos estándares ni de la revisión técnica correspondiente.
+
+---
+
 # Revisión de código
 
 Antes de aceptar cualquier cambio verificar:
@@ -635,8 +663,8 @@ Si alguna respuesta es negativa, el cambio deberá revisarse antes de incorporar
 
 ---
 
-# Estado del documento
+# Evolución del Documento
 
-Versión 1.0
+Las modificaciones a estos estándares deberán mantener coherencia con `ARCHITECTURE.md`, `SECURITY_GUIDELINES.md` y `DECISIONS.md`.
 
-Este documento constituye la referencia oficial de las convenciones de programación del proyecto Antares SIS.
+Toda excepción deberá documentarse y aprobarse antes de incorporarse al proyecto.
