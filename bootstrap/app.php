@@ -14,9 +14,12 @@ use Core\Middleware\AuthenticationMiddleware;
 use Core\Session\Session;
 use Core\Session\SessionInterface;
 use App\Controllers\AuthenticationController;
+use App\Controllers\FamilyController;
 use App\Controllers\PersonController;
 use App\Services\AuthenticationService;
 use App\Services\AuthenticationServiceInterface;
+use App\Services\FamilyService;
+use App\Services\FamilyServiceInterface;
 use App\Services\PersonService;
 use App\Services\PersonServiceInterface;
 
@@ -100,9 +103,12 @@ $container->singleton(Session::class, Session::class);
 $container->singleton(SessionInterface::class, Session::class);
 $container->singleton(AuthenticationService::class, AuthenticationService::class);
 $container->singleton(AuthenticationServiceInterface::class, AuthenticationService::class);
+$container->singleton(FamilyService::class, FamilyService::class);
+$container->singleton(FamilyServiceInterface::class, FamilyService::class);
 $container->singleton(PersonService::class, PersonService::class);
 $container->singleton(PersonServiceInterface::class, PersonService::class);
 $container->singleton(AuthenticationController::class, AuthenticationController::class);
+$container->singleton(FamilyController::class, FamilyController::class);
 $container->singleton(PersonController::class, PersonController::class);
 $container->singleton(AuthenticationMiddleware::class, AuthenticationMiddleware::class);
 
