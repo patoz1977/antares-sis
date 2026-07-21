@@ -10,6 +10,8 @@ use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
 use Core\Foundation\Application;
+use Core\Session\Session;
+use Core\Session\SessionInterface;
 
 // Load .env file from project root
 $root = dirname(__DIR__);
@@ -87,6 +89,8 @@ $container = new Container();
 $container->instance(DatabaseConfig::class, $databaseConfig);
 $container->singleton(ConnectionFactory::class, ConnectionFactory::class);
 $container->singleton(ConnectionManager::class, ConnectionManager::class);
+$container->singleton(Session::class, Session::class);
+$container->singleton(SessionInterface::class, Session::class);
 
 $app = new Application($config, $container);
 
