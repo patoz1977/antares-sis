@@ -72,15 +72,27 @@ final class SchemaBuilder
             }
         }
 
+        foreach ($blueprint->getIndexes() as $index) {
+            $definitions[] = $this->compileIndex($index, $blueprint->getTable());
+        }
+
+        foreach ($blueprint->getForeignKeys() as $foreignKey) {
+            $foreignDefinition = $this->compileForeignKey($foreignKey, $blueprint->getTable());
+
+            if ($foreignDefinition !== '') {
+                $definitions[] = $foreignDefinition;
+            }
+        }
+
+        if ($primaryKeys !== []) {
+            $definitions[] = sprintf('PRIMARY KEY (%s)', implode(', ', $primaryKeys));
+        }
+
         $sql = sprintf(
             'CREATE TABLE IF NOT EXISTS %s (%s)',
             $this->quoteIdentifier($blueprint->getTable()),
             implode(', ', $definitions)
         );
-
-        if ($primaryKeys !== []) {
-            $sql .= sprintf(', PRIMARY KEY (%s)', implode(', ', $primaryKeys));
-        }
 
         return $sql . ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
     }
@@ -102,6 +114,10 @@ final class SchemaBuilder
             $definition .= ' AUTO_INCREMENT';
         }
 
+        if ($column->comment() !== null) {
+            $definition .= sprintf(" COMMENT '%s'", addslashes($column->comment()));
+        }
+
         return $definition;
     }
 
@@ -109,12 +125,56 @@ final class SchemaBuilder
     {
         return match ($column->type()) {
             'varchar' => sprintf('VARCHAR(%d)', $column->length() ?? 255),
-            'int' => sprintf('INT(%d)', $column->length() ?? 11),
-            'tinyint' => 'TINYINT(1)',
+            'char' => sprintf('CHAR(%d)', $column->length() ?? 1),
+            'int' => sprintf('INT(%d)%s', $column->length() ?? 11, $column->unsigned() ? ' UNSIGNED' : ''),
+            'bigint' => sprintf('BIGINT%s', $column->unsigned() ? ' UNSIGNED' : ''),
+            'decimal' => sprintf('DECIMAL(%d, %d)', $column->precision() ?? 8, $column->scale() ?? 2),
+            'text' => 'TEXT',
+            'date' => 'DATE',
+            'datetime' => 'DATETIME',
             'timestamp' => 'TIMESTAMP',
-            'bigint' => 'BIGINT UNSIGNED',
+            'boolean' => 'BOOLEAN',
             default => 'VARCHAR(255)',
         };
+    }
+
+    private function compileIndex(array $index, string $table): string
+    {
+        $columns = array_map(fn (string $column) => $this->quoteIdentifier($column), $index['columns']);
+        $name = $index['name'] ?? $this->generateIndexName($table, $index['columns']);
+
+        return sprintf('KEY %s (%s)', $this->quoteIdentifier($name), implode(', ', $columns));
+    }
+
+    private function generateIndexName(string $table, array $columns): string
+    {
+        return sprintf('%s_%s_idx', $table, implode('_', $columns));
+    }
+
+    private function compileForeignKey(array $foreignKey, string $table): string
+    {
+        if ($foreignKey['references'] === null || $foreignKey['on'] === null) {
+            return '';
+        }
+
+        $name = $foreignKey['name'] ?? sprintf('%s_%s_foreign', $table, $foreignKey['column']);
+        $definition = sprintf(
+            'CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)',
+            $this->quoteIdentifier($name),
+            $this->quoteIdentifier($foreignKey['column']),
+            $this->quoteIdentifier($foreignKey['on']),
+            $this->quoteIdentifier($foreignKey['references'])
+        );
+
+        if ($foreignKey['onDelete'] !== null) {
+            $definition .= sprintf(' ON DELETE %s', $foreignKey['onDelete']);
+        }
+
+        if ($foreignKey['onUpdate'] !== null) {
+            $definition .= sprintf(' ON UPDATE %s', $foreignKey['onUpdate']);
+        }
+
+        return $definition;
     }
 
     private function compileDefaultValue(mixed $value): string

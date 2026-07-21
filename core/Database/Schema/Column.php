@@ -22,6 +22,14 @@ final class Column
 
     private bool $primary;
 
+    private bool $unsigned;
+
+    private ?int $precision;
+
+    private ?int $scale;
+
+    private ?string $comment;
+
     public function __construct(
         string $name,
         string $type,
@@ -30,7 +38,11 @@ final class Column
         mixed $default = null,
         bool $unique = false,
         bool $autoIncrement = false,
-        bool $primary = false
+        bool $primary = false,
+        bool $unsigned = false,
+        ?int $precision = null,
+        ?int $scale = null,
+        ?string $comment = null
     ) {
         $this->name = $name;
         $this->type = $type;
@@ -40,6 +52,10 @@ final class Column
         $this->unique = $unique;
         $this->autoIncrement = $autoIncrement;
         $this->primary = $primary;
+        $this->unsigned = $unsigned;
+        $this->precision = $precision;
+        $this->scale = $scale;
+        $this->comment = $comment;
     }
 
     public function name(): string
@@ -82,6 +98,26 @@ final class Column
         return $this->primary;
     }
 
+    public function unsigned(): bool
+    {
+        return $this->unsigned;
+    }
+
+    public function precision(): ?int
+    {
+        return $this->precision;
+    }
+
+    public function scale(): ?int
+    {
+        return $this->scale;
+    }
+
+    public function comment(): ?string
+    {
+        return $this->comment;
+    }
+
     public function setNullable(bool $nullable): void
     {
         $this->nullable = $nullable;
@@ -95,5 +131,10 @@ final class Column
     public function setUnique(bool $unique): void
     {
         $this->unique = $unique;
+    }
+
+    public function setComment(string $comment): void
+    {
+        $this->comment = $comment;
     }
 }
