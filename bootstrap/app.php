@@ -13,6 +13,7 @@ use Core\Foundation\Application;
 use Core\Middleware\AuthenticationMiddleware;
 use Core\Session\Session;
 use Core\Session\SessionInterface;
+use App\Controllers\AuthenticationController;
 use App\Services\AuthenticationService;
 use App\Services\AuthenticationServiceInterface;
 
@@ -96,6 +97,7 @@ $container->singleton(Session::class, Session::class);
 $container->singleton(SessionInterface::class, Session::class);
 $container->singleton(AuthenticationService::class, AuthenticationService::class);
 $container->singleton(AuthenticationServiceInterface::class, AuthenticationService::class);
+$container->singleton(AuthenticationController::class, AuthenticationController::class);
 $container->singleton(AuthenticationMiddleware::class, AuthenticationMiddleware::class);
 
 $app = new Application($config, $container);

@@ -59,12 +59,17 @@ class Kernel
         $middlewareStack = $this->globalMiddleware;
         $method = $this->request->method();
         $uri = $this->request->uri();
+        $routerMiddleware = $this->router->middlewareFor($method, $uri);
 
         if (isset($this->routeMiddleware[$method][$uri])) {
             $middlewareStack = array_merge(
                 $middlewareStack,
                 $this->routeMiddleware[$method][$uri]
             );
+        }
+
+        if ($routerMiddleware !== []) {
+            $middlewareStack = array_merge($middlewareStack, $routerMiddleware);
         }
 
         $destination = function (Request $request): Response {
