@@ -14,8 +14,11 @@ use Core\Middleware\AuthenticationMiddleware;
 use Core\Session\Session;
 use Core\Session\SessionInterface;
 use App\Controllers\AuthenticationController;
+use App\Controllers\PersonController;
 use App\Services\AuthenticationService;
 use App\Services\AuthenticationServiceInterface;
+use App\Services\PersonService;
+use App\Services\PersonServiceInterface;
 
 // Load .env file from project root
 $root = dirname(__DIR__);
@@ -97,7 +100,10 @@ $container->singleton(Session::class, Session::class);
 $container->singleton(SessionInterface::class, Session::class);
 $container->singleton(AuthenticationService::class, AuthenticationService::class);
 $container->singleton(AuthenticationServiceInterface::class, AuthenticationService::class);
+$container->singleton(PersonService::class, PersonService::class);
+$container->singleton(PersonServiceInterface::class, PersonService::class);
 $container->singleton(AuthenticationController::class, AuthenticationController::class);
+$container->singleton(PersonController::class, PersonController::class);
 $container->singleton(AuthenticationMiddleware::class, AuthenticationMiddleware::class);
 
 $app = new Application($config, $container);
