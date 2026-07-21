@@ -13,10 +13,13 @@ final class MigrationRunner
 
     private string $migrationsPath;
 
+    private string $seedersPath;
+
     public function __construct(ConnectionManager $connectionManager)
     {
         $this->connectionManager = $connectionManager;
         $this->migrationsPath = dirname(__DIR__, 1) . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'database' . DIRECTORY_SEPARATOR . 'migrations';
+        $this->seedersPath = dirname(__DIR__, 1) . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'database' . DIRECTORY_SEPARATOR . 'seeders';
     }
 
     public function run(): void
@@ -37,15 +40,16 @@ final class MigrationRunner
 
         if ($pendingMigrations === []) {
             echo "No pending migrations.\n";
-            echo "Done.\n";
-            return;
+        } else {
+            $batch = $this->nextBatch($connection);
+            foreach ($pendingMigrations as $migration) {
+                $this->runMigration($connection, $migration, $batch);
+                echo sprintf("Migration executed: %s\n", $migration->version());
+            }
         }
 
-        $batch = $this->nextBatch($connection);
-        foreach ($pendingMigrations as $migration) {
-            $this->runMigration($connection, $migration, $batch);
-            echo sprintf("Migration executed: %s\n", $migration->version());
-        }
+        $this->runSeeders($connection);
+        echo "Seeders executed.\n";
 
         echo "Done.\n";
     }
@@ -191,5 +195,69 @@ final class MigrationRunner
             }
             throw $exception;
         }
+    }
+
+    private function runSeeders(PDO $connection): void
+    {
+        foreach ($this->loadSeeders() as $seeder) {
+            $seeder->run($connection);
+            echo sprintf("Seeder executed: %s\n", $seeder::class);
+        }
+    }
+
+    private function loadSeeders(): array
+    {
+        if (!is_dir($this->seedersPath)) {
+            return [];
+        }
+
+        $files = scandir($this->seedersPath);
+        if ($files === false) {
+            return [];
+        }
+
+        $seeders = [];
+        foreach ($files as $file) {
+            if ($file === '.' || $file === '..' || !str_ends_with($file, '.php')) {
+                continue;
+            }
+
+            $path = $this->seedersPath . DIRECTORY_SEPARATOR . $file;
+            require_once $path;
+
+            $className = 'Database\\Seeders\\' . pathinfo($file, PATHINFO_FILENAME);
+            if (!class_exists($className)) {
+                throw new RuntimeException(sprintf('Seeder class not found: %s', $className));
+            }
+
+            $seeder = new $className();
+            if (!method_exists($seeder, 'run')) {
+                throw new RuntimeException(sprintf('Seeder %s must have a run(PDO $connection) method.', $className));
+            }
+
+            $seeders[] = $seeder;
+        }
+
+        $priority = [
+            'Database\\Seeders\\StatusTypeSeeder' => 10,
+            'Database\\Seeders\\StatusSeeder' => 20,
+            'Database\\Seeders\\AdminSeeder' => 30,
+        ];
+
+        usort($seeders, static function (object $left, object $right) use ($priority): int {
+            $leftClass = $left::class;
+            $rightClass = $right::class;
+
+            $leftPriority = $priority[$leftClass] ?? 100;
+            $rightPriority = $priority[$rightClass] ?? 100;
+
+            if ($leftPriority === $rightPriority) {
+                return strcmp($leftClass, $rightClass);
+            }
+
+            return $leftPriority <=> $rightPriority;
+        });
+
+        return $seeders;
     }
 }

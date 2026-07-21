@@ -59,6 +59,8 @@ final class AuthenticationController extends Controller
 
     public function logout(): string
     {
+        $this->ensureSessionStarted();
+
         $this->authenticationService->logout();
 
         header('Location: /login');
@@ -69,7 +71,9 @@ final class AuthenticationController extends Controller
 
     public function dashboard(): string
     {
-        return 'Authenticated';
+        return $this->view('dashboard.index', [
+            'title' => 'Dashboard',
+        ]);
     }
 
     private function flash(string $key, string $message): void

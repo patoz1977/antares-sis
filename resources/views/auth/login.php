@@ -21,3 +21,7 @@ declare(strict_types=1);
 
     <button type="submit">Sign in</button>
 </form>
+
+<form method="post" action="/logout">
+    <button type="submit">Sign out</button>
+</form>
