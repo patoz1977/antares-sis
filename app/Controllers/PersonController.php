@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Services\CatalogService;
 use App\Services\PersonServiceInterface;
 use Core\Http\Request;
 use InvalidArgumentException;
@@ -11,23 +12,27 @@ use InvalidArgumentException;
 final class PersonController extends Controller
 {
     public function __construct(
-        private PersonServiceInterface $personService
+        private PersonServiceInterface $personService,
+        private CatalogService $catalogService
     ) {
     }
 
     public function index(): string
     {
         $persons = $this->personService->list();
+        $catalogs = $this->loadCatalogs();
 
         return $this->view('persons.index', [
             'title' => 'Persons',
             'persons' => $persons,
+            'catalogs' => $catalogs,
         ]);
     }
 
     public function show(int $id): string
     {
         $person = $this->personService->find($id);
+        $catalogs = $this->loadCatalogs();
 
         if ($person === null) {
             http_response_code(404);
@@ -35,21 +40,26 @@ final class PersonController extends Controller
             return $this->view('persons.show', [
                 'title' => 'Person not found',
                 'person' => null,
+                'catalogs' => $catalogs,
             ]);
         }
 
         return $this->view('persons.show', [
             'title' => 'Person details',
             'person' => $person,
+            'catalogs' => $catalogs,
         ]);
     }
 
     public function create(): string
     {
+        $catalogs = $this->loadCatalogs();
+
         return $this->view('persons.create', [
             'title' => 'Create person',
             'errorMessage' => null,
             'old' => [],
+            'catalogs' => $catalogs,
         ]);
     }
 
@@ -62,11 +72,13 @@ final class PersonController extends Controller
             $personId = $this->personService->create($input);
         } catch (InvalidArgumentException $exception) {
             http_response_code(422);
+            $catalogs = $this->loadCatalogs();
 
             return $this->view('persons.create', [
                 'title' => 'Create person',
                 'errorMessage' => $exception->getMessage(),
                 'old' => $input,
+                'catalogs' => $catalogs,
             ]);
         }
 
@@ -79,6 +91,7 @@ final class PersonController extends Controller
     public function edit(int $id): string
     {
         $person = $this->personService->find($id);
+        $catalogs = $this->loadCatalogs();
 
         if ($person === null) {
             http_response_code(404);
@@ -87,6 +100,7 @@ final class PersonController extends Controller
                 'title' => 'Person not found',
                 'person' => null,
                 'errorMessage' => null,
+                'catalogs' => $catalogs,
             ]);
         }
 
@@ -94,6 +108,7 @@ final class PersonController extends Controller
             'title' => 'Edit person',
             'person' => $person,
             'errorMessage' => null,
+            'catalogs' => $catalogs,
         ]);
     }
 
@@ -106,6 +121,7 @@ final class PersonController extends Controller
             $this->personService->update($id, $input);
         } catch (InvalidArgumentException $exception) {
             http_response_code(422);
+            $catalogs = $this->loadCatalogs();
 
             $person = $this->personService->find($id);
 
@@ -123,6 +139,7 @@ final class PersonController extends Controller
                 'title' => 'Edit person',
                 'person' => $person,
                 'errorMessage' => $exception->getMessage(),
+                'catalogs' => $catalogs,
             ]);
         }
 
@@ -146,5 +163,15 @@ final class PersonController extends Controller
         http_response_code(302);
 
         return '';
+    }
+
+    private function loadCatalogs(): array
+    {
+        return [
+            'statuses' => $this->catalogService->getStatuses(),
+            'documentTypes' => $this->catalogService->getDocumentTypes(),
+            'genders' => $this->catalogService->getGenders(),
+            'nationalities' => $this->catalogService->getNationalities(),
+        ];
     }
 }

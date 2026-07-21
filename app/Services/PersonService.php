@@ -16,9 +16,9 @@ class PersonService implements PersonServiceInterface
 
     public function list(): array
     {
-        $sql = 'SELECT id, status_id, document_type_id, document_number, first_name, middle_name, last_name, second_last_name, preferred_name, birth_date, gender_id, nationality_id, email, mobile_phone, home_phone, address, notes, created_at, updated_at, deleted_at, created_by, updated_by, deleted_by FROM persons WHERE deleted_at IS NULL ORDER BY last_name ASC, first_name ASC, id ASC';
+        $persons = $this->personRepository->listActivePersons();
 
-        return $this->repositoryFetchAll($sql);
+        return array_map(fn (array $person): array => $this->normalizePersonRow($person), $persons);
     }
 
     public function find(int $id): ?array
@@ -37,7 +37,7 @@ class PersonService implements PersonServiceInterface
             return null;
         }
 
-        return $person;
+        return $this->normalizePersonRow($person);
     }
 
     public function create(array $data): int
@@ -48,30 +48,7 @@ class PersonService implements PersonServiceInterface
             throw new InvalidArgumentException('The identification already exists.');
         }
 
-        $sql = 'INSERT INTO persons (status_id, document_type_id, document_number, first_name, middle_name, last_name, second_last_name, preferred_name, birth_date, gender_id, nationality_id, email, mobile_phone, home_phone, address, notes, created_at, updated_at, deleted_at, created_by, updated_by, deleted_by) VALUES (:statusId, :documentTypeId, :documentNumber, :firstName, :middleName, :lastName, :secondLastName, :preferredName, :birthDate, :genderId, :nationalityId, :email, :mobilePhone, :homePhone, :address, :notes, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL, :createdBy, :updatedBy, NULL)';
-
-        $this->repositoryExecute($sql, [
-            ':statusId' => $payload['status_id'],
-            ':documentTypeId' => $payload['document_type_id'],
-            ':documentNumber' => $payload['document_number'],
-            ':firstName' => $payload['first_name'],
-            ':middleName' => $payload['middle_name'],
-            ':lastName' => $payload['last_name'],
-            ':secondLastName' => $payload['second_last_name'],
-            ':preferredName' => $payload['preferred_name'],
-            ':birthDate' => $payload['birth_date'],
-            ':genderId' => $payload['gender_id'],
-            ':nationalityId' => $payload['nationality_id'],
-            ':email' => $payload['email'],
-            ':mobilePhone' => $payload['mobile_phone'],
-            ':homePhone' => $payload['home_phone'],
-            ':address' => $payload['address'],
-            ':notes' => $payload['notes'],
-            ':createdBy' => $payload['created_by'],
-            ':updatedBy' => $payload['updated_by'],
-        ]);
-
-        return (int) $this->repositoryLastInsertId();
+        return $this->personRepository->create($payload);
     }
 
     public function update(int $id, array $data): void
@@ -93,28 +70,7 @@ class PersonService implements PersonServiceInterface
             throw new InvalidArgumentException('The identification already exists.');
         }
 
-        $sql = 'UPDATE persons SET status_id = :statusId, document_type_id = :documentTypeId, document_number = :documentNumber, first_name = :firstName, middle_name = :middleName, last_name = :lastName, second_last_name = :secondLastName, preferred_name = :preferredName, birth_date = :birthDate, gender_id = :genderId, nationality_id = :nationalityId, email = :email, mobile_phone = :mobilePhone, home_phone = :homePhone, address = :address, notes = :notes, updated_at = CURRENT_TIMESTAMP, updated_by = :updatedBy WHERE id = :id';
-
-        $this->repositoryExecute($sql, [
-            ':id' => $id,
-            ':statusId' => $payload['status_id'],
-            ':documentTypeId' => $payload['document_type_id'],
-            ':documentNumber' => $payload['document_number'],
-            ':firstName' => $payload['first_name'],
-            ':middleName' => $payload['middle_name'],
-            ':lastName' => $payload['last_name'],
-            ':secondLastName' => $payload['second_last_name'],
-            ':preferredName' => $payload['preferred_name'],
-            ':birthDate' => $payload['birth_date'],
-            ':genderId' => $payload['gender_id'],
-            ':nationalityId' => $payload['nationality_id'],
-            ':email' => $payload['email'],
-            ':mobilePhone' => $payload['mobile_phone'],
-            ':homePhone' => $payload['home_phone'],
-            ':address' => $payload['address'],
-            ':notes' => $payload['notes'],
-            ':updatedBy' => $payload['updated_by'],
-        ]);
+        $this->personRepository->updateById($id, $payload);
     }
 
     public function deactivate(int $id): void
@@ -127,12 +83,7 @@ class PersonService implements PersonServiceInterface
 
         $deletedBy = $this->normalizeNullablePositiveInt($existing['updated_by'] ?? null);
 
-        $sql = 'UPDATE persons SET deleted_at = CURRENT_TIMESTAMP, deleted_by = :deletedBy, updated_at = CURRENT_TIMESTAMP WHERE id = :id';
-
-        $this->repositoryExecute($sql, [
-            ':id' => $id,
-            ':deletedBy' => $deletedBy,
-        ]);
+        $this->personRepository->markAsDeleted($id, $deletedBy);
     }
 
     private function validateAndNormalize(array $data): array
@@ -234,42 +185,23 @@ class PersonService implements PersonServiceInterface
         return $birthDate;
     }
 
-    private function repositoryFetchAll(string $sql, array $params = []): array
+    private function normalizePersonRow(array $person): array
     {
-        $fetchAll = \Closure::bind(
-            function (string $sql, array $params = []): array {
-                return $this->fetchAll($sql, $params);
-            },
-            $this->personRepository,
-            PersonRepository::class
-        );
+        $person['id'] = $this->normalizeNullableNumericForView($person['id'] ?? null);
+        $person['status_id'] = $this->normalizeNullableNumericForView($person['status_id'] ?? null);
+        $person['document_type_id'] = $this->normalizeNullableNumericForView($person['document_type_id'] ?? null);
+        $person['gender_id'] = $this->normalizeNullableNumericForView($person['gender_id'] ?? null);
+        $person['nationality_id'] = $this->normalizeNullableNumericForView($person['nationality_id'] ?? null);
 
-        return $fetchAll($sql, $params);
+        return $person;
     }
 
-    private function repositoryExecute(string $sql, array $params = []): bool
+    private function normalizeNullableNumericForView(mixed $value): ?int
     {
-        $execute = \Closure::bind(
-            function (string $sql, array $params = []): bool {
-                return $this->execute($sql, $params);
-            },
-            $this->personRepository,
-            PersonRepository::class
-        );
+        if (!is_numeric($value)) {
+            return null;
+        }
 
-        return $execute($sql, $params);
-    }
-
-    private function repositoryLastInsertId(): string
-    {
-        $lastInsertId = \Closure::bind(
-            function (): string {
-                return $this->lastInsertId();
-            },
-            $this->personRepository,
-            PersonRepository::class
-        );
-
-        return $lastInsertId();
+        return (int) $value;
     }
 }

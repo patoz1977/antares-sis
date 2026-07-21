@@ -4,6 +4,15 @@ declare(strict_types=1);
 
 $old = isset($old) && is_array($old) ? $old : [];
 $errorMessage = isset($errorMessage) && is_string($errorMessage) ? $errorMessage : null;
+$catalogs = isset($catalogs) && is_array($catalogs) ? $catalogs : [];
+$statuses = isset($catalogs['statuses']) && is_array($catalogs['statuses']) ? $catalogs['statuses'] : [];
+$documentTypes = isset($catalogs['documentTypes']) && is_array($catalogs['documentTypes']) ? $catalogs['documentTypes'] : [];
+$genders = isset($catalogs['genders']) && is_array($catalogs['genders']) ? $catalogs['genders'] : [];
+$nationalities = isset($catalogs['nationalities']) && is_array($catalogs['nationalities']) ? $catalogs['nationalities'] : [];
+
+$isSelected = static function (mixed $left, mixed $right): bool {
+    return (string) $left !== '' && (string) $left === (string) $right;
+};
 ?>
 <h1>Create person</h1>
 
@@ -15,13 +24,31 @@ $errorMessage = isset($errorMessage) && is_string($errorMessage) ? $errorMessage
 
 <form method="post" action="/persons">
     <div>
-        <label for="status_id">status_id</label>
-        <input id="status_id" name="status_id" type="number" min="1" required value="<?= htmlspecialchars((string) ($old['status_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+        <label for="status_id">Estado</label>
+        <select id="status_id" name="status_id" required>
+            <option value="">Select status</option>
+            <?php foreach ($statuses as $status): ?>
+                <?php $statusId = $status['id'] ?? ''; ?>
+                <?php $statusDescription = (string) ($status['description'] ?? ''); ?>
+                <option value="<?= htmlspecialchars((string) $statusId, ENT_QUOTES, 'UTF-8') ?>" <?= $isSelected($old['status_id'] ?? null, $statusId) ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($statusDescription, ENT_QUOTES, 'UTF-8') ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
     </div>
 
     <div>
-        <label for="document_type_id">document_type_id</label>
-        <input id="document_type_id" name="document_type_id" type="number" min="1" required value="<?= htmlspecialchars((string) ($old['document_type_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+        <label for="document_type_id">Tipo de documento</label>
+        <select id="document_type_id" name="document_type_id" required>
+            <option value="">Select document type</option>
+            <?php foreach ($documentTypes as $documentType): ?>
+                <?php $documentTypeId = $documentType['id'] ?? ''; ?>
+                <?php $documentTypeDescription = (string) ($documentType['description'] ?? ''); ?>
+                <option value="<?= htmlspecialchars((string) $documentTypeId, ENT_QUOTES, 'UTF-8') ?>" <?= $isSelected($old['document_type_id'] ?? null, $documentTypeId) ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($documentTypeDescription, ENT_QUOTES, 'UTF-8') ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
     </div>
 
     <div>
@@ -60,13 +87,31 @@ $errorMessage = isset($errorMessage) && is_string($errorMessage) ? $errorMessage
     </div>
 
     <div>
-        <label for="gender_id">gender_id</label>
-        <input id="gender_id" name="gender_id" type="number" min="1" value="<?= htmlspecialchars((string) ($old['gender_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+        <label for="gender_id">Genero</label>
+        <select id="gender_id" name="gender_id">
+            <option value="">Select gender</option>
+            <?php foreach ($genders as $gender): ?>
+                <?php $genderId = $gender['id'] ?? ''; ?>
+                <?php $genderDescription = (string) ($gender['description'] ?? ''); ?>
+                <option value="<?= htmlspecialchars((string) $genderId, ENT_QUOTES, 'UTF-8') ?>" <?= $isSelected($old['gender_id'] ?? null, $genderId) ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($genderDescription, ENT_QUOTES, 'UTF-8') ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
     </div>
 
     <div>
-        <label for="nationality_id">nationality_id</label>
-        <input id="nationality_id" name="nationality_id" type="number" min="1" value="<?= htmlspecialchars((string) ($old['nationality_id'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+        <label for="nationality_id">Nacionalidad</label>
+        <select id="nationality_id" name="nationality_id">
+            <option value="">Select nationality</option>
+            <?php foreach ($nationalities as $nationality): ?>
+                <?php $nationalityId = $nationality['id'] ?? ''; ?>
+                <?php $nationalityDescription = (string) ($nationality['description'] ?? ''); ?>
+                <option value="<?= htmlspecialchars((string) $nationalityId, ENT_QUOTES, 'UTF-8') ?>" <?= $isSelected($old['nationality_id'] ?? null, $nationalityId) ? 'selected' : '' ?>>
+                    <?= htmlspecialchars($nationalityDescription, ENT_QUOTES, 'UTF-8') ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
     </div>
 
     <div>

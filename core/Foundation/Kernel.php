@@ -45,7 +45,13 @@ class Kernel
     {
         try {
             $response = $this->buildPipeline()($this->request);
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
+            $environment = (string) (getenv('APP_ENV') ?: 'production');
+
+            if (in_array($environment, ['development', 'local'], true)) {
+                throw $exception;
+            }
+
             $response = (new Response())
                 ->status(500)
                 ->content('Internal Server Error');
