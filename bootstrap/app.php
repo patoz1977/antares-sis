@@ -12,6 +12,8 @@ use Core\Database\DatabaseConfig;
 use Core\Foundation\Application;
 use Core\Session\Session;
 use Core\Session\SessionInterface;
+use App\Services\AuthenticationService;
+use App\Services\AuthenticationServiceInterface;
 
 // Load .env file from project root
 $root = dirname(__DIR__);
@@ -91,6 +93,8 @@ $container->singleton(ConnectionFactory::class, ConnectionFactory::class);
 $container->singleton(ConnectionManager::class, ConnectionManager::class);
 $container->singleton(Session::class, Session::class);
 $container->singleton(SessionInterface::class, Session::class);
+$container->singleton(AuthenticationService::class, AuthenticationService::class);
+$container->singleton(AuthenticationServiceInterface::class, AuthenticationService::class);
 
 $app = new Application($config, $container);
 
