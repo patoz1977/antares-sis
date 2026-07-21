@@ -10,6 +10,7 @@ use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
 use Core\Foundation\Application;
+use Core\Middleware\AuthenticationMiddleware;
 use Core\Session\Session;
 use Core\Session\SessionInterface;
 use App\Services\AuthenticationService;
@@ -95,7 +96,12 @@ $container->singleton(Session::class, Session::class);
 $container->singleton(SessionInterface::class, Session::class);
 $container->singleton(AuthenticationService::class, AuthenticationService::class);
 $container->singleton(AuthenticationServiceInterface::class, AuthenticationService::class);
+$container->singleton(AuthenticationMiddleware::class, AuthenticationMiddleware::class);
 
 $app = new Application($config, $container);
+
+$app->kernel()->setMiddlewareResolver(
+    static fn (string $middleware): object => $container->make($middleware)
+);
 
 return $app;
