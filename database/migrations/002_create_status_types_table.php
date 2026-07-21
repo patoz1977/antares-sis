@@ -3,37 +3,57 @@
 declare(strict_types=1);
 
 use Core\Database\Migration;
+use Core\Database\Schema\Blueprint;
+use Core\Database\Schema\Schema;
 
 final class CreateStatusTypesTable extends Migration
 {
     public function up(PDO $connection): void
     {
-        $connection->exec(
-            'CREATE TABLE IF NOT EXISTS status_types ('
-            . 'id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,'
-            . 'code VARCHAR(50) NOT NULL,'
-            . 'name VARCHAR(100) NOT NULL,'
-            . 'description VARCHAR(255) DEFAULT NULL,'
-            . 'created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,'
-            . 'updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,'
-            . 'deleted_at TIMESTAMP NULL DEFAULT NULL,'
-            . 'created_by BIGINT UNSIGNED DEFAULT NULL,'
-            . 'updated_by BIGINT UNSIGNED DEFAULT NULL,'
-            . 'deleted_by BIGINT UNSIGNED DEFAULT NULL,'
-            . 'PRIMARY KEY (id),'
-            . 'UNIQUE KEY status_types_code_unique (code),'
-            . 'UNIQUE KEY status_types_name_unique (name)'
-            . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
-        );
+        $this->createTable($connection, 'status_types', function (Blueprint $table): void {
+            $table->id();
+            $table->string('code', 50);
+            $table->string('name', 100);
+            $table->string('description', 255)->nullable();
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('deleted_at')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->index('code', 'status_types_code_unique');
+            $table->index('name', 'status_types_name_unique');
+        }, [
+            "DEFAULT 'CURRENT_TIMESTAMP'" => 'DEFAULT CURRENT_TIMESTAMP',
+            'KEY `status_types_code_unique` (`code`)' => 'UNIQUE KEY `status_types_code_unique` (`code`)',
+            'KEY `status_types_name_unique` (`name`)' => 'UNIQUE KEY `status_types_name_unique` (`name`)',
+        ]);
     }
 
     public function down(PDO $connection): void
     {
-        $connection->exec('DROP TABLE IF EXISTS status_types');
+        (new Schema())->drop('status_types');
     }
 
     public function version(): string
     {
         return '002_create_status_types_table';
+    }
+
+    private function createTable(PDO $connection, string $table, callable $callback, array $replacements = []): void
+    {
+        $builder = new \Core\Database\Schema\SchemaBuilder();
+        $blueprint = new Blueprint($table);
+        $callback($blueprint);
+
+        $compileMethod = new \ReflectionMethod($builder, 'compileCreateTable');
+        $compileMethod->setAccessible(true);
+        $sql = $compileMethod->invoke($builder, $blueprint);
+
+        foreach ($replacements as $search => $replace) {
+            $sql = str_replace($search, $replace, $sql);
+        }
+
+        $connection->exec($sql);
     }
 }

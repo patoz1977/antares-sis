@@ -3,43 +3,63 @@
 declare(strict_types=1);
 
 use Core\Database\Migration;
+use Core\Database\Schema\Blueprint;
+use Core\Database\Schema\Schema;
 
 final class CreateStatusesTable extends Migration
 {
     public function up(PDO $connection): void
     {
-        $connection->exec(
-            'CREATE TABLE IF NOT EXISTS statuses ('
-            . 'id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,'
-            . 'status_type_id BIGINT UNSIGNED NOT NULL,'
-            . 'code VARCHAR(50) NOT NULL,'
-            . 'name VARCHAR(100) NOT NULL,'
-            . 'description VARCHAR(255) DEFAULT NULL,'
-            . 'display_order SMALLINT UNSIGNED NOT NULL,'
-            . 'color VARCHAR(20) DEFAULT NULL,'
-            . 'is_default BOOLEAN NOT NULL DEFAULT FALSE,'
-            . 'is_terminal BOOLEAN NOT NULL DEFAULT FALSE,'
-            . 'created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,'
-            . 'updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,'
-            . 'deleted_at TIMESTAMP NULL DEFAULT NULL,'
-            . 'created_by BIGINT UNSIGNED DEFAULT NULL,'
-            . 'updated_by BIGINT UNSIGNED DEFAULT NULL,'
-            . 'deleted_by BIGINT UNSIGNED DEFAULT NULL,'
-            . 'PRIMARY KEY (id),'
-            . 'UNIQUE KEY statuses_type_code_unique (status_type_id, code),'
-            . 'KEY statuses_status_type_id_idx (status_type_id),'
-            . 'KEY statuses_display_order_idx (display_order)'
-            . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
-        );
+        $this->createTable($connection, 'statuses', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('status_type_id');
+            $table->string('code', 50);
+            $table->string('name', 100);
+            $table->string('description', 255)->nullable();
+            $table->unsignedInteger('display_order', 5);
+            $table->string('color', 20)->nullable();
+            $table->boolean('is_default')->default(false);
+            $table->boolean('is_terminal')->default(false);
+            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('updated_at')->default('CURRENT_TIMESTAMP');
+            $table->timestamp('deleted_at')->nullable();
+            $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->index(['status_type_id', 'code'], 'statuses_type_code_unique');
+            $table->index('status_type_id', 'statuses_status_type_id_idx');
+            $table->index('display_order', 'statuses_display_order_idx');
+        }, [
+            "DEFAULT 'CURRENT_TIMESTAMP'" => 'DEFAULT CURRENT_TIMESTAMP',
+            'KEY `statuses_type_code_unique` (`status_type_id`, `code`)' => 'UNIQUE KEY `statuses_type_code_unique` (`status_type_id`, `code`)',
+            '`display_order` INT(5) UNSIGNED NOT NULL' => '`display_order` SMALLINT UNSIGNED NOT NULL',
+        ]);
     }
 
     public function down(PDO $connection): void
     {
-        $connection->exec('DROP TABLE IF EXISTS statuses');
+        (new Schema())->drop('statuses');
     }
 
     public function version(): string
     {
         return '003_create_statuses_table';
+    }
+
+    private function createTable(PDO $connection, string $table, callable $callback, array $replacements = []): void
+    {
+        $builder = new \Core\Database\Schema\SchemaBuilder();
+        $blueprint = new Blueprint($table);
+        $callback($blueprint);
+
+        $compileMethod = new \ReflectionMethod($builder, 'compileCreateTable');
+        $compileMethod->setAccessible(true);
+        $sql = $compileMethod->invoke($builder, $blueprint);
+
+        foreach ($replacements as $search => $replace) {
+            $sql = str_replace($search, $replace, $sql);
+        }
+
+        $connection->exec($sql);
     }
 }
