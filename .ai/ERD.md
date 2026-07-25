@@ -193,7 +193,7 @@ erDiagram
 
     FAMILY ||--o{ REPRESENTATIVE : contains
 
-    FAMILY ||--|{ STUDENT : contains
+    FAMILY }o--o{ STUDENT : groups
 
     STUDENT ||--o| MEDICAL_RECORD : has
 
@@ -266,7 +266,7 @@ Los diagramas físicos utilizan las siguientes convenciones:
 
 ---
 
-# 11. Catálogos Base
+# 11. Catálogos
 
 ```mermaid
 erDiagram
@@ -305,6 +305,90 @@ erDiagram
 
     }
 
+    document_types {
+
+        BIGINT id PK
+
+        VARCHAR code
+
+        VARCHAR name
+
+        VARCHAR description
+
+        SMALLINT display_order
+
+    }
+
+    genders {
+
+        BIGINT id PK
+
+        VARCHAR code
+
+        VARCHAR name
+
+        VARCHAR description
+
+        SMALLINT display_order
+
+    }
+
+    nationalities {
+
+        BIGINT id PK
+
+        VARCHAR code
+
+        VARCHAR name
+
+        VARCHAR description
+
+        SMALLINT display_order
+
+    }
+
+    relationship_types {
+
+        BIGINT id PK
+
+        VARCHAR code
+
+        VARCHAR name
+
+        VARCHAR description
+
+        SMALLINT display_order
+
+    }
+
+    blood_types {
+
+        BIGINT id PK
+
+        VARCHAR code
+
+        VARCHAR name
+
+        VARCHAR description
+
+        SMALLINT display_order
+
+    }
+
+    transport_types {
+
+        BIGINT id PK
+
+        VARCHAR code
+
+        VARCHAR name
+
+        VARCHAR description
+
+        SMALLINT display_order
+
+    }
+
     status_types ||--o{ statuses : defines
 ```
 
@@ -316,6 +400,24 @@ erDiagram
 erDiagram
 
     statuses {
+
+        BIGINT id PK
+
+    }
+
+    document_types {
+
+        BIGINT id PK
+
+    }
+
+    genders {
+
+        BIGINT id PK
+
+    }
+
+    nationalities {
 
         BIGINT id PK
 
@@ -387,6 +489,12 @@ erDiagram
 
     statuses ||--o{ users : status
 
+    document_types ||--o{ persons : document_type
+
+    genders ||--o{ persons : gender
+
+    nationalities ||--o{ persons : nationality
+
     persons ||--o| users : account
 ```
 
@@ -414,6 +522,12 @@ erDiagram
     }
 
     persons {
+
+        BIGINT id PK
+
+    }
+
+    relationship_types {
 
         BIGINT id PK
 
@@ -499,6 +613,8 @@ erDiagram
 
     representatives ||--o{ family_representatives : belongs
 
+    relationship_types ||--o{ family_representatives : relationship
+
     families ||--o{ family_students : contains
 
     students ||--o{ family_students : belongs
@@ -527,6 +643,24 @@ erDiagram
     }
 
     persons {
+
+        BIGINT id PK
+
+    }
+
+    relationship_types {
+
+        BIGINT id PK
+
+    }
+
+    blood_types {
+
+        BIGINT id PK
+
+    }
+
+    transport_types {
 
         BIGINT id PK
 
@@ -634,15 +768,23 @@ erDiagram
 
     students ||--o| medical_records : medical_record
 
+    blood_types ||--o{ medical_records : blood_type
+
     students ||--o{ student_emergency_contacts : emergency_contact
 
     persons ||--o{ student_emergency_contacts : contact
+
+    relationship_types ||--o{ student_emergency_contacts : relationship
 
     students ||--o{ student_authorized_pickups : authorized_pickup
 
     persons ||--o{ student_authorized_pickups : authorized_person
 
+    relationship_types ||--o{ student_authorized_pickups : relationship
+
     students ||--o| transports : transport
+
+    transport_types ||--o{ transports : transport_type
 ```
 
 ---
@@ -660,12 +802,21 @@ erDiagram
 
 # 15. Vista General del Modelo Físico
 
-La organización física del modelo del MVP se encuentra estructurada en cuatro dominios:
+La organización física del modelo del MVP se encuentra estructurada en cinco dominios:
 
 ## Catálogos Base
 
 - status_types
 - statuses
+
+## Catálogos Generales y Funcionales
+
+- document_types
+- genders
+- nationalities
+- relationship_types
+- blood_types
+- transport_types
 
 ## Identity
 
@@ -707,6 +858,15 @@ statuses
         ├──────────────► student_emergency_contacts
         ├──────────────► student_authorized_pickups
         └──────────────► transports
+
+    document_types ───────► persons
+    genders ──────────────► persons
+    nationalities ────────► persons
+    relationship_types ───► family_representatives
+    relationship_types ───► student_emergency_contacts
+    relationship_types ───► student_authorized_pickups
+    blood_types ──────────► medical_records
+    transport_types ──────► transports
 
 persons
     ├────────► users
@@ -751,6 +911,12 @@ Su finalidad es representar gráficamente el esquema relacional aprobado para el
 | Transport | transports |
 | Emergency Contact | student_emergency_contacts |
 | Authorized Pickup | student_authorized_pickups |
+| Document Type | document_types |
+| Gender | genders |
+| Nationality | nationalities |
+| Relationship Type | relationship_types |
+| Blood Type | blood_types |
+| Transport Type | transport_types |
 
 Los Business Roles continúan implementándose mediante tablas independientes que referencian a `persons`, preservando el principio de identidad única del dominio.
 
@@ -777,6 +943,7 @@ Las restricciones, índices, tipos de datos y reglas de auditoría permanecen do
 | Dominio | Tablas |
 |---------|--------|
 | Catálogos Base | status_types, statuses |
+| Catálogos Generales y Funcionales | document_types, genders, nationalities, relationship_types, blood_types, transport_types |
 | Identity | persons, users |
 | Family | families, representatives, family_representatives, family_students |
 | Student Profile | students, medical_records, student_emergency_contacts, student_authorized_pickups, transports |

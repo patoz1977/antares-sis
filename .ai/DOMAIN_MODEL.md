@@ -510,6 +510,7 @@ Estas relaciones permiten:
 - que una Family tenga uno o varios Representatives;
 - que una Family tenga uno o varios Students;
 - que un Representative pueda pertenecer a varias Family cuando las reglas institucionales lo permitan;
+- que un Student pueda pertenecer a varias Family cuando las reglas institucionales lo permitan;
 - que un Student pueda cambiar de Family cuando exista una razón administrativa.
 
 La implementación física de estas asociaciones se documentará en `DATABASE_DESIGN.md`.
@@ -569,6 +570,8 @@ Información propia del estudiante:
 Todo Student pertenece exactamente a una Person.
 
 Todo Student pertenece al menos a una Family.
+
+Un Student puede pertenecer a múltiples Family.
 
 Un Student puede tener varios Representatives mediante la Family.
 
@@ -698,22 +701,238 @@ Este Aggregate centraliza toda la información configurable.
 
 El objetivo es evitar valores codificados ("hardcoded") dentro del dominio.
 
-Ejemplos de catálogos:
+## Entidades del Aggregate
 
-- sexo
-- parentesco
-- tipo de identificación
-- nacionalidad
-- provincias
-- ciudades
-- tipos de sangre
-- aseguradoras
-- niveles educativos
-- grados
-- paralelos
-- estados
+### StatusType
 
-La implementación física se documentará en `CATALOGS.md`.
+Propósito:
+
+Clasificar los tipos de estado reutilizados por múltiples módulos.
+
+Relaciones:
+
+- un StatusType tiene múltiples Status.
+
+Atributos funcionales:
+
+- código
+- nombre
+- descripción
+
+Restricciones:
+
+- código único
+- nombre único
+
+Reglas de negocio:
+
+- un StatusType no puede eliminarse cuando existan Status asociados.
+
+---
+
+### Status
+
+Propósito:
+
+Representar estados configurables para entidades del dominio.
+
+Relaciones:
+
+- todo Status pertenece a un StatusType.
+
+Atributos funcionales:
+
+- código
+- nombre
+- descripción
+- orden de visualización
+- estado por defecto
+- estado terminal
+- color de referencia
+
+Restricciones:
+
+- código único dentro de su StatusType
+- orden único dentro de su StatusType
+- máximo un estado por defecto por StatusType
+
+Reglas de negocio:
+
+- las entidades con ciclo de vida utilizan un único campo status_id.
+
+---
+
+### DocumentType
+
+Propósito:
+
+Clasificar los documentos de identidad aceptados para Person.
+
+Relaciones:
+
+- puede ser utilizado por múltiples Person.
+
+Atributos funcionales:
+
+- código
+- nombre
+- descripción
+- orden de visualización
+
+Restricciones:
+
+- código único
+- nombre único
+
+Reglas de negocio:
+
+- toda Person debe utilizar un DocumentType válido.
+
+---
+
+### Gender
+
+Propósito:
+
+Clasificar la información de género asociada a Person.
+
+Relaciones:
+
+- puede ser utilizado por múltiples Person.
+
+Atributos funcionales:
+
+- código
+- nombre
+- descripción
+- orden de visualización
+
+Restricciones:
+
+- código único
+- nombre único
+
+Reglas de negocio:
+
+- el valor de género pertenece a Person y nunca a sus roles.
+
+---
+
+### Nationality
+
+Propósito:
+
+Clasificar la nacionalidad asociada a Person.
+
+Relaciones:
+
+- puede ser utilizado por múltiples Person.
+
+Atributos funcionales:
+
+- código
+- nombre
+- descripción
+- orden de visualización
+
+Restricciones:
+
+- código único
+- nombre único
+
+Reglas de negocio:
+
+- la nacionalidad se administra como catálogo y no como texto libre.
+
+---
+
+### RelationshipType
+
+Propósito:
+
+Clasificar parentescos y relaciones interpersonales del dominio.
+
+Relaciones:
+
+- puede ser utilizado por FamilyRepresentative.
+- puede ser utilizado por StudentEmergencyContact.
+- puede ser utilizado por StudentAuthorizedPickup.
+
+Atributos funcionales:
+
+- código
+- nombre
+- descripción
+- orden de visualización
+
+Restricciones:
+
+- código único
+- nombre único
+
+Reglas de negocio:
+
+- el tipo de relación pertenece a la asociación, no a Person.
+
+---
+
+### BloodType
+
+Propósito:
+
+Clasificar tipos de sangre para MedicalRecord.
+
+Relaciones:
+
+- puede ser utilizado por múltiples MedicalRecord.
+
+Atributos funcionales:
+
+- código
+- nombre
+- descripción
+- orden de visualización
+
+Restricciones:
+
+- código único
+- nombre único
+
+Reglas de negocio:
+
+- el tipo de sangre pertenece al expediente médico del Student.
+
+---
+
+### TransportType
+
+Propósito:
+
+Clasificar los tipos de transporte escolar.
+
+Relaciones:
+
+- puede ser utilizado por múltiples Transport.
+
+Atributos funcionales:
+
+- código
+- nombre
+- descripción
+- orden de visualización
+
+Restricciones:
+
+- código único
+- nombre único
+
+Reglas de negocio:
+
+- todo Transport debe referenciar un TransportType válido.
+
+---
+
+La implementación física oficial de estos catálogos se encuentra en `DATABASE_DESIGN.md` y su representación gráfica en `ERD.md`.
 
 ---
 
@@ -803,6 +1022,7 @@ Las siguientes reglas son invariantes del modelo y deberán respetarse durante t
 
 - Todo Student pertenece a una Person.
 - Todo Student pertenece al menos a una Family.
+- Un Student puede pertenecer a múltiples Family mediante entidades asociativas.
 - Un Student puede estar asociado a varios Representatives a través de su Family.
 - Ningún dato personal del estudiante debe duplicarse fuera de Person.
 

@@ -424,7 +424,16 @@ Se incorporará en el módulo correspondiente.
 
 ## Catalogs
 
-Se documentará en `CATALOGS.md`.
+Tablas incluidas en este documento para garantizar trazabilidad completa del modelo físico:
+
+- status_types
+- statuses
+- document_types
+- genders
+- nationalities
+- relationship_types
+- blood_types
+- transport_types
 
 ---
 
@@ -803,6 +812,516 @@ status_id
 ```
 
 que referenciará esta tabla.
+
+---
+
+# Tabla: document_types
+
+## Propósito
+
+Definir los tipos de documento de identidad permitidos para las personas del sistema.
+
+---
+
+## Responsabilidad
+
+Normalizar la clasificación de documentos utilizada por `persons`.
+
+---
+
+## Columnas
+
+| Campo | Tipo | Null | Descripción |
+|--------|------|------|-------------|
+| id | BIGINT UNSIGNED | No | Clave primaria. |
+| code | VARCHAR(50) | No | Código único del tipo de documento. |
+| name | VARCHAR(100) | No | Nombre visible. |
+| description | VARCHAR(255) | Sí | Descripción opcional. |
+| display_order | SMALLINT UNSIGNED | Sí | Orden de presentación. |
+| created_at | TIMESTAMP | No | Auditoría. |
+| updated_at | TIMESTAMP | No | Auditoría. |
+| deleted_at | TIMESTAMP | Sí | Soft Delete. |
+| created_by | BIGINT UNSIGNED | Sí | Usuario creador. |
+| updated_by | BIGINT UNSIGNED | Sí | Usuario modificador. |
+| deleted_by | BIGINT UNSIGNED | Sí | Usuario eliminador. |
+
+---
+
+## Clave Primaria
+
+```text
+id
+```
+
+---
+
+## Claves Foráneas
+
+```text
+created_by → users.id
+
+updated_by → users.id
+
+deleted_by → users.id
+```
+
+---
+
+## Restricciones
+
+- code debe ser único.
+- name debe ser único.
+
+---
+
+## Índices
+
+- PK(id)
+- UK(code)
+- UK(name)
+- IDX(display_order)
+
+---
+
+## Relaciones
+
+```text
+document_types (1)
+      │
+      └──────< persons (N)
+```
+
+---
+
+## Observaciones
+
+Este catálogo se utiliza exclusivamente para clasificar el documento de identidad en `persons.document_type_id`.
+
+---
+
+# Tabla: genders
+
+## Propósito
+
+Definir las opciones de género disponibles para registro de personas.
+
+---
+
+## Responsabilidad
+
+Normalizar el atributo de género utilizado por `persons`.
+
+---
+
+## Columnas
+
+| Campo | Tipo | Null | Descripción |
+|--------|------|------|-------------|
+| id | BIGINT UNSIGNED | No | Clave primaria. |
+| code | VARCHAR(50) | No | Código único. |
+| name | VARCHAR(100) | No | Nombre visible. |
+| description | VARCHAR(255) | Sí | Descripción opcional. |
+| display_order | SMALLINT UNSIGNED | Sí | Orden de presentación. |
+| created_at | TIMESTAMP | No | Auditoría. |
+| updated_at | TIMESTAMP | No | Auditoría. |
+| deleted_at | TIMESTAMP | Sí | Soft Delete. |
+| created_by | BIGINT UNSIGNED | Sí | Usuario creador. |
+| updated_by | BIGINT UNSIGNED | Sí | Usuario modificador. |
+| deleted_by | BIGINT UNSIGNED | Sí | Usuario eliminador. |
+
+---
+
+## Clave Primaria
+
+```text
+id
+```
+
+---
+
+## Claves Foráneas
+
+```text
+created_by → users.id
+
+updated_by → users.id
+
+deleted_by → users.id
+```
+
+---
+
+## Restricciones
+
+- code debe ser único.
+- name debe ser único.
+
+---
+
+## Índices
+
+- PK(id)
+- UK(code)
+- UK(name)
+- IDX(display_order)
+
+---
+
+## Relaciones
+
+```text
+genders (1)
+    │
+    └──────< persons (N)
+```
+
+---
+
+## Observaciones
+
+La relación con `persons` es opcional a nivel físico mediante `persons.gender_id` nullable.
+
+---
+
+# Tabla: nationalities
+
+## Propósito
+
+Definir las nacionalidades disponibles para las personas registradas en el sistema.
+
+---
+
+## Responsabilidad
+
+Normalizar el atributo de nacionalidad utilizado por `persons`.
+
+---
+
+## Columnas
+
+| Campo | Tipo | Null | Descripción |
+|--------|------|------|-------------|
+| id | BIGINT UNSIGNED | No | Clave primaria. |
+| code | VARCHAR(50) | No | Código único. |
+| name | VARCHAR(100) | No | Nombre visible. |
+| description | VARCHAR(255) | Sí | Descripción opcional. |
+| display_order | SMALLINT UNSIGNED | Sí | Orden de presentación. |
+| created_at | TIMESTAMP | No | Auditoría. |
+| updated_at | TIMESTAMP | No | Auditoría. |
+| deleted_at | TIMESTAMP | Sí | Soft Delete. |
+| created_by | BIGINT UNSIGNED | Sí | Usuario creador. |
+| updated_by | BIGINT UNSIGNED | Sí | Usuario modificador. |
+| deleted_by | BIGINT UNSIGNED | Sí | Usuario eliminador. |
+
+---
+
+## Clave Primaria
+
+```text
+id
+```
+
+---
+
+## Claves Foráneas
+
+```text
+created_by → users.id
+
+updated_by → users.id
+
+deleted_by → users.id
+```
+
+---
+
+## Restricciones
+
+- code debe ser único.
+- name debe ser único.
+
+---
+
+## Índices
+
+- PK(id)
+- UK(code)
+- UK(name)
+- IDX(display_order)
+
+---
+
+## Relaciones
+
+```text
+nationalities (1)
+      │
+      └──────< persons (N)
+```
+
+---
+
+## Observaciones
+
+La relación con `persons` es opcional a nivel físico mediante `persons.nationality_id` nullable.
+
+---
+
+# Tabla: relationship_types
+
+## Propósito
+
+Definir los tipos de relación interpersonal usados en asociaciones familiares y del perfil del estudiante.
+
+---
+
+## Responsabilidad
+
+Unificar la clasificación de parentescos y relaciones en:
+
+- family_representatives
+- student_emergency_contacts
+- student_authorized_pickups
+
+---
+
+## Columnas
+
+| Campo | Tipo | Null | Descripción |
+|--------|------|------|-------------|
+| id | BIGINT UNSIGNED | No | Clave primaria. |
+| code | VARCHAR(50) | No | Código único. |
+| name | VARCHAR(100) | No | Nombre visible. |
+| description | VARCHAR(255) | Sí | Descripción opcional. |
+| display_order | SMALLINT UNSIGNED | Sí | Orden de presentación. |
+| created_at | TIMESTAMP | No | Auditoría. |
+| updated_at | TIMESTAMP | No | Auditoría. |
+| deleted_at | TIMESTAMP | Sí | Soft Delete. |
+| created_by | BIGINT UNSIGNED | Sí | Usuario creador. |
+| updated_by | BIGINT UNSIGNED | Sí | Usuario modificador. |
+| deleted_by | BIGINT UNSIGNED | Sí | Usuario eliminador. |
+
+---
+
+## Clave Primaria
+
+```text
+id
+```
+
+---
+
+## Claves Foráneas
+
+```text
+created_by → users.id
+
+updated_by → users.id
+
+deleted_by → users.id
+```
+
+---
+
+## Restricciones
+
+- code debe ser único.
+- name debe ser único.
+
+---
+
+## Índices
+
+- PK(id)
+- UK(code)
+- UK(name)
+- IDX(display_order)
+
+---
+
+## Relaciones
+
+```text
+relationship_types (1)
+       │
+       ├──────< family_representatives (N)
+       ├──────< student_emergency_contacts (N)
+       └──────< student_authorized_pickups (N)
+```
+
+---
+
+## Observaciones
+
+Las tres FK hacia `relationship_types` son opcionales a nivel físico (nullable) para permitir registros transitorios cuando el tipo de relación aún no se haya especificado.
+
+---
+
+# Tabla: blood_types
+
+## Propósito
+
+Definir los tipos de sangre disponibles para el expediente médico del estudiante.
+
+---
+
+## Responsabilidad
+
+Normalizar el valor de tipo de sangre utilizado por `medical_records`.
+
+---
+
+## Columnas
+
+| Campo | Tipo | Null | Descripción |
+|--------|------|------|-------------|
+| id | BIGINT UNSIGNED | No | Clave primaria. |
+| code | VARCHAR(50) | No | Código único. |
+| name | VARCHAR(100) | No | Nombre visible. |
+| description | VARCHAR(255) | Sí | Descripción opcional. |
+| display_order | SMALLINT UNSIGNED | Sí | Orden de presentación. |
+| created_at | TIMESTAMP | No | Auditoría. |
+| updated_at | TIMESTAMP | No | Auditoría. |
+| deleted_at | TIMESTAMP | Sí | Soft Delete. |
+| created_by | BIGINT UNSIGNED | Sí | Usuario creador. |
+| updated_by | BIGINT UNSIGNED | Sí | Usuario modificador. |
+| deleted_by | BIGINT UNSIGNED | Sí | Usuario eliminador. |
+
+---
+
+## Clave Primaria
+
+```text
+id
+```
+
+---
+
+## Claves Foráneas
+
+```text
+created_by → users.id
+
+updated_by → users.id
+
+deleted_by → users.id
+```
+
+---
+
+## Restricciones
+
+- code debe ser único.
+- name debe ser único.
+
+---
+
+## Índices
+
+- PK(id)
+- UK(code)
+- UK(name)
+- IDX(display_order)
+
+---
+
+## Relaciones
+
+```text
+blood_types (1)
+     │
+     └──────< medical_records (N)
+```
+
+---
+
+## Observaciones
+
+La relación con `medical_records` es opcional a nivel físico mediante `medical_records.blood_type_id` nullable.
+
+---
+
+# Tabla: transport_types
+
+## Propósito
+
+Definir los tipos de transporte escolar permitidos por el sistema.
+
+---
+
+## Responsabilidad
+
+Normalizar el tipo de transporte utilizado por `transports`.
+
+---
+
+## Columnas
+
+| Campo | Tipo | Null | Descripción |
+|--------|------|------|-------------|
+| id | BIGINT UNSIGNED | No | Clave primaria. |
+| code | VARCHAR(50) | No | Código único. |
+| name | VARCHAR(100) | No | Nombre visible. |
+| description | VARCHAR(255) | Sí | Descripción opcional. |
+| display_order | SMALLINT UNSIGNED | Sí | Orden de presentación. |
+| created_at | TIMESTAMP | No | Auditoría. |
+| updated_at | TIMESTAMP | No | Auditoría. |
+| deleted_at | TIMESTAMP | Sí | Soft Delete. |
+| created_by | BIGINT UNSIGNED | Sí | Usuario creador. |
+| updated_by | BIGINT UNSIGNED | Sí | Usuario modificador. |
+| deleted_by | BIGINT UNSIGNED | Sí | Usuario eliminador. |
+
+---
+
+## Clave Primaria
+
+```text
+id
+```
+
+---
+
+## Claves Foráneas
+
+```text
+created_by → users.id
+
+updated_by → users.id
+
+deleted_by → users.id
+```
+
+---
+
+## Restricciones
+
+- code debe ser único.
+- name debe ser único.
+
+---
+
+## Índices
+
+- PK(id)
+- UK(code)
+- UK(name)
+- IDX(display_order)
+
+---
+
+## Relaciones
+
+```text
+transport_types (1)
+      │
+      └──────< transports (N)
+```
+
+---
+
+## Observaciones
+
+Cada registro de `transports` debe referenciar exactamente un tipo de transporte mediante `transport_type_id`.
 
 ---
 
@@ -1897,6 +2416,18 @@ El modelo físico definido para el módulo E002.1 está compuesto por las siguie
 - status_types
 - statuses
 
+## Catálogos Generales
+
+- document_types
+- genders
+- nationalities
+- relationship_types
+- blood_types
+
+## Catálogos Funcionales
+
+- transport_types
+
 ## Identidad y Autenticación
 
 - persons
@@ -1907,8 +2438,11 @@ El modelo físico definido para el módulo E002.1 está compuesto por las siguie
 - families
 - representatives
 - family_representatives
-- students
 - family_students
+
+## Académico
+
+- students
 
 ## Información del Estudiante
 
