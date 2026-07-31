@@ -11,11 +11,28 @@ use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
 use Core\Foundation\Application;
 use Core\Middleware\AuthenticationMiddleware;
+use Core\Security\AuthenticatedUserProviderInterface;
 use Core\Session\Session;
 use Core\Session\SessionInterface;
-use App\Controllers\AuthenticationController;
 use App\Controllers\FamilyController;
 use App\Controllers\PersonController;
+use App\IdentityAccess\Application\AuthenticationPolicy;
+use App\IdentityAccess\Application\Contract\Clock;
+use App\IdentityAccess\Application\Contract\CsrfTokenManager;
+use App\IdentityAccess\Application\Contract\PasswordHasher;
+use App\IdentityAccess\Application\Contract\SecurityEventLogger;
+use App\IdentityAccess\Application\Contract\SessionManager;
+use App\IdentityAccess\Application\Contract\TransactionManager;
+use App\IdentityAccess\Domain\UserRepository as IdentityUserRepository;
+use App\IdentityAccess\Http\AuthenticationController;
+use App\IdentityAccess\Infrastructure\Logging\ErrorLogSecurityEventLogger;
+use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
+use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
+use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
+use App\IdentityAccess\Infrastructure\Session\PhpSessionManager;
+use App\IdentityAccess\Infrastructure\Session\SessionCsrfTokenManager;
+use App\IdentityAccess\Infrastructure\Time\SystemClock;
+
 use App\Services\AuthenticationService;
 use App\Services\AuthenticationServiceInterface;
 use App\Services\FamilyService;
@@ -103,9 +120,34 @@ $container->singleton(Session::class, Session::class);
 $container->singleton(SessionInterface::class, Session::class);
 $container->singleton(AuthenticationService::class, AuthenticationService::class);
 $container->singleton(AuthenticationServiceInterface::class, AuthenticationService::class);
+$container->singleton(SessionManager::class, PhpSessionManager::class);
+$container->singleton(CsrfTokenManager::class, SessionCsrfTokenManager::class);
+$container->singleton(Clock::class, SystemClock::class);
+$container->singleton(PasswordHasher::class, NativePasswordHasher::class);
+$container->singleton(SecurityEventLogger::class, ErrorLogSecurityEventLogger::class);
+$container->singleton(TransactionManager::class, PdoTransactionManager::class);
+$container->singleton(IdentityUserRepository::class, PdoUserRepository::class);
+$maximumFailedAttempts = filter_var(
+    $config['auth_max_failed_attempts'],
+    FILTER_VALIDATE_INT,
+    ['options' => ['min_range' => 1]]
+);
+$lockoutDurationSeconds = filter_var(
+    $config['auth_lockout_duration_seconds'],
+    FILTER_VALIDATE_INT,
+    ['options' => ['min_range' => 1]]
+);
+$container->instance(
+    AuthenticationPolicy::class,
+    new AuthenticationPolicy(
+        is_int($maximumFailedAttempts) ? $maximumFailedAttempts : 0,
+        is_int($lockoutDurationSeconds) ? $lockoutDurationSeconds : 0,
+    )
+);
 $container->singleton(FamilyService::class, FamilyService::class);
 $container->singleton(FamilyServiceInterface::class, FamilyService::class);
 $container->singleton(PersonService::class, PersonService::class);
+$container->singleton(AuthenticatedUserProviderInterface::class, AuthenticationService::class);
 $container->singleton(PersonServiceInterface::class, PersonService::class);
 $container->singleton(AuthenticationController::class, AuthenticationController::class);
 $container->singleton(FamilyController::class, FamilyController::class);

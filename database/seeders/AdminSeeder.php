@@ -19,11 +19,6 @@ final class AdminSeeder
 
         $documentTypeId = $this->resolveDocumentTypeId($connection);
 
-        $passwordHash = password_hash('Admin123!', PASSWORD_DEFAULT);
-        if ($passwordHash === false) {
-            return;
-        }
-
         $connection->beginTransaction();
 
         try {
@@ -32,7 +27,6 @@ final class AdminSeeder
                 . '(status_id, document_type_id, document_number, first_name, last_name, email, created_at, updated_at) '
                 . 'VALUES (:statusId, :documentTypeId, :documentNumber, :firstName, :lastName, :email, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) '
                 . 'ON DUPLICATE KEY UPDATE '
-                . 'status_id = VALUES(status_id), '
                 . 'first_name = VALUES(first_name), '
                 . 'last_name = VALUES(last_name), '
                 . 'email = VALUES(email), '
@@ -62,33 +56,56 @@ final class AdminSeeder
                 return;
             }
 
-            $userUpsert = $connection->prepare(
+            $existingUserQuery = $connection->prepare(
+                'SELECT id FROM users '
+                . 'WHERE person_id = :personId OR username = :username LIMIT 1'
+            );
+            $existingUserQuery->execute([
+                ':personId' => (int) $person['id'],
+                ':username' => 'admin',
+            ]);
+
+            if ($existingUserQuery->fetch(PDO::FETCH_ASSOC) !== false) {
+                $connection->commit();
+
+                return;
+            }
+
+            $initialPassword = getenv('E0041_ADMIN_INITIAL_PASSWORD');
+            if (!is_string($initialPassword) || $initialPassword === '') {
+                throw new \RuntimeException(
+                    'E0041_ADMIN_INITIAL_PASSWORD is required to create the administrator user.'
+                );
+            }
+
+            $passwordHash = password_hash($initialPassword, PASSWORD_DEFAULT);
+            if ($passwordHash === false) {
+                throw new \RuntimeException('Unable to hash the initial administrator password.');
+            }
+
+            $userInsert = $connection->prepare(
                 'INSERT INTO users '
-                . '(person_id, status_id, username, email, password_hash, created_at, updated_at) '
-                . 'VALUES (:personId, :statusId, :username, :email, :passwordHash, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) '
-                . 'ON DUPLICATE KEY UPDATE '
-                . 'person_id = VALUES(person_id), '
-                . 'status_id = VALUES(status_id), '
-                . 'email = VALUES(email), '
-                . 'password_hash = VALUES(password_hash), '
-                . 'updated_at = CURRENT_TIMESTAMP'
+                . '(person_id, status_id, username, email, login_identifier, normalized_login_identifier, password_hash, created_at, updated_at) '
+                . 'VALUES (:personId, :statusId, :username, :email, :loginIdentifier, :normalizedLoginIdentifier, :passwordHash, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
             );
 
-            $userUpsert->execute([
+            $userInsert->execute([
                 ':personId' => (int) $person['id'],
                 ':statusId' => $userStatusId,
                 ':username' => 'admin',
                 ':email' => 'admin@example.com',
+                ':loginIdentifier' => 'admin',
+                ':normalizedLoginIdentifier' => 'admin',
                 ':passwordHash' => $passwordHash,
             ]);
 
             $connection->commit();
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
             if ($connection->inTransaction()) {
                 $connection->rollBack();
             }
 
-            throw new \RuntimeException('Unable to seed administrator user.');
+            throw new \RuntimeException('Unable to seed administrator user.', previous: $exception);
         }
     }
 

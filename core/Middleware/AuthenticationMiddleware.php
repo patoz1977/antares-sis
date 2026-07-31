@@ -4,21 +4,21 @@ declare(strict_types=1);
 
 namespace Core\Middleware;
 
-use App\Services\AuthenticationServiceInterface;
 use Closure;
 use Core\Http\Request;
 use Core\Http\Response;
+use Core\Security\AuthenticatedUserProviderInterface;
 
 final class AuthenticationMiddleware implements MiddlewareInterface
 {
     public function __construct(
-        private AuthenticationServiceInterface $authenticationService
+        private AuthenticatedUserProviderInterface $authenticatedUserProvider
     ) {
     }
 
     public function handle(Request $request, Closure $next): Response
     {
-        if ($this->authenticationService->check()) {
+        if ($this->authenticatedUserProvider->check()) {
             return $next($request);
         }
 
