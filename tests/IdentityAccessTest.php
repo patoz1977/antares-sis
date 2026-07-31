@@ -112,10 +112,12 @@ function registerIdentityAccessTests(TestRunner $runner): void
     });
 
     $runner->add('unknown identifier returns generic failure', function (): void {
-        [$useCase] = authenticationFixture(null);
+        $hasher = new CountingPasswordHasher();
+        [$useCase] = authenticationFixture(null, passwordHasher: $hasher);
         $result = $useCase->handle('missing', 'wrong');
         assertSameValue(false, $result->isSuccessful());
         assertSameValue('Invalid credentials.', $result->externalMessage());
+        assertSameValue(1, $hasher->verifications);
     });
 
     $runner->add('wrong password persists failed attempt', function (): void {
@@ -127,13 +129,16 @@ function registerIdentityAccessTests(TestRunner $runner): void
     });
 
     $runner->add('disabled user returns same generic failure', function (): void {
+        $hasher = new CountingPasswordHasher();
         [$useCase, $repository] = authenticationFixture(
-            testUser(UserStatus::Disabled)
+            testUser(UserStatus::Disabled),
+            passwordHasher: $hasher,
         );
         $result = $useCase->handle('admin', 'correct-password');
         assertSameValue(false, $result->isSuccessful());
         assertSameValue('Invalid credentials.', $result->externalMessage());
         assertSameValue(0, $repository->saves);
+        assertSameValue(1, $hasher->verifications);
     });
 
     $runner->add('fifth application failure activates lock', function (): void {
@@ -148,8 +153,10 @@ function registerIdentityAccessTests(TestRunner $runner): void
 
     $runner->add('correct password during lock does not authenticate or extend', function (): void {
         $lockedAt = testNow()->modify('-100 seconds');
+        $hasher = new CountingPasswordHasher();
         [$useCase, $repository, $session] = authenticationFixture(
-            testUser(UserStatus::Active, 5, $lockedAt)
+            testUser(UserStatus::Active, 5, $lockedAt),
+            passwordHasher: $hasher,
         );
         $result = $useCase->handle('admin', 'correct-password');
         assertSameValue(false, $result->isSuccessful());
@@ -157,6 +164,14 @@ function registerIdentityAccessTests(TestRunner $runner): void
         assertSameValue(5, $repository->user->failedLoginAttempts());
         assertSameValue($lockedAt->getTimestamp(), $repository->user->lockedAt()?->getTimestamp());
         assertSameValue(0, $repository->saves);
+        assertSameValue(1, $hasher->verifications);
+    });
+
+    $runner->add('active authentication performs exactly one password verification', function (): void {
+        $hasher = new CountingPasswordHasher();
+        [$useCase] = authenticationFixture(passwordHasher: $hasher);
+        assertSameValue(true, $useCase->handle('admin', 'correct-password')->isSuccessful());
+        assertSameValue(1, $hasher->verifications);
     });
 
     $runner->add('correct attempt after expiration authenticates', function (): void {
@@ -299,6 +314,14 @@ function registerIdentityAccessTests(TestRunner $runner): void
         assertContainsText('LEGACY_LOCKOUT_DURATION_SECONDS = 900', $migration);
     });
 
+    $runner->add('migration 014 rejects destructive rollback', function (): void {
+        require_once __DIR__ . '/../database/migrations/014_create_identity_access_baseline.php';
+        assertThrows(
+            fn () => (new \CreateIdentityAccessBaseline())->down(new PDO('sqlite::memory:')),
+            RuntimeException::class
+        );
+    });
+
     $runner->add('active HTTP routes use only module authentication controller', function (): void {
         $routes = file_get_contents(__DIR__ . '/../routes/web.php');
         assertContainsText(
@@ -335,7 +358,8 @@ function testUser(
 
 function authenticationFixture(
     User|null|false $user = false,
-    ?AuthenticationPolicy $policy = null
+    ?AuthenticationPolicy $policy = null,
+    ?PasswordHasher $passwordHasher = null,
 ): array {
     $resolvedUser = $user === false ? testUser() : $user;
     $repository = new InMemoryUserRepository($resolvedUser);
@@ -344,7 +368,7 @@ function authenticationFixture(
 
     $useCase = new AuthenticateUser(
         $repository,
-        new NativePasswordHasher(),
+        $passwordHasher ?? new NativePasswordHasher(),
         $session,
         new ImmediateTransactionManager(),
         new FrozenClock(testNow()),
@@ -472,6 +496,11 @@ final class InMemoryUserRepository implements UserRepository
         return $this->user;
     }
 
+    public function findByLoginIdentifierForUpdate(LoginIdentifier $identifier): ?User
+    {
+        return $this->findByLoginIdentifier($identifier);
+    }
+
     public function findById(UserId $id): ?User
     {
         return $this->user?->id()->value() === $id->value() ? $this->user : null;
@@ -520,6 +549,25 @@ final class FakeSessionManager implements SessionManager
         $this->destructions++;
         $this->userId = null;
         $this->values = [];
+    }
+}
+
+final class CountingPasswordHasher implements PasswordHasher
+{
+    public int $verifications = 0;
+
+    private NativePasswordHasher $delegate;
+
+    public function __construct()
+    {
+        $this->delegate = new NativePasswordHasher();
+    }
+
+    public function verify(string $plainTextPassword, string $passwordHash): bool
+    {
+        $this->verifications++;
+
+        return $this->delegate->verify($plainTextPassword, $passwordHash);
     }
 }
 

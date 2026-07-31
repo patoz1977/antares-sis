@@ -16,9 +16,11 @@
     "require-dev": {},
     "scripts": {
         "test": [
+            "@composer dump-autoload --dev --optimize --strict-psr",
             "@php tests/run.php",
             "@php tests/HttpSessionIntegrationTest.php"
-        ]
+        ],
+        "test:mariadb": "@php tests/MysqlMigrationIntegrationTest.php"
     },
     "autoload": {
         "psr-4": {
