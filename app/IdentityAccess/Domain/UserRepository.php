@@ -11,6 +11,8 @@ interface UserRepository
 {
     public function findByLoginIdentifier(LoginIdentifier $identifier): ?User;
 
+    public function findByLoginIdentifierForUpdate(LoginIdentifier $identifier): ?User;
+
     public function findById(UserId $id): ?User;
 
     public function save(User $user): void;

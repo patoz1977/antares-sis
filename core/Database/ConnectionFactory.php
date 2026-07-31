@@ -26,8 +26,19 @@ final class ConnectionFactory
             PDO::ATTR_EMULATE_PREPARES => false,
         ];
 
+        if ($config->driver() === 'mysql') {
+            $options[PDO::MYSQL_ATTR_FOUND_ROWS] = true;
+        }
+
         try {
-            return new PDO($dsn, $config->username(), $config->password(), $options);
+            $connection = new PDO($dsn, $config->username(), $config->password(), $options);
+
+            if ($config->driver() === 'mysql') {
+                // Identity timestamps are persisted and read as UTC regardless of deployment timezone.
+                $connection->exec("SET time_zone = '+00:00'");
+            }
+
+            return $connection;
         } catch (PDOException $exception) {
             throw new DatabaseException('Database connection failed.', previous: $exception);
         }

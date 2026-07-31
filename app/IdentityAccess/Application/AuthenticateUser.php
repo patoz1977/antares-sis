@@ -10,7 +10,6 @@ use App\IdentityAccess\Application\Contract\SecurityEventLogger;
 use App\IdentityAccess\Application\Contract\SessionManager;
 use App\IdentityAccess\Application\Contract\TransactionManager;
 use App\IdentityAccess\Domain\Exception\InvalidUserState;
-use App\IdentityAccess\Domain\User;
 use App\IdentityAccess\Domain\UserRepository;
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
 
@@ -40,20 +39,11 @@ final class AuthenticateUser
             return AuthenticationResult::failure();
         }
 
-        $user = $this->users->findByLoginIdentifier($identifier);
-
-        if ($user === null) {
-            $this->passwordHasher->verify($password, self::DUMMY_PASSWORD_HASH);
-            $this->securityEvents->record('authentication.failed');
-
-            return AuthenticationResult::failure();
-        }
-
         $events = [];
 
-        $successful = $this->transactions->transactional(
-            function () use ($user, $password, &$events): bool {
-                return $this->authenticateWithinTransaction($user, $password, $events);
+        $authenticatedUserId = $this->transactions->transactional(
+            function () use ($identifier, $password, &$events): ?int {
+                return $this->authenticateWithinTransaction($identifier, $password, $events);
             }
         );
 
@@ -61,31 +51,45 @@ final class AuthenticateUser
             $this->securityEvents->record($event);
         }
 
-        if (!$successful) {
+        if ($authenticatedUserId === null) {
             return AuthenticationResult::failure();
         }
 
-        $userId = $user->id()->value();
-        $this->session->regenerateForUser($userId);
+        $this->session->regenerateForUser($authenticatedUserId);
         $this->securityEvents->record('authentication.succeeded');
 
-        return AuthenticationResult::success($userId);
+        return AuthenticationResult::success($authenticatedUserId);
     }
 
-    private function authenticateWithinTransaction(User $user, string $password, array &$events): bool
-    {
+    private function authenticateWithinTransaction(
+        LoginIdentifier $identifier,
+        string $password,
+        array &$events
+    ): ?int {
+        $user = $this->users->findByLoginIdentifierForUpdate($identifier);
+        $passwordMatches = $this->passwordHasher->verify(
+            $password,
+            $user?->passwordHash()->value() ?? self::DUMMY_PASSWORD_HASH
+        );
+
+        if ($user === null) {
+            $events[] = 'authentication.failed';
+
+            return null;
+        }
+
         $now = $this->clock->now();
 
         if ($user->isDisabled()) {
             $events[] = 'authentication.failed';
 
-            return false;
+            return null;
         }
 
         if ($user->isTemporarilyLocked($now, $this->policy->lockoutDurationSeconds())) {
             $events[] = 'authentication.blocked';
 
-            return false;
+            return null;
         }
 
         if ($user->clearExpiredLock($now, $this->policy->lockoutDurationSeconds())) {
@@ -93,7 +97,7 @@ final class AuthenticateUser
             $events[] = 'authentication.lock_expired';
         }
 
-        if (!$this->passwordHasher->verify($password, $user->passwordHash()->value())) {
+        if (!$passwordMatches) {
             $lockActivated = $user->recordFailedLogin(
                 $now,
                 $this->policy->maximumFailedAttempts()
@@ -105,12 +109,12 @@ final class AuthenticateUser
                 $events[] = 'authentication.lock_activated';
             }
 
-            return false;
+            return null;
         }
 
         $user->recordSuccessfulAuthentication($now);
         $this->users->save($user);
 
-        return true;
+        return $user->id()->value();
     }
 }

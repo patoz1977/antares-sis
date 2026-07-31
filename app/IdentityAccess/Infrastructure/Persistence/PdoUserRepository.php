@@ -28,10 +28,30 @@ final class PdoUserRepository implements UserRepository
 
     public function findByLoginIdentifier(LoginIdentifier $identifier): ?User
     {
+        return $this->findByLoginIdentifierUsingLock($identifier, false);
+    }
+
+    public function findByLoginIdentifierForUpdate(LoginIdentifier $identifier): ?User
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('User row locking requires an active transaction.');
+        }
+
+        return $this->findByLoginIdentifierUsingLock($identifier, true);
+    }
+
+    private function findByLoginIdentifierUsingLock(
+        LoginIdentifier $identifier,
+        bool $forUpdate
+    ): ?User
+    {
         $statement = $this->connection->prepare(
             $this->selectSql()
             . ' WHERE u.normalized_login_identifier = :identifier'
             . ' AND u.deleted_at IS NULL LIMIT 1'
+            . ($forUpdate && $this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
+                ? ' FOR UPDATE'
+                : '')
         );
         $statement->execute([':identifier' => $identifier->value()]);
 
@@ -63,8 +83,8 @@ final class PdoUserRepository implements UserRepository
             ':id' => $user->id()->value(),
         ]);
 
-        if ($statement->rowCount() > 1) {
-            throw new RuntimeException('Unexpected number of updated User rows.');
+        if ($statement->rowCount() !== 1) {
+            throw new RuntimeException('User update failed because the persisted row changed or disappeared.');
         }
     }
 
