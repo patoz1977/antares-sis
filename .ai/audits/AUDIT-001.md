@@ -1,9 +1,9 @@
 # AUDIT-001 | Auditoría de fuentes y reconstrucción documental del dominio de matrícula
 
-**Proyecto:** Antares SIS  
-**Repositorio:** `patoz1977/antares-sis`  
-**Rama auditada:** `docs/enrollment-domain-clean-rebuild`  
-**Fecha:** 2026-07-30  
+**Proyecto:** Antares SIS
+**Repositorio:** `patoz1977/antares-sis`
+**Rama auditada:** `docs/enrollment-domain-clean-rebuild`
+**Fecha:** 2026-07-30
 **Estado:** Propuesta de corrección lista para ejecución ordenada
 
 ---
