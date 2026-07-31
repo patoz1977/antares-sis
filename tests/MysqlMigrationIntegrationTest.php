@@ -56,7 +56,7 @@ $requiredEnvironment = [
     'E0041_DB_PORT',
     'E0041_DB_USERNAME',
     'E0041_DB_PASSWORD',
-    'E0041_DB_DATABASE_PREFIX',
+    'E0041_DB_PREFIX',
 ];
 
 foreach ($requiredEnvironment as $environmentName) {
@@ -65,6 +65,36 @@ foreach ($requiredEnvironment as $environmentName) {
             sprintf('%s is required; .env fallback is intentionally forbidden.', $environmentName)
         );
     }
+}
+
+function isExpectedMariaDbLockException(PDOException $exception): bool
+{
+    $sqlState = $exception->errorInfo[0] ?? (string) $exception->getCode();
+    $driverCode = (int) ($exception->errorInfo[1] ?? 0);
+    $message = strtolower($exception->errorInfo[2] ?? $exception->getMessage());
+
+    // MariaDB 10.4: 1205/HY000 is a lock wait timeout; 1213/40001 is a deadlock victim.
+    return ($sqlState === 'HY000' && $driverCode === 1205 && str_contains($message, 'lock wait timeout'))
+        || ($sqlState === '40001' && $driverCode === 1213 && str_contains($message, 'deadlock'));
+}
+
+/**
+ * @param list<string> $databases
+ * @return list<string>
+ */
+function dropDisposableDatabases(PDO $server, array $databases): array
+{
+    $failures = [];
+
+    foreach (array_reverse($databases) as $database) {
+        try {
+            $server->exec(sprintf('DROP DATABASE IF EXISTS `%s`', $database));
+        } catch (Throwable $exception) {
+            $failures[] = sprintf('%s: %s', $database, $exception->getMessage());
+        }
+    }
+
+    return $failures;
 }
 
 if (getenv('E0041_DB_ALLOW_DISPOSABLE') !== '1') {
@@ -77,22 +107,33 @@ $host = (string) getenv('E0041_DB_HOST');
 $port = (int) getenv('E0041_DB_PORT');
 $username = (string) getenv('E0041_DB_USERNAME');
 $password = (string) getenv('E0041_DB_PASSWORD');
-$databasePrefix = (string) getenv('E0041_DB_DATABASE_PREFIX');
+$databasePrefix = (string) getenv('E0041_DB_PREFIX');
 $charset = 'utf8mb4';
 
 assertIntegration(
     preg_match('/^[a-z][a-z0-9_]{2,30}$/', $databasePrefix) === 1,
-    'E0041_DB_DATABASE_PREFIX must be a safe lowercase disposable prefix.'
+    'E0041_DB_PREFIX must be a safe lowercase disposable prefix.'
 );
-assertIntegration(
-    strtolower($databasePrefix) !== 'ueant' && !str_contains(strtolower($databasePrefix), 'ueant'),
-    'UEAnt is explicitly forbidden for E004.1 integration tests.'
+foreach ([$host, $username, $password, $databasePrefix] as $environmentValue) {
+    assertIntegration(
+        !str_contains(strtolower($environmentValue), 'ueant'),
+        'UEAnt is explicitly forbidden in every E004.1 integration-test environment value.'
+    );
+}
+
+echo sprintf(
+    "MariaDB disposable target: host=%s port=%d prefix=%s\n",
+    $host,
+    $port,
+    $databasePrefix
 );
 
 $suffix = bin2hex(random_bytes(5));
 $freshDatabase = $databasePrefix . '_fresh_' . $suffix;
 $incrementalDatabase = $databasePrefix . '_incremental_' . $suffix;
 $duplicateDatabase = $databasePrefix . '_duplicate_' . $suffix;
+$cleanupProbePrefix = $databasePrefix . '_cleanup_' . $suffix;
+$cleanupProbeDatabase = $cleanupProbePrefix . '_first';
 
 $server = new PDO(
     sprintf('mysql:host=%s;port=%d;charset=%s', $host, $port, $charset),
@@ -101,18 +142,49 @@ $server = new PDO(
     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]
 );
 
-foreach ([$freshDatabase, $incrementalDatabase, $duplicateDatabase] as $database) {
-    assertIntegration(
-        preg_match('/^[a-z][a-z0-9_]{2,30}_(fresh|incremental|duplicate)_[a-f0-9]{10}$/', $database) === 1,
-        'Unsafe disposable database name.'
-    );
-    $server->exec(sprintf(
-        'CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
-        $database
-    ));
-}
-
+$createdDatabases = [];
 try {
+    $cleanupProbeCreated = [];
+    try {
+        $server->exec(sprintf(
+            'CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
+            $cleanupProbeDatabase
+        ));
+        $cleanupProbeCreated[] = $cleanupProbeDatabase;
+        throw new RuntimeException('Intentional failure after the first disposable database creation.');
+    } catch (RuntimeException $exception) {
+        assertIntegration(
+            $exception->getMessage() === 'Intentional failure after the first disposable database creation.',
+            'Partial database creation failed for an unexpected reason.'
+        );
+    } finally {
+        $cleanupFailures = dropDisposableDatabases($server, $cleanupProbeCreated);
+        assertIntegration(
+            $cleanupFailures === [],
+            'Partial-creation cleanup failed: ' . implode('; ', $cleanupFailures)
+        );
+    }
+    $cleanupProbeStatement = $server->prepare(
+        'SELECT COUNT(*) FROM information_schema.schemata WHERE LOCATE(:prefix, schema_name) = 1'
+    );
+    $cleanupProbeStatement->execute([':prefix' => $cleanupProbePrefix]);
+    assertIntegration(
+        (int) $cleanupProbeStatement->fetchColumn() === 0,
+        'Partial-creation cleanup left a disposable database behind.'
+    );
+
+    foreach ([$freshDatabase, $incrementalDatabase, $duplicateDatabase] as $database) {
+        assertIntegration(
+            preg_match('/^[a-z][a-z0-9_]{2,30}_(fresh|incremental|duplicate)_[a-f0-9]{10}$/', $database) === 1,
+            'Unsafe disposable database name.'
+        );
+        $server->exec(sprintf(
+            'CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
+            $database
+        ));
+        $createdDatabases[] = $database;
+    }
+
     $fresh = new PDO(
         sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $host, $port, $freshDatabase, $charset),
         $username,
@@ -261,6 +333,53 @@ try {
         $connectionA->query('SELECT @@session.time_zone')->fetchColumn() === '+00:00',
         'ConnectionFactory did not establish the UTC SQL convention.'
     );
+
+    $controlConnection = new PDO(
+        sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $host, $port, $incrementalDatabase, $charset),
+        $username,
+        $password,
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]
+    );
+    $timeProbeTable = '_e0041_utc_probe';
+    try {
+        $connectionA->exec(sprintf(
+            'CREATE TABLE `%s` (id INT PRIMARY KEY, observed_at TIMESTAMP NOT NULL)',
+            $timeProbeTable
+        ));
+        $controlConnection->exec("SET time_zone = '-05:00'");
+        $controlConnection->exec(sprintf(
+            "INSERT INTO `%s` (id, observed_at) VALUES (1, '2026-07-31 07:34:56')",
+            $timeProbeTable
+        ));
+        assertIntegration(
+            $connectionA->query(sprintf('SELECT observed_at FROM `%s` WHERE id = 1', $timeProbeTable))->fetchColumn()
+                === '2026-07-31 12:34:56',
+            'UTC timestamp read/write shifted the represented instant.'
+        );
+
+        $knownLockInstant = new DateTimeImmutable('2026-07-31 07:34:56-05:00');
+        $repositoryA = new PdoUserRepository($managerA);
+        $utcUser = $repositoryA->findByLoginIdentifier(new LoginIdentifier('legacy.user'));
+        assertIntegration($utcUser !== null, 'UTC repository probe could not load the legacy User.');
+        $utcUser->recordFailedLogin($knownLockInstant, 4);
+        $repositoryA->save($utcUser);
+        $reloadedUtcUser = $repositoryA->findByLoginIdentifier(new LoginIdentifier('legacy.user'));
+        assertIntegration(
+            $reloadedUtcUser?->lockedAt()?->getTimestamp() === $knownLockInstant->getTimestamp(),
+            'Repository locked_at did not preserve the expected UTC instant.'
+        );
+    } finally {
+        $connectionA->exec("UPDATE users SET failed_login_attempts = 3, locked_at = '2026-07-31 12:34:56' "
+            . "WHERE normalized_login_identifier = 'legacy.user'");
+        $connectionA->exec(sprintf('DROP TABLE IF EXISTS `%s`', $timeProbeTable));
+    }
+
+    $unrelatedSqlError = new PDOException("Table 'missing' doesn't exist");
+    $unrelatedSqlError->errorInfo = ['42S02', 1146, "Table 'missing' doesn't exist"];
+    assertIntegration(
+        !isExpectedMariaDbLockException($unrelatedSqlError),
+        'An unrelated SQL exception was misclassified as a concurrency lock.'
+    );
     $connectionA->beginTransaction();
     (new PdoUserRepository($managerA))->findByLoginIdentifierForUpdate(
         new LoginIdentifier('legacy.user')
@@ -272,7 +391,13 @@ try {
         (new PdoUserRepository($managerB))->findByLoginIdentifierForUpdate(
             new LoginIdentifier('legacy.user')
         );
-    } catch (PDOException) {
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException(
+                'Concurrent User load failed for a reason other than a MariaDB lock conflict.',
+                previous: $exception
+            );
+        }
         $lockBlocked = true;
     } finally {
         if ($connectionB->inTransaction()) {
@@ -340,12 +465,15 @@ try {
     echo "PASS MySQL fresh Identity schema 001-009 plus 014 with seeders\n";
     echo "PASS MySQL incremental Identity schema 001-009 to 014 with legacy lock\n";
     echo "PASS MySQL migration 014 idempotency\n";
-    echo "PASS MySQL UTC convention and concurrent User row locking\n";
+    echo "PASS MySQL UTC timestamp round-trip and repository locked_at persistence\n";
+    echo "PASS MySQL concurrent User row locking with specific MariaDB error classification\n";
+    echo "PASS MySQL partial disposable database creation cleanup\n";
     echo "PASS MySQL duplicate preflight leaves schema unchanged\n";
 } finally {
-    foreach ([$freshDatabase, $incrementalDatabase, $duplicateDatabase] as $database) {
-        if (preg_match('/^[a-z][a-z0-9_]{2,30}_(fresh|incremental|duplicate)_[a-f0-9]{10}$/', $database) === 1) {
-            $server->exec(sprintf('DROP DATABASE IF EXISTS `%s`', $database));
-        }
+    $cleanupFailures = dropDisposableDatabases($server, $createdDatabases);
+    if ($cleanupFailures !== []) {
+        throw new RuntimeException(
+            'Disposable database cleanup failed after all drops were attempted: ' . implode('; ', $cleanupFailures)
+        );
     }
 }
