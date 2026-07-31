@@ -4,82 +4,53 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Repositories\UserRepository;
-use Core\Session\SessionInterface;
+use App\IdentityAccess\Application\AuthenticateUser;
+use App\IdentityAccess\Application\GetAuthenticatedUser;
+use App\IdentityAccess\Application\LogoutUser;
 
-class AuthenticationService implements AuthenticationServiceInterface
+/**
+ * @deprecated Compatibility adapter. New authentication code belongs to IdentityAccess.
+ */
+final class AuthenticationService implements AuthenticationServiceInterface
 {
     public function __construct(
-        private UserRepository $userRepository,
-        private SessionInterface $session
+        private readonly AuthenticateUser $authenticateUser,
+        private readonly LogoutUser $logoutUser,
+        private readonly GetAuthenticatedUser $getAuthenticatedUser,
     ) {
     }
 
     public function attempt(string $username, string $password): bool
     {
-        $user = $this->userRepository->findByUsername($username);
-
-        if ($user === null) {
-            return false;
-        }
-
-        $statusId = $user['status_id'] ?? null;
-
-        if (!is_numeric($statusId) || (int) $statusId <= 0) {
-            return false;
-        }
-
-        $passwordHash = $user['password_hash'] ?? '';
-
-        if (!is_string($passwordHash) || $passwordHash === '' || !password_verify($password, $passwordHash)) {
-            return false;
-        }
-
-        $userId = $user['id'] ?? null;
-
-        if (!is_numeric($userId) || (int) $userId <= 0) {
-            return false;
-        }
-
-        $userId = (int) $userId;
-
-        $this->session->regenerate();
-        $this->session->set('user_id', $userId);
-
-        $this->userRepository->updateLastLogin($userId);
-
-        return true;
+        return $this->authenticateUser->handle($username, $password)->isSuccessful();
     }
 
     public function logout(): void
     {
-        $this->session->destroy();
+        $this->logoutUser->handle();
     }
 
     public function check(): bool
     {
-        return $this->session->has('user_id');
+        return $this->getAuthenticatedUser->handle() !== null;
     }
 
     public function user(): ?array
     {
-        $userId = $this->id();
-
-        if ($userId === null) {
+        $user = $this->getAuthenticatedUser->handle();
+        if ($user === null) {
             return null;
         }
 
-        return $this->userRepository->findById($userId);
+        return [
+            'id' => $user->id,
+            'person_id' => $user->personId,
+            'login_identifier' => $user->loginIdentifier,
+        ];
     }
 
     public function id(): ?int
     {
-        $userId = $this->session->get('user_id');
-
-        if (!is_numeric($userId) || (int) $userId <= 0) {
-            return null;
-        }
-
-        return (int) $userId;
+        return $this->getAuthenticatedUser->handle()?->id;
     }
 }

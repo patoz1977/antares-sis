@@ -52,6 +52,16 @@ final class StatusSeeder
                 'isTerminal' => 0,
             ],
             [
+                'typeCode' => 'USER_STATUS',
+                'code' => 'DISABLED',
+                'name' => 'Disabled',
+                'description' => 'Cuenta deshabilitada',
+                'displayOrder' => 2,
+                'color' => '#6c757d',
+                'isDefault' => 0,
+                'isTerminal' => 1,
+            ],
+            [
                 'typeCode' => 'PERSON_STATUS',
                 'code' => 'ACTIVE',
                 'name' => 'Active',

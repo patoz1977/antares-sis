@@ -14,6 +14,7 @@ declare(strict_types=1);
     <p>Authentication successful.</p>
 
     <form method="post" action="/logout">
+        <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
         <button type="submit">Sign out</button>
     </form>
 </body>

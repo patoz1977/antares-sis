@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Controllers\AuthenticationController;
+use App\IdentityAccess\Http\AuthenticationController;
 use App\Controllers\FamilyController;
 use App\Controllers\PersonController;
 use Core\Middleware\AuthenticationMiddleware;

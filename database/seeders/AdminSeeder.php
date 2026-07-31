@@ -64,12 +64,14 @@ final class AdminSeeder
 
             $userUpsert = $connection->prepare(
                 'INSERT INTO users '
-                . '(person_id, status_id, username, email, password_hash, created_at, updated_at) '
-                . 'VALUES (:personId, :statusId, :username, :email, :passwordHash, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) '
+                . '(person_id, status_id, username, email, login_identifier, normalized_login_identifier, password_hash, created_at, updated_at) '
+                . 'VALUES (:personId, :statusId, :username, :email, :loginIdentifier, :normalizedLoginIdentifier, :passwordHash, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) '
                 . 'ON DUPLICATE KEY UPDATE '
                 . 'person_id = VALUES(person_id), '
                 . 'status_id = VALUES(status_id), '
                 . 'email = VALUES(email), '
+                . 'login_identifier = VALUES(login_identifier), '
+                . 'normalized_login_identifier = VALUES(normalized_login_identifier), '
                 . 'password_hash = VALUES(password_hash), '
                 . 'updated_at = CURRENT_TIMESTAMP'
             );
@@ -79,6 +81,8 @@ final class AdminSeeder
                 ':statusId' => $userStatusId,
                 ':username' => 'admin',
                 ':email' => 'admin@example.com',
+                ':loginIdentifier' => 'admin',
+                ':normalizedLoginIdentifier' => 'admin',
                 ':passwordHash' => $passwordHash,
             ]);
 

@@ -9,6 +9,7 @@ declare(strict_types=1);
 <?php endif; ?>
 
 <form method="post" action="/login">
+    <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
     <div>
         <label for="username">Username</label>
         <input id="username" name="username" type="text" required>
@@ -20,8 +21,4 @@ declare(strict_types=1);
     </div>
 
     <button type="submit">Sign in</button>
-</form>
-
-<form method="post" action="/logout">
-    <button type="submit">Sign out</button>
 </form>

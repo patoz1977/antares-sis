@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-interface AuthenticationServiceInterface
+use Core\Security\AuthenticatedUserProviderInterface;
+
+interface AuthenticationServiceInterface extends AuthenticatedUserProviderInterface
 {
     public function attempt(string $username, string $password): bool;
 
