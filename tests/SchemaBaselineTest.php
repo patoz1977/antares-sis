@@ -107,10 +107,58 @@ function registerSchemaBaselineTests(TestRunner $runner): void
                 $declaration = baselineColumnDeclaration($migrationSource, $section[1], $row[1]);
                 assertBaselineSame(
                     true,
-                    str_contains($declaration, preg_replace('/\s+/', ' ', $row[2]) ?? $row[2]),
+                    baselineDeclarationMatchesDocumentedType($declaration, $row[2]),
                     sprintf('Type or nullability differs for %s.%s.', $section[1], $row[1])
                 );
             }
+        }
+    });
+
+    $runner->add('generated columns use the MariaDB 10.4 persistent syntax', function (): void {
+        $migrationSource = preg_replace('/\s+/', ' ', implode("\n", baselineMigrationSources()));
+        if (!is_string($migrationSource)) {
+            throw new RuntimeException('Unable to normalize migration sources.');
+        }
+
+        $expectedDeclarations = [
+            "`identification_key` VARCHAR(120) GENERATED ALWAYS AS (IF(`document_type_id` IS NULL OR `document_number` IS NULL, NULL, CONCAT(`document_type_id`, ':', UPPER(TRIM(`document_number`))))) PERSISTENT" => 1,
+            "`active_family_representative_key` VARCHAR(50) GENERATED ALWAYS AS (IF(`ended_at` IS NULL, CONCAT(`family_id`, ':', `representative_id`), NULL)) PERSISTENT" => 2,
+            "`active_primary_family_id` BIGINT UNSIGNED GENERATED ALWAYS AS (IF(`ended_at` IS NULL AND `is_primary` = TRUE, `family_id`, NULL)) PERSISTENT" => 1,
+            "`active_student_id` BIGINT UNSIGNED GENERATED ALWAYS AS (IF(`ended_at` IS NULL, `student_id`, NULL)) PERSISTENT" => 2,
+            "`active_contact_student_key` VARCHAR(50) GENERATED ALWAYS AS (IF(`ended_at` IS NULL, CONCAT(`family_emergency_contact_id`, ':', `student_id`), NULL)) PERSISTENT" => 1,
+            "`active_student_priority_key` VARCHAR(50) GENERATED ALWAYS AS (IF(`ended_at` IS NULL AND `priority` IS NOT NULL, CONCAT(`student_id`, ':', `priority`), NULL)) PERSISTENT" => 1,
+            "`active_pickup_student_key` VARCHAR(50) GENERATED ALWAYS AS (IF(`ended_at` IS NULL, CONCAT(`family_authorized_pickup_id`, ':', `student_id`), NULL)) PERSISTENT" => 1,
+        ];
+
+        foreach ($expectedDeclarations as $declaration => $expectedCount) {
+            assertBaselineSame(
+                $expectedCount,
+                substr_count($migrationSource, $declaration),
+                sprintf('Generated declaration changed or is missing: %s.', $declaration)
+            );
+        }
+
+        assertBaselineSame(9, substr_count($migrationSource, 'GENERATED ALWAYS AS'), 'Unexpected generated-column count.');
+        assertBaselineSame(9, substr_count($migrationSource, ' PERSISTENT'), 'Every generated column must be PERSISTENT.');
+        assertBaselineSame(0, preg_match_all('/\bNULL\s+GENERATED\s+ALWAYS\s+AS\b/i', $migrationSource), 'NULL before AS is incompatible with MariaDB 10.4.');
+        assertBaselineSame(0, preg_match_all('/\bDEFAULT\s+NULL\s+GENERATED\s+ALWAYS\s+AS\b/i', $migrationSource), 'DEFAULT NULL before AS is incompatible with MariaDB 10.4.');
+        assertBaselineSame(false, str_contains($migrationSource, ' STORED'), 'Generated columns must use the PERSISTENT convention.');
+
+        $indexedColumns = [
+            'identification_key' => 1,
+            'active_family_representative_key' => 2,
+            'active_primary_family_id' => 1,
+            'active_student_id' => 2,
+            'active_contact_student_key' => 1,
+            'active_student_priority_key' => 1,
+            'active_pickup_student_key' => 1,
+        ];
+        foreach ($indexedColumns as $column => $expectedCount) {
+            assertBaselineSame(
+                $expectedCount,
+                preg_match_all('/UNIQUE KEY `[^`]+` \(`' . preg_quote($column, '/') . '`\)/', $migrationSource),
+                sprintf('Generated column UNIQUE coverage changed: %s.', $column)
+            );
         }
     });
 
@@ -265,6 +313,22 @@ function baselineContainsConstraintName(string $source, string $name): bool
     }
 
     return preg_match("/generalCatalogSql\\('" . preg_quote($match[1], '/') . "'/", $source) === 1;
+}
+
+function baselineDeclarationMatchesDocumentedType(string $declaration, string $documentedType): bool
+{
+    $normalizedType = preg_replace('/\s+/', ' ', $documentedType) ?? $documentedType;
+    if (str_contains($declaration, $normalizedType)) {
+        return true;
+    }
+
+    if (!str_contains($declaration, 'GENERATED ALWAYS AS') || !str_ends_with($normalizedType, ' NULL')) {
+        return false;
+    }
+
+    $generatedStorageType = substr($normalizedType, 0, -5);
+
+    return str_starts_with($declaration, $generatedStorageType . ' GENERATED ALWAYS AS');
 }
 
 function assertBaselineSame(mixed $expected, mixed $actual, string $message): void

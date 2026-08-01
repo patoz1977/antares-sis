@@ -18,8 +18,8 @@ final class CreateIdentityAndRoles extends SchemaMigration
                     `second_surname` VARCHAR(100) NULL DEFAULT NULL,
                     `document_type_id` BIGINT UNSIGNED NULL DEFAULT NULL,
                     `document_number` VARCHAR(50) NULL DEFAULT NULL,
-                    `identification_key` VARCHAR(120) NULL
-                        GENERATED ALWAYS AS (IF(`document_type_id` IS NULL OR `document_number` IS NULL, NULL, CONCAT(`document_type_id`, ':', UPPER(TRIM(`document_number`))))) STORED,
+                    `identification_key` VARCHAR(120)
+                        GENERATED ALWAYS AS (IF(`document_type_id` IS NULL OR `document_number` IS NULL, NULL, CONCAT(`document_type_id`, ':', UPPER(TRIM(`document_number`))))) PERSISTENT,
                     `birth_date` DATE NOT NULL,
                     `sex_id` BIGINT UNSIGNED NOT NULL,
                     `marital_status_id` BIGINT UNSIGNED NULL DEFAULT NULL,

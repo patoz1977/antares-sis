@@ -18,10 +18,10 @@ final class CreateFamilyManagement extends SchemaMigration
                     `is_primary` BOOLEAN NOT NULL DEFAULT FALSE,
                     `started_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `ended_at` TIMESTAMP NULL DEFAULT NULL,
-                    `active_family_representative_key` VARCHAR(50) NULL
-                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, CONCAT(`family_id`, ':', `representative_id`), NULL)) STORED,
-                    `active_primary_family_id` BIGINT UNSIGNED NULL
-                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL AND `is_primary` = TRUE, `family_id`, NULL)) STORED,
+                    `active_family_representative_key` VARCHAR(50)
+                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, CONCAT(`family_id`, ':', `representative_id`), NULL)) PERSISTENT,
+                    `active_primary_family_id` BIGINT UNSIGNED
+                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL AND `is_primary` = TRUE, `family_id`, NULL)) PERSISTENT,
                     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (`id`),
@@ -47,8 +47,8 @@ final class CreateFamilyManagement extends SchemaMigration
                     `student_id` BIGINT UNSIGNED NOT NULL,
                     `started_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `ended_at` TIMESTAMP NULL DEFAULT NULL,
-                    `active_student_id` BIGINT UNSIGNED NULL
-                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, `student_id`, NULL)) STORED,
+                    `active_student_id` BIGINT UNSIGNED
+                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, `student_id`, NULL)) PERSISTENT,
                     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (`id`),
@@ -112,8 +112,8 @@ final class CreateFamilyManagement extends SchemaMigration
                     `representative_id` BIGINT UNSIGNED NOT NULL,
                     `started_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `ended_at` TIMESTAMP NULL DEFAULT NULL,
-                    `active_family_representative_key` VARCHAR(50) NULL
-                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, CONCAT(`family_id`, ':', `representative_id`), NULL)) STORED,
+                    `active_family_representative_key` VARCHAR(50)
+                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, CONCAT(`family_id`, ':', `representative_id`), NULL)) PERSISTENT,
                     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (`id`),
@@ -136,8 +136,8 @@ final class CreateFamilyManagement extends SchemaMigration
                     `student_id` BIGINT UNSIGNED NOT NULL,
                     `started_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `ended_at` TIMESTAMP NULL DEFAULT NULL,
-                    `active_student_id` BIGINT UNSIGNED NULL
-                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, `student_id`, NULL)) STORED,
+                    `active_student_id` BIGINT UNSIGNED
+                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, `student_id`, NULL)) PERSISTENT,
                     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (`id`),
@@ -186,10 +186,10 @@ final class CreateFamilyManagement extends SchemaMigration
                     `priority` INT UNSIGNED NULL DEFAULT NULL,
                     `started_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `ended_at` TIMESTAMP NULL DEFAULT NULL,
-                    `active_contact_student_key` VARCHAR(50) NULL
-                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, CONCAT(`family_emergency_contact_id`, ':', `student_id`), NULL)) STORED,
-                    `active_student_priority_key` VARCHAR(50) NULL
-                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL AND `priority` IS NOT NULL, CONCAT(`student_id`, ':', `priority`), NULL)) STORED,
+                    `active_contact_student_key` VARCHAR(50)
+                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, CONCAT(`family_emergency_contact_id`, ':', `student_id`), NULL)) PERSISTENT,
+                    `active_student_priority_key` VARCHAR(50)
+                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL AND `priority` IS NOT NULL, CONCAT(`student_id`, ':', `priority`), NULL)) PERSISTENT,
                     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (`id`),
@@ -245,8 +245,8 @@ final class CreateFamilyManagement extends SchemaMigration
                     `student_id` BIGINT UNSIGNED NOT NULL,
                     `started_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `ended_at` TIMESTAMP NULL DEFAULT NULL,
-                    `active_pickup_student_key` VARCHAR(50) NULL
-                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, CONCAT(`family_authorized_pickup_id`, ':', `student_id`), NULL)) STORED,
+                    `active_pickup_student_key` VARCHAR(50)
+                        GENERATED ALWAYS AS (IF(`ended_at` IS NULL, CONCAT(`family_authorized_pickup_id`, ':', `student_id`), NULL)) PERSISTENT,
                     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     PRIMARY KEY (`id`),
