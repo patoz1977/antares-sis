@@ -333,7 +333,7 @@ try {
         $generatedPersonId !== null && $generatedPersonId->value() > 0,
         'MariaDB did not generate a positive Person identity.'
     );
-    $secondPersistedPerson = $personRepository->save(new Person(
+    $secondPerson = new Person(
         null,
         new PersonalName('Second', null, 'Persistence', null),
         null,
@@ -344,10 +344,24 @@ try {
         null,
         PersonStatus::Active,
         $personToday,
-    ));
+    );
+    $secondPersistedPerson = $personRepository->save($secondPerson);
+    $secondGeneratedPersonId = $secondPersistedPerson->id();
     assertIntegration(
-        $secondPersistedPerson->id()?->value() === $generatedPersonId->value() + 1,
-        'MariaDB did not manage consecutive Person AUTO_INCREMENT identities.'
+        $secondPerson->id() === null,
+        'Second Person insert received or replaced a manual identity.'
+    );
+    assertIntegration(
+        $secondGeneratedPersonId !== null && $secondGeneratedPersonId->value() > 0,
+        'MariaDB did not generate a positive identity for the second Person.'
+    );
+    assertIntegration(
+        !$generatedPersonId->equals($secondGeneratedPersonId),
+        'MariaDB generated the same identity for two Persons.'
+    );
+    assertIntegration(
+        $personRepository->findById($secondGeneratedPersonId)?->personalName()->firstName() === 'Second',
+        'Second Person could not be reconstructed through its generated identity.'
     );
     $createdAtStatement = $identity->prepare('SELECT created_at FROM persons WHERE id = :id');
     $createdAtStatement->execute([':id' => $generatedPersonId->value()]);

@@ -131,7 +131,7 @@ function registerPersonPersistenceTests(TestRunner $runner): void
         assertSameValue(null, $reloaded?->educationLevelId());
     });
 
-    $runner->add('pdo repository inserts unpersisted Persons without update and delegates consecutive IDs', function (): void {
+    $runner->add('pdo repository inserts unpersisted Persons with distinct database-generated IDs', function (): void {
         $pdo = sqlitePersonDatabase();
         $pdo->exec(
             "CREATE TRIGGER reject_person_updates BEFORE UPDATE ON persons "
@@ -148,7 +148,10 @@ function registerPersonPersistenceTests(TestRunner $runner): void
 
         assertSameValue(null, $firstNew->id());
         assertSameValue(null, $secondNew->id());
-        assertSameValue($firstId->value() + 1, $secondId->value());
+        assertSameValue(true, $firstId->value() > 0);
+        assertSameValue(true, $secondId->value() > 0);
+        assertSameValue(false, $firstId->equals($secondId));
+        assertSameValue($secondId->value(), $repository->findById($secondId)?->id()?->value());
     });
 
     $runner->add('pdo Person repository updates state without changing created_at', function (): void {
