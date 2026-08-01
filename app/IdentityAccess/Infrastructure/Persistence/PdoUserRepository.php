@@ -48,7 +48,7 @@ final class PdoUserRepository implements UserRepository
         $statement = $this->connection->prepare(
             $this->selectSql()
             . ' WHERE u.normalized_login_identifier = :identifier'
-            . ' AND u.deleted_at IS NULL LIMIT 1'
+            . ' LIMIT 1'
             . ($forUpdate && $this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
                 ? ' FOR UPDATE'
                 : '')
@@ -62,7 +62,7 @@ final class PdoUserRepository implements UserRepository
     {
         $statement = $this->connection->prepare(
             $this->selectSql()
-            . ' WHERE u.id = :id AND u.deleted_at IS NULL LIMIT 1'
+            . ' WHERE u.id = :id LIMIT 1'
         );
         $statement->execute([':id' => $id->value()]);
 

@@ -3,41 +3,39 @@
 declare(strict_types=1);
 
 use Core\Database\Migration;
-use Core\Database\Schema\Blueprint;
 use Core\Database\Schema\Schema;
 
 final class CreateUsersTable extends Migration
 {
     public function up(PDO $connection): void
     {
-        $this->createTable($connection, 'users', function (Blueprint $table): void {
-            $table->id();
-            $table->foreignId('person_id');
-            $table->foreignId('status_id');
-            $table->string('username', 100);
-            $table->string('email', 255);
-            $table->string('password_hash', 255);
-            $table->timestamp('password_changed_at')->nullable();
-            $table->timestamp('last_login_at')->nullable();
-            $table->unsignedInteger('failed_login_attempts', 5)->default(0);
-            $table->timestamp('locked_until')->nullable();
-            $table->timestamp('created_at')->default('CURRENT_TIMESTAMP');
-            $table->timestamp('updated_at')->default('CURRENT_TIMESTAMP');
-            $table->timestamp('deleted_at')->nullable();
-            $table->unsignedBigInteger('created_by')->nullable();
-            $table->unsignedBigInteger('updated_by')->nullable();
-            $table->unsignedBigInteger('deleted_by')->nullable();
-            $table->index('person_id', 'users_person_id_unique');
-            $table->index('username', 'users_username_unique');
-            $table->index('email', 'users_email_unique');
-            $table->index('status_id', 'users_status_id_idx');
-        }, [
-            "DEFAULT 'CURRENT_TIMESTAMP'" => 'DEFAULT CURRENT_TIMESTAMP',
-            'KEY `users_person_id_unique` (`person_id`)' => 'UNIQUE KEY `users_person_id_unique` (`person_id`)',
-            'KEY `users_username_unique` (`username`)' => 'UNIQUE KEY `users_username_unique` (`username`)',
-            'KEY `users_email_unique` (`email`)' => 'UNIQUE KEY `users_email_unique` (`email`)',
-            '`failed_login_attempts` INT(5) UNSIGNED NOT NULL DEFAULT 0' => '`failed_login_attempts` SMALLINT UNSIGNED NOT NULL DEFAULT 0',
-        ]);
+        $connection->exec(<<<'SQL'
+            CREATE TABLE IF NOT EXISTS `users` (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `person_id` BIGINT UNSIGNED NOT NULL,
+                `login_identifier` VARCHAR(254) NOT NULL,
+                `normalized_login_identifier` VARCHAR(254) NOT NULL,
+                `password_hash` VARCHAR(255) NOT NULL,
+                `status_id` BIGINT UNSIGNED NOT NULL,
+                `last_access_at` TIMESTAMP NULL DEFAULT NULL,
+                `failed_login_attempts` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+                `locked_at` TIMESTAMP NULL DEFAULT NULL,
+                `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uq_users_person` (`person_id`),
+                UNIQUE KEY `uq_users_normalized_login` (`normalized_login_identifier`),
+                KEY `idx_users_status_locked` (`status_id`, `locked_at`),
+                CONSTRAINT `chk_users_normalized_login`
+                    CHECK (`normalized_login_identifier` = LOWER(TRIM(`normalized_login_identifier`))),
+                CONSTRAINT `fk_users_person`
+                    FOREIGN KEY (`person_id`) REFERENCES `persons` (`id`)
+                    ON DELETE RESTRICT ON UPDATE RESTRICT,
+                CONSTRAINT `fk_users_status`
+                    FOREIGN KEY (`status_id`) REFERENCES `statuses` (`id`)
+                    ON DELETE RESTRICT ON UPDATE RESTRICT
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            SQL);
     }
 
     public function down(PDO $connection): void
@@ -48,22 +46,5 @@ final class CreateUsersTable extends Migration
     public function version(): string
     {
         return '005_create_users_table';
-    }
-
-    private function createTable(PDO $connection, string $table, callable $callback, array $replacements = []): void
-    {
-        $builder = new \Core\Database\Schema\SchemaBuilder();
-        $blueprint = new Blueprint($table);
-        $callback($blueprint);
-
-        $compileMethod = new \ReflectionMethod($builder, 'compileCreateTable');
-        $compileMethod->setAccessible(true);
-        $sql = $compileMethod->invoke($builder, $blueprint);
-
-        foreach ($replacements as $search => $replace) {
-            $sql = str_replace($search, $replace, $sql);
-        }
-
-        $connection->exec($sql);
     }
 }

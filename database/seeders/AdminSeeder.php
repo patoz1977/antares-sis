@@ -10,6 +10,10 @@ final class AdminSeeder
 {
     public function run(PDO $connection): void
     {
+        if ($this->administratorExists($connection)) {
+            return;
+        }
+
         $userStatusId = $this->findStatusId($connection, 'USER_STATUS', 'ACTIVE');
         $personStatusId = $this->findStatusId($connection, 'PERSON_STATUS', 'ACTIVE');
 
@@ -58,11 +62,11 @@ final class AdminSeeder
 
             $existingUserQuery = $connection->prepare(
                 'SELECT id FROM users '
-                . 'WHERE person_id = :personId OR username = :username LIMIT 1'
+                . 'WHERE person_id = :personId OR normalized_login_identifier = :loginIdentifier LIMIT 1'
             );
             $existingUserQuery->execute([
                 ':personId' => (int) $person['id'],
-                ':username' => 'admin',
+                ':loginIdentifier' => 'admin',
             ]);
 
             if ($existingUserQuery->fetch(PDO::FETCH_ASSOC) !== false) {
@@ -85,15 +89,13 @@ final class AdminSeeder
 
             $userInsert = $connection->prepare(
                 'INSERT INTO users '
-                . '(person_id, status_id, username, email, login_identifier, normalized_login_identifier, password_hash, created_at, updated_at) '
-                . 'VALUES (:personId, :statusId, :username, :email, :loginIdentifier, :normalizedLoginIdentifier, :passwordHash, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
+                . '(person_id, status_id, login_identifier, normalized_login_identifier, password_hash, created_at, updated_at) '
+                . 'VALUES (:personId, :statusId, :loginIdentifier, :normalizedLoginIdentifier, :passwordHash, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
             );
 
             $userInsert->execute([
                 ':personId' => (int) $person['id'],
                 ':statusId' => $userStatusId,
-                ':username' => 'admin',
-                ':email' => 'admin@example.com',
                 ':loginIdentifier' => 'admin',
                 ':normalizedLoginIdentifier' => 'admin',
                 ':passwordHash' => $passwordHash,
@@ -107,6 +109,16 @@ final class AdminSeeder
 
             throw new \RuntimeException('Unable to seed administrator user.', previous: $exception);
         }
+    }
+
+    private function administratorExists(PDO $connection): bool
+    {
+        $statement = $connection->prepare(
+            'SELECT id FROM users WHERE normalized_login_identifier = :loginIdentifier LIMIT 1'
+        );
+        $statement->execute([':loginIdentifier' => 'admin']);
+
+        return $statement->fetch(PDO::FETCH_ASSOC) !== false;
     }
 
     private function findStatusId(PDO $connection, string $statusTypeCode, string $statusCode): ?int

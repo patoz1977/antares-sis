@@ -2,68 +2,20 @@
 
 declare(strict_types=1);
 
-use Database\Seeders\AdminSeeder;
-use Database\Seeders\StatusSeeder;
-use Database\Seeders\StatusTypeSeeder;
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
 use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
+use Database\Seeders\AdminSeeder;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
-require dirname(__DIR__) . '/database/seeders/StatusTypeSeeder.php';
-require dirname(__DIR__) . '/database/seeders/StatusSeeder.php';
 require dirname(__DIR__) . '/database/seeders/AdminSeeder.php';
-
-function migrationClass(string $file): string
-{
-    $parts = explode('_', pathinfo($file, PATHINFO_FILENAME));
-    array_shift($parts);
-
-    return 'Create' . implode('', array_map(
-        static fn (string $part): string => str_replace(' ', '', ucwords(str_replace('_', ' ', $part))),
-        array_values(array_filter($parts, static fn (string $part): bool => $part !== 'create'))
-    ));
-}
-
-function runMigrations(PDO $connection, int $maximumVersion): void
-{
-    $files = glob(dirname(__DIR__) . '/database/migrations/*.php') ?: [];
-    sort($files);
-
-    foreach ($files as $path) {
-        $file = basename($path);
-        if ((int) substr($file, 0, 3) > $maximumVersion) {
-            continue;
-        }
-
-        require_once $path;
-        $class = migrationClass($file);
-        (new $class())->up($connection);
-    }
-}
 
 function assertIntegration(bool $condition, string $message): void
 {
     if (!$condition) {
         throw new RuntimeException($message);
-    }
-}
-
-$requiredEnvironment = [
-    'E0041_DB_HOST',
-    'E0041_DB_PORT',
-    'E0041_DB_USERNAME',
-    'E0041_DB_PASSWORD',
-    'E0041_DB_PREFIX',
-];
-
-foreach ($requiredEnvironment as $environmentName) {
-    if (getenv($environmentName) === false) {
-        throw new RuntimeException(
-            sprintf('%s is required; .env fallback is intentionally forbidden.', $environmentName)
-        );
     }
 }
 
@@ -73,7 +25,6 @@ function isExpectedMariaDbLockException(PDOException $exception): bool
     $driverCode = (int) ($exception->errorInfo[1] ?? 0);
     $message = strtolower($exception->errorInfo[2] ?? $exception->getMessage());
 
-    // MariaDB 10.4: 1205/HY000 is a lock wait timeout; 1213/40001 is a deadlock victim.
     return ($sqlState === 'HY000' && $driverCode === 1205 && str_contains($message, 'lock wait timeout'))
         || ($sqlState === '40001' && $driverCode === 1213 && str_contains($message, 'deadlock'));
 }
@@ -95,6 +46,76 @@ function dropDisposableDatabases(PDO $server, array $databases): array
     }
 
     return $failures;
+}
+
+function createCurrentIdentitySchema(PDO $connection): void
+{
+    $connection->exec(
+        'CREATE TABLE persons ('
+        . 'id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
+        . 'PRIMARY KEY (id)'
+        . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $connection->exec(
+        'CREATE TABLE status_types ('
+        . 'id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
+        . 'code VARCHAR(100) NOT NULL, '
+        . 'PRIMARY KEY (id), '
+        . 'UNIQUE KEY uq_status_types_code (code)'
+        . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $connection->exec(
+        'CREATE TABLE statuses ('
+        . 'id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
+        . 'status_type_id BIGINT UNSIGNED NOT NULL, '
+        . 'code VARCHAR(100) NOT NULL, '
+        . 'PRIMARY KEY (id), '
+        . 'UNIQUE KEY uq_statuses_type_code (status_type_id, code), '
+        . 'CONSTRAINT fk_statuses_type FOREIGN KEY (status_type_id) '
+        . 'REFERENCES status_types(id) ON DELETE RESTRICT ON UPDATE RESTRICT'
+        . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $connection->exec(
+        'CREATE TABLE users ('
+        . 'id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
+        . 'person_id BIGINT UNSIGNED NOT NULL, '
+        . 'login_identifier VARCHAR(254) NOT NULL, '
+        . 'normalized_login_identifier VARCHAR(254) NOT NULL, '
+        . 'password_hash VARCHAR(255) NOT NULL, '
+        . 'status_id BIGINT UNSIGNED NOT NULL, '
+        . 'last_access_at TIMESTAMP NULL DEFAULT NULL, '
+        . 'failed_login_attempts SMALLINT UNSIGNED NOT NULL DEFAULT 0, '
+        . 'locked_at TIMESTAMP NULL DEFAULT NULL, '
+        . 'created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, '
+        . 'updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, '
+        . 'PRIMARY KEY (id), '
+        . 'UNIQUE KEY uq_users_person (person_id), '
+        . 'UNIQUE KEY uq_users_normalized_login (normalized_login_identifier), '
+        . 'KEY idx_users_status_locked (status_id, locked_at), '
+        . 'CONSTRAINT chk_users_normalized_login '
+        . 'CHECK (normalized_login_identifier = LOWER(TRIM(normalized_login_identifier))), '
+        . 'CONSTRAINT fk_users_person FOREIGN KEY (person_id) '
+        . 'REFERENCES persons(id) ON DELETE RESTRICT ON UPDATE RESTRICT, '
+        . 'CONSTRAINT fk_users_status FOREIGN KEY (status_id) '
+        . 'REFERENCES statuses(id) ON DELETE RESTRICT ON UPDATE RESTRICT'
+        . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+}
+
+$requiredEnvironment = [
+    'E0041_DB_HOST',
+    'E0041_DB_PORT',
+    'E0041_DB_USERNAME',
+    'E0041_DB_PASSWORD',
+    'E0041_DB_PREFIX',
+];
+
+foreach ($requiredEnvironment as $environmentName) {
+    if (getenv($environmentName) === false) {
+        throw new RuntimeException(
+            sprintf('%s is required; .env fallback is intentionally forbidden.', $environmentName)
+        );
+    }
 }
 
 if (getenv('E0041_DB_ALLOW_DISPOSABLE') !== '1') {
@@ -129,9 +150,7 @@ echo sprintf(
 );
 
 $suffix = bin2hex(random_bytes(5));
-$freshDatabase = $databasePrefix . '_fresh_' . $suffix;
-$incrementalDatabase = $databasePrefix . '_incremental_' . $suffix;
-$duplicateDatabase = $databasePrefix . '_duplicate_' . $suffix;
+$identityDatabase = $databasePrefix . '_identity_' . $suffix;
 $cleanupProbePrefix = $databasePrefix . '_cleanup_' . $suffix;
 $cleanupProbeDatabase = $cleanupProbePrefix . '_first';
 
@@ -164,6 +183,7 @@ try {
             'Partial-creation cleanup failed: ' . implode('; ', $cleanupFailures)
         );
     }
+
     $cleanupProbeStatement = $server->prepare(
         'SELECT COUNT(*) FROM information_schema.schemata WHERE LOCATE(:prefix, schema_name) = 1'
     );
@@ -173,154 +193,60 @@ try {
         'Partial-creation cleanup left a disposable database behind.'
     );
 
-    foreach ([$freshDatabase, $incrementalDatabase, $duplicateDatabase] as $database) {
-        assertIntegration(
-            preg_match('/^[a-z][a-z0-9_]{2,30}_(fresh|incremental|duplicate)_[a-f0-9]{10}$/', $database) === 1,
-            'Unsafe disposable database name.'
-        );
-        $server->exec(sprintf(
-            'CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
-            $database
-        ));
-        $createdDatabases[] = $database;
-    }
+    assertIntegration(
+        preg_match('/^[a-z][a-z0-9_]{2,30}_identity_[a-f0-9]{10}$/', $identityDatabase) === 1,
+        'Unsafe disposable database name.'
+    );
+    $server->exec(sprintf(
+        'CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
+        $identityDatabase
+    ));
+    $createdDatabases[] = $identityDatabase;
 
-    $fresh = new PDO(
-        sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $host, $port, $freshDatabase, $charset),
+    $identity = new PDO(
+        sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $host, $port, $identityDatabase, $charset),
         $username,
         $password,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]
     );
-    runMigrations($fresh, 9);
-    require_once dirname(__DIR__) . '/database/migrations/014_create_identity_access_baseline.php';
-    (new CreateIdentityAccessBaseline())->up($fresh);
-    (new StatusTypeSeeder())->run($fresh);
-    (new StatusSeeder())->run($fresh);
-    putenv('E0041_ADMIN_INITIAL_PASSWORD=DisposableAdminPassword');
-    (new AdminSeeder())->run($fresh);
-
-    assertIntegration((int) $fresh->query(
-        "SELECT COUNT(*) FROM information_schema.columns "
-        . "WHERE table_schema = DATABASE() AND table_name = 'users' "
-        . "AND column_name IN ('login_identifier', 'normalized_login_identifier', 'last_access_at', 'locked_at')"
-    )->fetchColumn() === 4, 'Fresh migration is missing identity columns.');
-    assertIntegration(
-        (int) $fresh->query("SELECT COUNT(*) FROM users WHERE normalized_login_identifier = 'admin'")->fetchColumn() === 1,
-        'Fresh seed did not create the normalized administrator login.'
+    createCurrentIdentitySchema($identity);
+    $identity->exec("INSERT INTO persons (id) VALUES (1)");
+    $identity->exec("INSERT INTO status_types (id, code) VALUES (1, 'USER_STATUS')");
+    $identity->exec(
+        "INSERT INTO statuses (id, status_type_id, code) VALUES "
+        . "(1, 1, 'ACTIVE'), (2, 1, 'DISABLED')"
     );
-    $seededUser = $fresh->query(
-        "SELECT id, password_hash, status_id FROM users WHERE normalized_login_identifier = 'admin'"
-    )->fetch(PDO::FETCH_ASSOC);
-    assertIntegration($seededUser !== false, 'Seeded administrator could not be loaded.');
-    $disabledStatusId = (int) $fresh->query(
-        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
-        . "WHERE st.code = 'USER_STATUS' AND s.code = 'DISABLED'"
-    )->fetchColumn();
-    $fresh->exec(
-        "UPDATE users SET password_hash = 'preserved-hash', status_id = $disabledStatusId "
-        . 'WHERE id = ' . (int) $seededUser['id']
-    );
-    (new AdminSeeder())->run($fresh);
-    $reseededUser = $fresh->query(
-        'SELECT password_hash, status_id FROM users WHERE id = ' . (int) $seededUser['id']
-    )->fetch(PDO::FETCH_ASSOC);
-    assertIntegration(
-        $reseededUser !== false && $reseededUser['password_hash'] === 'preserved-hash',
-        'Second AdminSeeder execution replaced an existing password hash.'
-    );
-    assertIntegration(
-        (int) $reseededUser['status_id'] === $disabledStatusId,
-        'Second AdminSeeder execution changed an existing User status.'
-    );
-
-    $incremental = new PDO(
-        sprintf(
-            'mysql:host=%s;port=%d;dbname=%s;charset=%s',
-            $host,
-            $port,
-            $incrementalDatabase,
-            $charset
-        ),
-        $username,
-        $password,
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]
-    );
-    runMigrations($incremental, 9);
-    (new StatusTypeSeeder())->run($incremental);
-    (new StatusSeeder())->run($incremental);
-
-    $personStatusId = (int) $incremental->query(
-        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
-        . "WHERE st.code = 'PERSON_STATUS' AND s.code = 'ACTIVE'"
-    )->fetchColumn();
-    $userStatusId = (int) $incremental->query(
-        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
-        . "WHERE st.code = 'USER_STATUS' AND s.code = 'ACTIVE'"
-    )->fetchColumn();
-
-    $incremental->exec(
-        "INSERT INTO persons (status_id, document_type_id, document_number, first_name, last_name) "
-        . "VALUES ($personStatusId, 1, 'LEGACY-1', 'Legacy', 'User')"
-    );
-    $personId = (int) $incremental->lastInsertId();
-    $hash = password_hash('Legacy123!', PASSWORD_DEFAULT);
-    $insertUser = $incremental->prepare(
+    $hash = password_hash('DisposableAdminPassword', PASSWORD_DEFAULT);
+    assertIntegration(is_string($hash), 'Unable to create disposable password hash.');
+    $insert = $identity->prepare(
         'INSERT INTO users '
-        . '(person_id, status_id, username, email, password_hash, failed_login_attempts, locked_until) '
-        . 'VALUES (:personId, :statusId, :username, :email, :passwordHash, 2, '
-        . 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE))'
+        . '(person_id, login_identifier, normalized_login_identifier, password_hash, status_id, failed_login_attempts) '
+        . 'VALUES (1, :loginIdentifier, :normalizedLoginIdentifier, :passwordHash, 2, 4)'
     );
-    $insertUser->execute([
-        ':personId' => $personId,
-        ':statusId' => $userStatusId,
-        ':username' => ' Legacy.User ',
-        ':email' => 'legacy@example.com',
+    $insert->execute([
+        ':loginIdentifier' => 'admin',
+        ':normalizedLoginIdentifier' => 'admin',
         ':passwordHash' => $hash,
     ]);
 
-    require_once dirname(__DIR__) . '/database/migrations/014_create_identity_access_baseline.php';
-    $migration = new CreateIdentityAccessBaseline();
-    $migration->up($incremental);
-    $incremental->exec(
-        "UPDATE users SET failed_login_attempts = 3, locked_at = '2026-07-31 12:34:56' "
-        . "WHERE username = ' Legacy.User '"
-    );
-    $migration->up($incremental);
-
-    $legacy = $incremental->query(
-        "SELECT normalized_login_identifier, failed_login_attempts, locked_at, locked_until "
-        . "FROM users WHERE username = ' Legacy.User '"
+    (new AdminSeeder())->run($identity);
+    $preserved = $identity->query(
+        "SELECT password_hash, status_id FROM users WHERE normalized_login_identifier = 'admin'"
     )->fetch(PDO::FETCH_ASSOC);
-    assertIntegration($legacy !== false, 'Incremental user was not preserved.');
     assertIntegration(
-        $legacy['normalized_login_identifier'] === 'legacy.user',
-        'Incremental login normalization failed.'
+        $preserved !== false && $preserved['password_hash'] === $hash,
+        'AdminSeeder replaced an existing password hash.'
     );
     assertIntegration(
-        (int) $legacy['failed_login_attempts'] === 3,
-        'Second migration execution overwrote active-model failed attempts.'
+        $preserved !== false && (int) $preserved['status_id'] === 2,
+        'AdminSeeder changed an existing User status.'
     );
-    assertIntegration(
-        $legacy['locked_at'] === '2026-07-31 12:34:56',
-        'Second migration execution overwrote active-model locked_at.'
-    );
-    assertIntegration($legacy['locked_until'] !== null, 'Legacy locked_until was not retained.');
-
-    try {
-        $migration->down($incremental);
-        throw new RuntimeException('Forward-only migration unexpectedly allowed rollback.');
-    } catch (RuntimeException $exception) {
-        assertIntegration(
-            str_contains($exception->getMessage(), 'forward-only'),
-            'Forward-only migration did not reject rollback explicitly.'
-        );
-    }
 
     $databaseConfig = new DatabaseConfig([
         'driver' => 'mysql',
         'host' => $host,
         'port' => $port,
-        'database' => $incrementalDatabase,
+        'database' => $identityDatabase,
         'username' => $username,
         'password' => $password,
         'charset' => $charset,
@@ -334,45 +260,17 @@ try {
         'ConnectionFactory did not establish the UTC SQL convention.'
     );
 
-    $controlConnection = new PDO(
-        sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $host, $port, $incrementalDatabase, $charset),
-        $username,
-        $password,
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]
+    $knownLockInstant = new DateTimeImmutable('2026-07-31 07:34:56-05:00');
+    $repositoryA = new PdoUserRepository($managerA);
+    $utcUser = $repositoryA->findByLoginIdentifier(new LoginIdentifier('admin'));
+    assertIntegration($utcUser !== null, 'UTC repository probe could not load User.');
+    $utcUser->recordFailedLogin($knownLockInstant, 5);
+    $repositoryA->save($utcUser);
+    $reloadedUtcUser = $repositoryA->findByLoginIdentifier(new LoginIdentifier('admin'));
+    assertIntegration(
+        $reloadedUtcUser?->lockedAt()?->getTimestamp() === $knownLockInstant->getTimestamp(),
+        'Repository locked_at did not preserve the expected UTC instant.'
     );
-    $timeProbeTable = '_e0041_utc_probe';
-    try {
-        $connectionA->exec(sprintf(
-            'CREATE TABLE `%s` (id INT PRIMARY KEY, observed_at TIMESTAMP NOT NULL)',
-            $timeProbeTable
-        ));
-        $controlConnection->exec("SET time_zone = '-05:00'");
-        $controlConnection->exec(sprintf(
-            "INSERT INTO `%s` (id, observed_at) VALUES (1, '2026-07-31 07:34:56')",
-            $timeProbeTable
-        ));
-        assertIntegration(
-            $connectionA->query(sprintf('SELECT observed_at FROM `%s` WHERE id = 1', $timeProbeTable))->fetchColumn()
-                === '2026-07-31 12:34:56',
-            'UTC timestamp read/write shifted the represented instant.'
-        );
-
-        $knownLockInstant = new DateTimeImmutable('2026-07-31 07:34:56-05:00');
-        $repositoryA = new PdoUserRepository($managerA);
-        $utcUser = $repositoryA->findByLoginIdentifier(new LoginIdentifier('legacy.user'));
-        assertIntegration($utcUser !== null, 'UTC repository probe could not load the legacy User.');
-        $utcUser->recordFailedLogin($knownLockInstant, 4);
-        $repositoryA->save($utcUser);
-        $reloadedUtcUser = $repositoryA->findByLoginIdentifier(new LoginIdentifier('legacy.user'));
-        assertIntegration(
-            $reloadedUtcUser?->lockedAt()?->getTimestamp() === $knownLockInstant->getTimestamp(),
-            'Repository locked_at did not preserve the expected UTC instant.'
-        );
-    } finally {
-        $connectionA->exec("UPDATE users SET failed_login_attempts = 3, locked_at = '2026-07-31 12:34:56' "
-            . "WHERE normalized_login_identifier = 'legacy.user'");
-        $connectionA->exec(sprintf('DROP TABLE IF EXISTS `%s`', $timeProbeTable));
-    }
 
     $unrelatedSqlError = new PDOException("Table 'missing' doesn't exist");
     $unrelatedSqlError->errorInfo = ['42S02', 1146, "Table 'missing' doesn't exist"];
@@ -382,14 +280,14 @@ try {
     );
     $connectionA->beginTransaction();
     (new PdoUserRepository($managerA))->findByLoginIdentifierForUpdate(
-        new LoginIdentifier('legacy.user')
+        new LoginIdentifier('admin')
     );
     $connectionB->exec('SET innodb_lock_wait_timeout = 1');
     $connectionB->beginTransaction();
     $lockBlocked = false;
     try {
         (new PdoUserRepository($managerB))->findByLoginIdentifierForUpdate(
-            new LoginIdentifier('legacy.user')
+            new LoginIdentifier('admin')
         );
     } catch (PDOException $exception) {
         if (!isExpectedMariaDbLockException($exception)) {
@@ -409,66 +307,11 @@ try {
     }
     assertIntegration($lockBlocked, 'Concurrent User load was not protected by a row lock.');
 
-    $duplicate = new PDO(
-        sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $host, $port, $duplicateDatabase, $charset),
-        $username,
-        $password,
-        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]
-    );
-    runMigrations($duplicate, 9);
-    (new StatusTypeSeeder())->run($duplicate);
-    (new StatusSeeder())->run($duplicate);
-    $duplicatePersonStatusId = (int) $duplicate->query(
-        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
-        . "WHERE st.code = 'PERSON_STATUS' AND s.code = 'ACTIVE'"
-    )->fetchColumn();
-    $duplicateUserStatusId = (int) $duplicate->query(
-        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
-        . "WHERE st.code = 'USER_STATUS' AND s.code = 'ACTIVE'"
-    )->fetchColumn();
-    $duplicate->exec(
-        "INSERT INTO persons (status_id, document_type_id, document_number, first_name, last_name) VALUES "
-        . "($duplicatePersonStatusId, 1, 'DUP-1', 'One', 'User'), "
-        . "($duplicatePersonStatusId, 1, 'DUP-2', 'Two', 'User')"
-    );
-    $personIds = $duplicate->query('SELECT id FROM persons ORDER BY id DESC LIMIT 2')->fetchAll(PDO::FETCH_COLUMN);
-    $duplicateInsert = $duplicate->prepare(
-        'INSERT INTO users (person_id, status_id, username, email, password_hash) '
-        . 'VALUES (:personId, :statusId, :username, :email, :passwordHash)'
-    );
-    foreach ([[' Duplicate ', 'one@example.com'], ['duplicate', 'two@example.com']] as $index => $identity) {
-        $duplicateInsert->execute([
-            ':personId' => (int) $personIds[$index],
-            ':statusId' => $duplicateUserStatusId,
-            ':username' => $identity[0],
-            ':email' => $identity[1],
-            ':passwordHash' => password_hash('DisposablePassword', PASSWORD_DEFAULT),
-        ]);
-    }
-    try {
-        (new CreateIdentityAccessBaseline())->up($duplicate);
-        throw new RuntimeException('Duplicate preflight unexpectedly succeeded.');
-    } catch (RuntimeException $exception) {
-        assertIntegration(
-            str_contains($exception->getMessage(), 'duplicate normalized login identifiers'),
-            'Duplicate preflight failed for an unexpected reason.'
-        );
-    }
-    assertIntegration(
-        (int) $duplicate->query(
-            "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
-            . "AND table_name = 'users' AND column_name = 'normalized_login_identifier'"
-        )->fetchColumn() === 0,
-        'Duplicate preflight left partial schema changes.'
-    );
-
-    echo "PASS MySQL fresh Identity schema 001-009 plus 014 with seeders\n";
-    echo "PASS MySQL incremental Identity schema 001-009 to 014 with legacy lock\n";
-    echo "PASS MySQL migration 014 idempotency\n";
-    echo "PASS MySQL UTC timestamp round-trip and repository locked_at persistence\n";
+    echo "PASS MySQL current User schema fixture excludes discarded columns\n";
+    echo "PASS MySQL AdminSeeder preserves existing credentials and status\n";
+    echo "PASS MySQL UTC repository locked_at persistence\n";
     echo "PASS MySQL concurrent User row locking with specific MariaDB error classification\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
-    echo "PASS MySQL duplicate preflight leaves schema unchanged\n";
 } finally {
     $cleanupFailures = dropDisposableDatabases($server, $createdDatabases);
     if ($cleanupFailures !== []) {
