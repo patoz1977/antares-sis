@@ -6,7 +6,8 @@ Sistema de Información Escolar desarrollado en PHP 8.2 bajo arquitectura MVC co
 
 - PHP 8.2+
 - Composer 2.x
-- MySQL 8+
+- MariaDB 10.4+ o MySQL 8+
+- XAMPP como entorno local admitido para desarrollo y validación desechable de MariaDB
 - Git
 
 ## Instalación
