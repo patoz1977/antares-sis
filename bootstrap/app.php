@@ -14,8 +14,6 @@ use Core\Middleware\AuthenticationMiddleware;
 use Core\Security\AuthenticatedUserProviderInterface;
 use Core\Session\Session;
 use Core\Session\SessionInterface;
-use App\Controllers\FamilyController;
-use App\Controllers\PersonController;
 use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\Contract\Clock;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
@@ -35,10 +33,6 @@ use App\IdentityAccess\Infrastructure\Time\SystemClock;
 
 use App\Services\AuthenticationService;
 use App\Services\AuthenticationServiceInterface;
-use App\Services\FamilyService;
-use App\Services\FamilyServiceInterface;
-use App\Services\PersonService;
-use App\Services\PersonServiceInterface;
 
 // Load .env file from project root
 $root = dirname(__DIR__);
@@ -144,14 +138,8 @@ $container->instance(
         is_int($lockoutDurationSeconds) ? $lockoutDurationSeconds : 0,
     )
 );
-$container->singleton(FamilyService::class, FamilyService::class);
-$container->singleton(FamilyServiceInterface::class, FamilyService::class);
-$container->singleton(PersonService::class, PersonService::class);
 $container->singleton(AuthenticatedUserProviderInterface::class, AuthenticationService::class);
-$container->singleton(PersonServiceInterface::class, PersonService::class);
 $container->singleton(AuthenticationController::class, AuthenticationController::class);
-$container->singleton(FamilyController::class, FamilyController::class);
-$container->singleton(PersonController::class, PersonController::class);
 $container->singleton(AuthenticationMiddleware::class, AuthenticationMiddleware::class);
 
 $app = new Application($config, $container);

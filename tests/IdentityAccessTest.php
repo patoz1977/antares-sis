@@ -265,6 +265,7 @@ function registerIdentityAccessTests(TestRunner $runner): void
         $user = $repository->findByLoginIdentifier(new LoginIdentifier('ADMIN'));
         assertSameValue(1, $user?->personId()->value());
         assertSameValue(UserStatus::Active, $user?->status());
+        assertSameValue(1, $repository->findById(new UserId(1))?->id()->value());
 
         $user?->recordFailedLogin(testNow(), 5);
         $repository->save($user);
@@ -276,14 +277,52 @@ function registerIdentityAccessTests(TestRunner $runner): void
         assertSameValue(null, $row['locked_at']);
     });
 
-    $runner->add('pdo repository excludes soft-deleted and validates User status type', function (): void {
+    $runner->add('pdo row-lock load requires an active transaction', function (): void {
         $pdo = sqliteIdentityDatabase();
         $repository = repositoryWithPdo($pdo);
-        $pdo->exec("UPDATE users SET deleted_at = '2026-01-01 00:00:00'");
-        assertSameValue(
-            null,
-            $repository->findByLoginIdentifier(new LoginIdentifier('admin'))
+        assertThrows(
+            fn () => $repository->findByLoginIdentifierForUpdate(new LoginIdentifier('admin')),
+            RuntimeException::class
         );
+
+        $pdo->beginTransaction();
+        try {
+            assertSameValue(
+                1,
+                $repository->findByLoginIdentifierForUpdate(
+                    new LoginIdentifier('admin')
+                )?->id()->value()
+            );
+        } finally {
+            $pdo->rollBack();
+        }
+    });
+
+    $runner->add('pdo repository validates User status type without soft-delete columns', function (): void {
+        $pdo = sqliteIdentityDatabase();
+        $repository = repositoryWithPdo($pdo);
+        $pdo->exec("UPDATE statuses SET code = 'UNSUPPORTED' WHERE id = 1");
+        assertThrows(
+            fn () => $repository->findByLoginIdentifier(new LoginIdentifier('admin')),
+            RuntimeException::class
+        );
+    });
+
+    $runner->add('pdo repository rejects updates that do not affect exactly one row', function (): void {
+        $repository = repositoryWithPdo(sqliteIdentityDatabase());
+        $hash = password_hash('correct-password', PASSWORD_DEFAULT);
+        if (!is_string($hash)) {
+            throw new RuntimeException('Unable to create test password hash.');
+        }
+        $missingUser = new User(
+            new UserId(99),
+            new PersonId(1),
+            new LoginIdentifier('missing'),
+            new PasswordHash($hash),
+            UserStatus::Active,
+        );
+
+        assertThrows(fn () => $repository->save($missingUser), RuntimeException::class);
     });
 
     $runner->add('pdo transaction rolls back partial changes', function (): void {
@@ -303,23 +342,37 @@ function registerIdentityAccessTests(TestRunner $runner): void
         );
     });
 
-    $runner->add('migration 014 preserves legacy column and declares approved fields', function (): void {
-        $migration = file_get_contents(
-            __DIR__ . '/../database/migrations/014_create_identity_access_baseline.php'
+    $runner->add('active IdentityAccess SQL excludes discarded User columns', function (): void {
+        $repository = file_get_contents(
+            __DIR__ . '/../app/IdentityAccess/Infrastructure/Persistence/PdoUserRepository.php'
         );
-        assertContainsText('failed_login_attempts', $migration);
-        assertContainsText('locked_at', $migration);
-        assertContainsText('normalized_login_identifier', $migration);
-        assertSameValue(false, str_contains($migration, 'DROP COLUMN `locked_until`'));
-        assertContainsText('LEGACY_LOCKOUT_DURATION_SECONDS = 900', $migration);
+        $schema = file_get_contents(
+            __DIR__ . '/../database/migrations/005_create_identity_and_roles.php'
+        );
+        assertSameValue(false, str_contains((string) $repository, 'deleted_at'));
+        assertSameValue(false, str_contains((string) $repository, 'locked_until'));
+        assertSameValue(false, str_contains((string) $schema, 'deleted_at'));
+        assertSameValue(false, str_contains((string) $schema, 'locked_until'));
+        assertContainsText('normalized_login_identifier', $schema);
+        assertContainsText('failed_login_attempts', $schema);
+        assertContainsText('locked_at', $schema);
+        assertContainsText('last_access_at', $schema);
+        assertSameValue([], glob(__DIR__ . '/../database/migrations/014_*.php') ?: []);
     });
 
-    $runner->add('migration 014 rejects destructive rollback', function (): void {
-        require_once __DIR__ . '/../database/migrations/014_create_identity_access_baseline.php';
-        assertThrows(
-            fn () => (new \CreateIdentityAccessBaseline())->down(new PDO('sqlite::memory:')),
-            RuntimeException::class
-        );
+    $runner->add('AdminSeeder preserves existing credentials and User status', function (): void {
+        require_once __DIR__ . '/../database/seeders/AdminSeeder.php';
+        $pdo = sqliteIdentityDatabase();
+        $before = $pdo->query(
+            'SELECT password_hash, status_id FROM users WHERE id = 1'
+        )->fetch(PDO::FETCH_ASSOC);
+
+        (new \Database\Seeders\AdminSeeder())->run($pdo);
+
+        $after = $pdo->query(
+            'SELECT password_hash, status_id FROM users WHERE id = 1'
+        )->fetch(PDO::FETCH_ASSOC);
+        assertSameValue($before, $after);
     });
 
     $runner->add('active HTTP routes use only module authentication controller', function (): void {
@@ -394,9 +447,9 @@ function sqliteIdentityDatabase(): PDO
         . 'CREATE TABLE statuses (id INTEGER PRIMARY KEY, status_type_id INTEGER NOT NULL, code TEXT NOT NULL);'
         . 'CREATE TABLE users ('
         . 'id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL, status_id INTEGER NOT NULL, '
-        . 'normalized_login_identifier TEXT NOT NULL, password_hash TEXT NOT NULL, '
+        . 'login_identifier TEXT NOT NULL, normalized_login_identifier TEXT NOT NULL, password_hash TEXT NOT NULL, '
         . 'failed_login_attempts INTEGER NOT NULL DEFAULT 0, locked_at TEXT NULL, '
-        . 'last_access_at TEXT NULL, updated_at TEXT NULL, deleted_at TEXT NULL);'
+        . 'last_access_at TEXT NULL, updated_at TEXT NULL);'
     );
     $hash = password_hash('correct-password', PASSWORD_DEFAULT);
     $pdo->exec('INSERT INTO persons (id) VALUES (1)');
@@ -404,8 +457,8 @@ function sqliteIdentityDatabase(): PDO
     $pdo->exec("INSERT INTO statuses (id, status_type_id, code) VALUES (1, 1, 'ACTIVE')");
     $statement = $pdo->prepare(
         'INSERT INTO users '
-        . '(id, person_id, status_id, normalized_login_identifier, password_hash) '
-        . 'VALUES (1, 1, 1, :identifier, :passwordHash)'
+        . '(id, person_id, status_id, login_identifier, normalized_login_identifier, password_hash) '
+        . 'VALUES (1, 1, 1, :identifier, :identifier, :passwordHash)'
     );
     $statement->execute([
         ':identifier' => 'admin',

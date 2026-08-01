@@ -10,72 +10,52 @@ final class AdminSeeder
 {
     public function run(PDO $connection): void
     {
-        $userStatusId = $this->findStatusId($connection, 'USER_STATUS', 'ACTIVE');
-        $personStatusId = $this->findStatusId($connection, 'PERSON_STATUS', 'ACTIVE');
-
-        if ($userStatusId === null || $personStatusId === null) {
+        if ($this->administratorExists($connection)) {
             return;
         }
 
-        $documentTypeId = $this->resolveDocumentTypeId($connection);
+        $personIdValue = getenv('E0041_ADMIN_PERSON_ID');
+        $initialPassword = getenv('E0041_ADMIN_INITIAL_PASSWORD');
+
+        if ((!is_string($personIdValue) || $personIdValue === '')
+            && (!is_string($initialPassword) || $initialPassword === '')) {
+            return;
+        }
+
+        if (!is_string($personIdValue) || filter_var($personIdValue, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) {
+            throw new \RuntimeException('E0041_ADMIN_PERSON_ID must reference an existing Person.');
+        }
+
+        if (!is_string($initialPassword) || $initialPassword === '') {
+            throw new \RuntimeException('E0041_ADMIN_INITIAL_PASSWORD is required to create the administrator user.');
+        }
+
+        $personId = (int) $personIdValue;
+        if (!$this->personExists($connection, $personId)) {
+            throw new \RuntimeException('E0041_ADMIN_PERSON_ID does not reference an existing Person.');
+        }
+
+        $userStatusId = $this->findStatusId($connection, 'USER_STATUS', 'ACTIVE');
+        if ($userStatusId === null) {
+            throw new \RuntimeException('The ACTIVE USER_STATUS must exist before creating the administrator user.');
+        }
 
         $connection->beginTransaction();
 
         try {
-            $personUpsert = $connection->prepare(
-                'INSERT INTO persons '
-                . '(status_id, document_type_id, document_number, first_name, last_name, email, created_at, updated_at) '
-                . 'VALUES (:statusId, :documentTypeId, :documentNumber, :firstName, :lastName, :email, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) '
-                . 'ON DUPLICATE KEY UPDATE '
-                . 'first_name = VALUES(first_name), '
-                . 'last_name = VALUES(last_name), '
-                . 'email = VALUES(email), '
-                . 'updated_at = CURRENT_TIMESTAMP'
-            );
-
-            $personUpsert->execute([
-                ':statusId' => $personStatusId,
-                ':documentTypeId' => $documentTypeId,
-                ':documentNumber' => 'ADMIN-0001',
-                ':firstName' => 'Administrator',
-                ':lastName' => 'System',
-                ':email' => 'admin@example.com',
-            ]);
-
-            $personIdQuery = $connection->prepare(
-                'SELECT id FROM persons WHERE document_type_id = :documentTypeId AND document_number = :documentNumber LIMIT 1'
-            );
-            $personIdQuery->execute([
-                ':documentTypeId' => $documentTypeId,
-                ':documentNumber' => 'ADMIN-0001',
-            ]);
-
-            $person = $personIdQuery->fetch(PDO::FETCH_ASSOC);
-            if ($person === false) {
-                $connection->rollBack();
-                return;
-            }
-
             $existingUserQuery = $connection->prepare(
                 'SELECT id FROM users '
-                . 'WHERE person_id = :personId OR username = :username LIMIT 1'
+                . 'WHERE person_id = :personId OR normalized_login_identifier = :loginIdentifier LIMIT 1'
             );
             $existingUserQuery->execute([
-                ':personId' => (int) $person['id'],
-                ':username' => 'admin',
+                ':personId' => $personId,
+                ':loginIdentifier' => 'admin',
             ]);
 
             if ($existingUserQuery->fetch(PDO::FETCH_ASSOC) !== false) {
                 $connection->commit();
 
                 return;
-            }
-
-            $initialPassword = getenv('E0041_ADMIN_INITIAL_PASSWORD');
-            if (!is_string($initialPassword) || $initialPassword === '') {
-                throw new \RuntimeException(
-                    'E0041_ADMIN_INITIAL_PASSWORD is required to create the administrator user.'
-                );
             }
 
             $passwordHash = password_hash($initialPassword, PASSWORD_DEFAULT);
@@ -85,15 +65,13 @@ final class AdminSeeder
 
             $userInsert = $connection->prepare(
                 'INSERT INTO users '
-                . '(person_id, status_id, username, email, login_identifier, normalized_login_identifier, password_hash, created_at, updated_at) '
-                . 'VALUES (:personId, :statusId, :username, :email, :loginIdentifier, :normalizedLoginIdentifier, :passwordHash, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
+                . '(person_id, status_id, login_identifier, normalized_login_identifier, password_hash, created_at, updated_at) '
+                . 'VALUES (:personId, :statusId, :loginIdentifier, :normalizedLoginIdentifier, :passwordHash, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
             );
 
             $userInsert->execute([
-                ':personId' => (int) $person['id'],
+                ':personId' => $personId,
                 ':statusId' => $userStatusId,
-                ':username' => 'admin',
-                ':email' => 'admin@example.com',
                 ':loginIdentifier' => 'admin',
                 ':normalizedLoginIdentifier' => 'admin',
                 ':passwordHash' => $passwordHash,
@@ -107,6 +85,24 @@ final class AdminSeeder
 
             throw new \RuntimeException('Unable to seed administrator user.', previous: $exception);
         }
+    }
+
+    private function personExists(PDO $connection, int $personId): bool
+    {
+        $statement = $connection->prepare('SELECT id FROM persons WHERE id = :personId LIMIT 1');
+        $statement->execute([':personId' => $personId]);
+
+        return $statement->fetch(PDO::FETCH_ASSOC) !== false;
+    }
+
+    private function administratorExists(PDO $connection): bool
+    {
+        $statement = $connection->prepare(
+            'SELECT id FROM users WHERE normalized_login_identifier = :loginIdentifier LIMIT 1'
+        );
+        $statement->execute([':loginIdentifier' => 'admin']);
+
+        return $statement->fetch(PDO::FETCH_ASSOC) !== false;
     }
 
     private function findStatusId(PDO $connection, string $statusTypeCode, string $statusCode): ?int
@@ -133,19 +129,4 @@ final class AdminSeeder
         return (int) $status['id'];
     }
 
-    private function resolveDocumentTypeId(PDO $connection): int
-    {
-        try {
-            $statement = $connection->query('SELECT id FROM document_types ORDER BY id ASC LIMIT 1');
-            $row = $statement->fetch(PDO::FETCH_ASSOC);
-
-            if ($row !== false && isset($row['id'])) {
-                return (int) $row['id'];
-            }
-        } catch (\Throwable) {
-            return 1;
-        }
-
-        return 1;
-    }
 }
