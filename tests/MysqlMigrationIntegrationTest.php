@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
+use App\Person\Domain\Person;
+use App\Person\Domain\PersonStatus;
+use App\Person\Domain\ValueObject\ContactInformation;
+use App\Person\Domain\ValueObject\Identification;
+use App\Person\Domain\ValueObject\PersonalName;
+use App\Person\Domain\ValueObject\PersonId;
+use App\Person\Infrastructure\Persistence\PdoPersonRepository;
 use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
@@ -242,11 +249,28 @@ try {
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM statuses')->fetchColumn() === 8, 'Status baseline is incomplete.');
 
     $identity->exec(
-        "INSERT INTO sexes (id, code, name, is_active) VALUES (1, 'TEST', 'Disposable test value', TRUE)"
+        "INSERT INTO document_types (id, code, name, is_active) "
+        . "VALUES (1, 'TEST', 'Disposable test value', TRUE)"
+    );
+    $identity->exec(
+        "INSERT INTO sexes (id, code, name, is_active) "
+        . "VALUES (1, 'TEST', 'Disposable test value', TRUE)"
+    );
+    $identity->exec(
+        "INSERT INTO marital_statuses (id, code, name, is_active) "
+        . "VALUES (1, 'TEST', 'Disposable test value', TRUE)"
+    );
+    $identity->exec(
+        "INSERT INTO education_levels (id, code, name, is_active) "
+        . "VALUES (1, 'TEST', 'Disposable test value', TRUE)"
     );
     $generalStatusId = (int) $identity->query(
         "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
         . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE'"
+    )->fetchColumn();
+    $inactiveGeneralStatusId = (int) $identity->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'INACTIVE'"
     )->fetchColumn();
     $disabledUserStatusId = (int) $identity->query(
         "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
@@ -287,6 +311,105 @@ try {
     assertIntegration(
         $preserved !== false && (int) $preserved['status_id'] === $disabledUserStatusId,
         'AdminSeeder changed an existing User status.'
+    );
+
+    $personRepository = new PdoPersonRepository($managerA);
+    $personToday = new DateTimeImmutable('2026-08-01', new DateTimeZone('UTC'));
+    $person = new Person(
+        new PersonId(10),
+        new PersonalName('Disposable', 'Maria', 'Persistence', 'Probe'),
+        new Identification(1, 'Person-100'),
+        new DateTimeImmutable('2000-02-03', new DateTimeZone('UTC')),
+        1,
+        1,
+        1,
+        new ContactInformation('person@example.test', 'mobile extension', 'landline extension'),
+        PersonStatus::Active,
+        $personToday,
+    );
+    $personRepository->save($person);
+    $createdAt = $identity->query(
+        'SELECT created_at FROM persons WHERE id = 10'
+    )->fetchColumn();
+    assertIntegration(
+        $personRepository->findById(new PersonId(10))?->personalName()->middleName() === 'Maria',
+        'Person repository did not reconstruct the inserted aggregate by ID.'
+    );
+    assertIntegration(
+        $personRepository->findByIdentification(new Identification(1, '  person-100  '))?->id()->value() === 10,
+        'Person repository did not use the normalized identification_key lookup.'
+    );
+
+    $duplicateIdentificationRejected = false;
+    try {
+        $personRepository->save(new Person(
+            new PersonId(11),
+            new PersonalName('Duplicate', null, 'Identification', null),
+            new Identification(1, 'PERSON-100'),
+            new DateTimeImmutable('2001-01-01', new DateTimeZone('UTC')),
+            1,
+            null,
+            null,
+            null,
+            PersonStatus::Active,
+            $personToday,
+        ));
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $duplicateIdentificationRejected = true;
+    }
+    assertIntegration(
+        $duplicateIdentificationRejected,
+        'MariaDB did not enforce normalized Person identification uniqueness.'
+    );
+
+    $person->updateIdentity(
+        new PersonalName('Updated', null, 'Persistence', null),
+        null,
+        new DateTimeImmutable('2001-04-05', new DateTimeZone('UTC')),
+        1,
+        null,
+        null,
+        $personToday,
+    );
+    $person->updateContactInformation(null);
+    $person->deactivate();
+    $personRepository->save($person);
+    $updatedPerson = $identity->query(
+        'SELECT p.document_type_id, p.document_number, p.identification_key, '
+        . 'p.email, p.mobile_phone, p.landline_phone, p.created_at, '
+        . 's.code AS status_code, st.code AS status_type_code '
+        . 'FROM persons p '
+        . 'INNER JOIN statuses s ON s.id = p.status_id '
+        . 'INNER JOIN status_types st ON st.id = s.status_type_id '
+        . 'WHERE p.id = 10'
+    )->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $updatedPerson !== false
+        && $updatedPerson['document_type_id'] === null
+        && $updatedPerson['document_number'] === null
+        && $updatedPerson['identification_key'] === null
+        && $updatedPerson['email'] === null
+        && $updatedPerson['mobile_phone'] === null
+        && $updatedPerson['landline_phone'] === null,
+        'Person update did not persist removed identification and contact fields as null.'
+    );
+    assertIntegration(
+        $updatedPerson !== false
+        && $updatedPerson['status_type_code'] === 'GENERAL_STATUS'
+        && $updatedPerson['status_code'] === 'INACTIVE'
+        && (int) $inactiveGeneralStatusId > 0,
+        'Person update did not resolve INACTIVE through GENERAL_STATUS.'
+    );
+    assertIntegration(
+        $updatedPerson !== false && $updatedPerson['created_at'] === $createdAt,
+        'Person update modified created_at.'
+    );
+    assertIntegration(
+        $personRepository->findById(new PersonId(10))?->status() === PersonStatus::Inactive,
+        'Person repository did not reconstruct the updated INACTIVE aggregate.'
     );
 
     $managerB = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
@@ -349,6 +472,9 @@ try {
     echo "PASS MySQL AdminSeeder preserves existing credentials and status\n";
     echo "PASS MySQL UTC repository locked_at persistence\n";
     echo "PASS MySQL concurrent User row locking with specific MariaDB error classification\n";
+    echo "PASS MySQL Person insert and complete aggregate reconstruction\n";
+    echo "PASS MySQL Person normalized identification lookup and uniqueness\n";
+    echo "PASS MySQL Person update, nullable fields and GENERAL_STATUS mapping\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {
     $cleanupFailures = dropDisposableDatabases($server, $createdDatabases);
