@@ -34,6 +34,8 @@ final class ConnectionFactory
             $connection = new PDO($dsn, $config->username(), $config->password(), $options);
 
             if ($config->driver() === 'mysql') {
+                // Keep parameter expressions compatible with the approved utf8mb4 schema collation.
+                $connection->exec('SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci');
                 // Identity timestamps are persisted and read as UTC regardless of deployment timezone.
                 $connection->exec("SET time_zone = '+00:00'");
             }

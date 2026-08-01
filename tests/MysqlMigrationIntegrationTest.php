@@ -36,6 +36,52 @@ function isExpectedMariaDbLockException(PDOException $exception): bool
         || ($sqlState === '40001' && $driverCode === 1213 && str_contains($message, 'deadlock'));
 }
 
+function mariaDbPersonCollationDiagnostics(PDO $connection): string
+{
+    try {
+        $session = $connection->query(
+            'SELECT @@character_set_connection AS character_set_connection, '
+            . '@@collation_connection AS collation_connection'
+        )->fetch(PDO::FETCH_ASSOC);
+        $columns = $connection->query(
+            "SELECT column_name, collation_name FROM information_schema.columns "
+            . "WHERE table_schema = DATABASE() AND table_name = 'persons' "
+            . "AND column_name IN ('document_number', 'identification_key') ORDER BY column_name"
+        )->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        return sprintf(
+            'character_set_connection=%s; collation_connection=%s; '
+            . 'persons.document_number=%s; persons.identification_key=%s',
+            $session['character_set_connection'] ?? '(unavailable)',
+            $session['collation_connection'] ?? '(unavailable)',
+            $columns['document_number'] ?? '(missing)',
+            $columns['identification_key'] ?? '(missing)',
+        );
+    } catch (Throwable $exception) {
+        return 'Collation diagnostics unavailable: ' . $exception->getMessage();
+    }
+}
+
+function findPersonWithCollationDiagnostics(
+    PDO $connection,
+    PdoPersonRepository $repository,
+    Identification $identification,
+): ?Person {
+    try {
+        return $repository->findByIdentification($identification);
+    } catch (PDOException $exception) {
+        if (!str_contains(strtolower($exception->getMessage()), 'collation')) {
+            throw $exception;
+        }
+
+        throw new RuntimeException(
+            'Person identification lookup failed because of a MariaDB collation conflict. '
+            . mariaDbPersonCollationDiagnostics($connection),
+            previous: $exception,
+        );
+    }
+}
+
 /**
  * @param list<string> $databases
  * @return list<string>
@@ -232,6 +278,19 @@ try {
     ]);
     $managerA = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
     (new MigrationRunner($managerA))->run();
+    $connectionA = $managerA->connection();
+
+    $sessionCollation = $connectionA->query(
+        'SELECT @@character_set_connection AS character_set_connection, '
+        . '@@collation_connection AS collation_connection'
+    )->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $sessionCollation !== false
+        && $sessionCollation['character_set_connection'] === 'utf8mb4'
+        && $sessionCollation['collation_connection'] === 'utf8mb4_unicode_ci',
+        'ConnectionFactory did not establish the approved MariaDB charset and collation. '
+        . mariaDbPersonCollationDiagnostics($connectionA)
+    );
 
     $actualTables = $identity->query(
         'SELECT table_name FROM information_schema.tables '
@@ -371,7 +430,11 @@ try {
         'Person repository did not reconstruct the inserted aggregate by ID.'
     );
     assertIntegration(
-        $personRepository->findByIdentification(new Identification(1, '  person-100  '))?->id()?->value()
+        findPersonWithCollationDiagnostics(
+            $connectionA,
+            $personRepository,
+            new Identification(1, '  person-100  '),
+        )?->id()?->value()
             === $generatedPersonId->value(),
         'Person repository did not use the normalized identification_key lookup.'
     );
@@ -452,7 +515,6 @@ try {
     );
 
     $managerB = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
-    $connectionA = $managerA->connection();
     $connectionB = $managerB->connection();
     assertIntegration(
         $connectionA->query('SELECT @@session.time_zone')->fetchColumn() === '+00:00',

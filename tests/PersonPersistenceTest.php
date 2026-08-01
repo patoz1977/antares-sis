@@ -83,19 +83,33 @@ function registerPersonPersistenceTests(TestRunner $runner): void
 
     $runner->add('pdo Person repository finds existing and missing identities', function (): void {
         $repository = personPersistenceRepositoryWithPdo(sqlitePersonDatabase());
-        $persisted = $repository->save(completePersistencePerson(null, 'Mixed-Case'));
+        $persisted = $repository->save(completePersistencePerson(null, "Mixed-'Case"));
         $id = requiredPersistedPersonId($persisted);
 
         assertSameValue($id->value(), $repository->findById($id)?->id()?->value());
         assertSameValue(null, $repository->findById(new PersonId($id->value() + 1000)));
         assertSameValue(
             $id->value(),
-            $repository->findByIdentification(new Identification(1, '  mixed-case  '))?->id()?->value(),
+            $repository->findByIdentification(new Identification(1, "  mixed-'case  "))?->id()?->value(),
         );
         assertSameValue(
             null,
             $repository->findByIdentification(new Identification(1, 'missing')),
         );
+    });
+
+    $runner->add('pdo Person lookup keeps the generated key indexed and fully parameterized', function (): void {
+        $source = file_get_contents(
+            dirname(__DIR__) . '/app/Person/Infrastructure/Persistence/PdoPersonRepository.php'
+        );
+        if (!is_string($source)) {
+            throw new RuntimeException('Unable to read PdoPersonRepository source.');
+        }
+
+        assertSameValue(true, str_contains($source, 'WHERE p.identification_key = :identificationKey'));
+        assertSameValue(true, str_contains($source, "':identificationKey' => \$this->identificationKey(\$identification)"));
+        assertSameValue(false, str_contains($source, 'identificationKeyExpression'));
+        assertSameValue(false, preg_match('/WHERE\s+(?:UPPER|TRIM|CONCAT|CAST|COLLATE)\s*\(/i', $source) === 1);
     });
 
     $runner->add('pdo Person repository persists absent optional identity and contact as null', function (): void {
@@ -262,7 +276,7 @@ function sqlitePersonDatabase(): PDO
         . 'id INTEGER PRIMARY KEY, first_name TEXT NOT NULL, middle_name TEXT NULL, '
         . 'first_surname TEXT NOT NULL, second_surname TEXT NULL, '
         . 'document_type_id INTEGER NULL, document_number TEXT NULL, '
-        . 'identification_key TEXT GENERATED ALWAYS AS ('
+        . 'identification_key TEXT COLLATE NOCASE GENERATED ALWAYS AS ('
         . "CASE WHEN document_type_id IS NULL OR document_number IS NULL THEN NULL ELSE "
         . "CAST(document_type_id AS TEXT) || ':' || UPPER(TRIM(document_number)) END) STORED, "
         . 'birth_date TEXT NOT NULL, sex_id INTEGER NOT NULL, marital_status_id INTEGER NULL, '

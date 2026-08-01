@@ -57,6 +57,19 @@ function registerSchemaBaselineTests(TestRunner $runner): void
         ], $versions, 'Migration runner did not load the expected ordered sequence.');
     });
 
+    $runner->add('MariaDB connections use the approved schema character set and collation', function (): void {
+        $source = file_get_contents(dirname(__DIR__) . '/core/Database/ConnectionFactory.php');
+        if (!is_string($source)) {
+            throw new RuntimeException('Unable to read ConnectionFactory source.');
+        }
+
+        assertBaselineSame(
+            true,
+            str_contains($source, 'SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci'),
+            'ConnectionFactory must align MariaDB sessions with the approved schema collation.'
+        );
+    });
+
     $runner->add('Person and User columns match the approved baseline', function (): void {
         $source = file_get_contents(dirname(__DIR__) . '/database/migrations/005_create_identity_and_roles.php');
         if (!is_string($source)) {

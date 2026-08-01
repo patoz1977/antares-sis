@@ -42,12 +42,11 @@ final class PdoPersonRepository implements PersonRepository
     {
         $statement = $this->connection->prepare(
             $this->selectSql()
-            . ' WHERE p.identification_key = ' . $this->identificationKeyExpression()
+            . ' WHERE p.identification_key = :identificationKey'
             . ' LIMIT 1'
         );
         $statement->execute([
-            ':documentTypeId' => $identification->documentTypeId(),
-            ':documentNumber' => $identification->documentNumber(),
+            ':identificationKey' => $this->identificationKey($identification),
         ]);
 
         return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));
@@ -194,13 +193,13 @@ final class PdoPersonRepository implements PersonRepository
             . 'INNER JOIN status_types st ON st.id = s.status_type_id';
     }
 
-    private function identificationKeyExpression(): string
+    private function identificationKey(Identification $identification): string
     {
-        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
-            return "CONCAT(CAST(:documentTypeId AS CHAR), ':', UPPER(TRIM(:documentNumber)))";
-        }
-
-        return "CAST(:documentTypeId AS TEXT) || ':' || UPPER(TRIM(:documentNumber))";
+        return sprintf(
+            '%d:%s',
+            $identification->documentTypeId(),
+            $identification->documentNumber(),
+        );
     }
 
     private function mapRow(array|false $row): ?Person
