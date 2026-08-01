@@ -9,8 +9,10 @@ use Tests\Support\TestRunner;
 $runner = new TestRunner();
 
 require __DIR__ . '/IdentityAccessTest.php';
+require __DIR__ . '/PersonDomainTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
+\Tests\registerPersonDomainTests($runner);
 \Tests\registerSchemaBaselineTests($runner);
 $runner->run();
