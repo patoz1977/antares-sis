@@ -347,7 +347,7 @@ function registerIdentityAccessTests(TestRunner $runner): void
             __DIR__ . '/../app/IdentityAccess/Infrastructure/Persistence/PdoUserRepository.php'
         );
         $schema = file_get_contents(
-            __DIR__ . '/../database/migrations/005_create_users_table.php'
+            __DIR__ . '/../database/migrations/005_create_identity_and_roles.php'
         );
         assertSameValue(false, str_contains((string) $repository, 'deleted_at'));
         assertSameValue(false, str_contains((string) $repository, 'locked_until'));

@@ -7,6 +7,7 @@ use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
 use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
+use Core\Database\MigrationRunner;
 use Database\Seeders\AdminSeeder;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -48,58 +49,23 @@ function dropDisposableDatabases(PDO $server, array $databases): array
     return $failures;
 }
 
-function createCurrentIdentitySchema(PDO $connection): void
+/** @return list<string> */
+function expectedBaselineTables(): array
 {
-    $connection->exec(
-        'CREATE TABLE persons ('
-        . 'id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
-        . 'PRIMARY KEY (id)'
-        . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
-    );
-    $connection->exec(
-        'CREATE TABLE status_types ('
-        . 'id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
-        . 'code VARCHAR(100) NOT NULL, '
-        . 'PRIMARY KEY (id), '
-        . 'UNIQUE KEY uq_status_types_code (code)'
-        . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
-    );
-    $connection->exec(
-        'CREATE TABLE statuses ('
-        . 'id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
-        . 'status_type_id BIGINT UNSIGNED NOT NULL, '
-        . 'code VARCHAR(100) NOT NULL, '
-        . 'PRIMARY KEY (id), '
-        . 'UNIQUE KEY uq_statuses_type_code (status_type_id, code), '
-        . 'CONSTRAINT fk_statuses_type FOREIGN KEY (status_type_id) '
-        . 'REFERENCES status_types(id) ON DELETE RESTRICT ON UPDATE RESTRICT'
-        . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
-    );
-    $connection->exec(
-        'CREATE TABLE users ('
-        . 'id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, '
-        . 'person_id BIGINT UNSIGNED NOT NULL, '
-        . 'login_identifier VARCHAR(254) NOT NULL, '
-        . 'normalized_login_identifier VARCHAR(254) NOT NULL, '
-        . 'password_hash VARCHAR(255) NOT NULL, '
-        . 'status_id BIGINT UNSIGNED NOT NULL, '
-        . 'last_access_at TIMESTAMP NULL DEFAULT NULL, '
-        . 'failed_login_attempts SMALLINT UNSIGNED NOT NULL DEFAULT 0, '
-        . 'locked_at TIMESTAMP NULL DEFAULT NULL, '
-        . 'created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, '
-        . 'updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, '
-        . 'PRIMARY KEY (id), '
-        . 'UNIQUE KEY uq_users_person (person_id), '
-        . 'UNIQUE KEY uq_users_normalized_login (normalized_login_identifier), '
-        . 'KEY idx_users_status_locked (status_id, locked_at), '
-        . 'CONSTRAINT chk_users_normalized_login '
-        . 'CHECK (normalized_login_identifier = LOWER(TRIM(normalized_login_identifier))), '
-        . 'CONSTRAINT fk_users_person FOREIGN KEY (person_id) '
-        . 'REFERENCES persons(id) ON DELETE RESTRICT ON UPDATE RESTRICT, '
-        . 'CONSTRAINT fk_users_status FOREIGN KEY (status_id) '
-        . 'REFERENCES statuses(id) ON DELETE RESTRICT ON UPDATE RESTRICT'
-        . ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
-    );
+    $tables = [
+        'academic_periods', 'authorized_pickup_assignments', 'cantons', 'document_requirements',
+        'document_types', 'education_levels', 'emergency_contact_assignments',
+        'enrollment_document_acceptances', 'enrollment_submission_snapshots', 'enrollments',
+        'families', 'family_addresses', 'family_authorized_pickups', 'family_emergency_contacts',
+        'family_representatives', 'family_students', 'grades', 'institutional_document_versions',
+        'institutional_documents', 'marital_statuses', 'migrations', 'parishes', 'persons', 'provinces',
+        'relationship_types', 'representative_address_assignments', 'representatives', 'sections',
+        'sexes', 'snapshot_addresses', 'snapshot_authorized_pickups', 'snapshot_emergency_contacts',
+        'statuses', 'status_types', 'student_address_assignments', 'students', 'users',
+    ];
+    sort($tables);
+
+    return $tables;
 }
 
 $requiredEnvironment = [
@@ -209,24 +175,60 @@ try {
         $password,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]
     );
-    createCurrentIdentitySchema($identity);
-    $identity->exec("INSERT INTO persons (id) VALUES (1)");
-    $identity->exec("INSERT INTO status_types (id, code) VALUES (1, 'USER_STATUS')");
+    $databaseConfig = new DatabaseConfig([
+        'driver' => 'mysql',
+        'host' => $host,
+        'port' => $port,
+        'database' => $identityDatabase,
+        'username' => $username,
+        'password' => $password,
+        'charset' => $charset,
+    ]);
+    $managerA = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
+    (new MigrationRunner($managerA))->run();
+
+    $actualTables = $identity->query(
+        'SELECT table_name FROM information_schema.tables '
+        . 'WHERE table_schema = DATABASE() AND table_type = \'BASE TABLE\' ORDER BY table_name'
+    )->fetchAll(PDO::FETCH_COLUMN);
+    assertIntegration($actualTables === expectedBaselineTables(), 'Clean migration inventory differs from the baseline.');
+    assertIntegration((int) $identity->query('SELECT COUNT(*) FROM migrations')->fetchColumn() === 9, 'Not all baseline migrations were recorded.');
+    assertIntegration((int) $identity->query('SELECT COUNT(*) FROM status_types')->fetchColumn() === 3, 'Status type baseline is incomplete.');
+    assertIntegration((int) $identity->query('SELECT COUNT(*) FROM statuses')->fetchColumn() === 8, 'Status baseline is incomplete.');
+
     $identity->exec(
-        "INSERT INTO statuses (id, status_type_id, code) VALUES "
-        . "(1, 1, 'ACTIVE'), (2, 1, 'DISABLED')"
+        "INSERT INTO sexes (id, code, name, is_active) VALUES (1, 'TEST', 'Disposable test value', TRUE)"
     );
+    $generalStatusId = (int) $identity->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE'"
+    )->fetchColumn();
+    $disabledUserStatusId = (int) $identity->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'USER_STATUS' AND s.code = 'DISABLED'"
+    )->fetchColumn();
+    $personInsert = $identity->prepare(
+        'INSERT INTO persons (id, first_name, first_surname, birth_date, sex_id, status_id) '
+        . 'VALUES (1, :firstName, :firstSurname, :birthDate, 1, :statusId)'
+    );
+    $personInsert->execute([
+        ':firstName' => 'Disposable',
+        ':firstSurname' => 'Administrator',
+        ':birthDate' => '2000-01-01',
+        ':statusId' => $generalStatusId,
+    ]);
     $hash = password_hash('DisposableAdminPassword', PASSWORD_DEFAULT);
     assertIntegration(is_string($hash), 'Unable to create disposable password hash.');
     $insert = $identity->prepare(
         'INSERT INTO users '
         . '(person_id, login_identifier, normalized_login_identifier, password_hash, status_id, failed_login_attempts) '
-        . 'VALUES (1, :loginIdentifier, :normalizedLoginIdentifier, :passwordHash, 2, 4)'
+        . 'VALUES (1, :loginIdentifier, :normalizedLoginIdentifier, :passwordHash, :statusId, 4)'
     );
     $insert->execute([
         ':loginIdentifier' => 'admin',
         ':normalizedLoginIdentifier' => 'admin',
         ':passwordHash' => $hash,
+        ':statusId' => $disabledUserStatusId,
     ]);
 
     (new AdminSeeder())->run($identity);
@@ -238,20 +240,10 @@ try {
         'AdminSeeder replaced an existing password hash.'
     );
     assertIntegration(
-        $preserved !== false && (int) $preserved['status_id'] === 2,
+        $preserved !== false && (int) $preserved['status_id'] === $disabledUserStatusId,
         'AdminSeeder changed an existing User status.'
     );
 
-    $databaseConfig = new DatabaseConfig([
-        'driver' => 'mysql',
-        'host' => $host,
-        'port' => $port,
-        'database' => $identityDatabase,
-        'username' => $username,
-        'password' => $password,
-        'charset' => $charset,
-    ]);
-    $managerA = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
     $managerB = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
     $connectionA = $managerA->connection();
     $connectionB = $managerB->connection();
@@ -307,7 +299,8 @@ try {
     }
     assertIntegration($lockBlocked, 'Concurrent User load was not protected by a row lock.');
 
-    echo "PASS MySQL current User schema fixture excludes discarded columns\n";
+    echo "PASS MySQL clean migration creates the exact 36-table domain baseline plus migrations metadata\n";
+    echo "PASS MySQL approved status seed baseline\n";
     echo "PASS MySQL AdminSeeder preserves existing credentials and status\n";
     echo "PASS MySQL UTC repository locked_at persistence\n";
     echo "PASS MySQL concurrent User row locking with specific MariaDB error classification\n";
