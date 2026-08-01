@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
+use App\Person\Domain\Person;
+use App\Person\Domain\PersonStatus;
+use App\Person\Domain\ValueObject\ContactInformation;
+use App\Person\Domain\ValueObject\Identification;
+use App\Person\Domain\ValueObject\PersonalName;
+use App\Person\Infrastructure\Persistence\PdoPersonRepository;
 use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
@@ -28,6 +34,52 @@ function isExpectedMariaDbLockException(PDOException $exception): bool
 
     return ($sqlState === 'HY000' && $driverCode === 1205 && str_contains($message, 'lock wait timeout'))
         || ($sqlState === '40001' && $driverCode === 1213 && str_contains($message, 'deadlock'));
+}
+
+function mariaDbPersonCollationDiagnostics(PDO $connection): string
+{
+    try {
+        $session = $connection->query(
+            'SELECT @@character_set_connection AS character_set_connection, '
+            . '@@collation_connection AS collation_connection'
+        )->fetch(PDO::FETCH_ASSOC);
+        $columns = $connection->query(
+            "SELECT column_name, collation_name FROM information_schema.columns "
+            . "WHERE table_schema = DATABASE() AND table_name = 'persons' "
+            . "AND column_name IN ('document_number', 'identification_key') ORDER BY column_name"
+        )->fetchAll(PDO::FETCH_KEY_PAIR);
+
+        return sprintf(
+            'character_set_connection=%s; collation_connection=%s; '
+            . 'persons.document_number=%s; persons.identification_key=%s',
+            $session['character_set_connection'] ?? '(unavailable)',
+            $session['collation_connection'] ?? '(unavailable)',
+            $columns['document_number'] ?? '(missing)',
+            $columns['identification_key'] ?? '(missing)',
+        );
+    } catch (Throwable $exception) {
+        return 'Collation diagnostics unavailable: ' . $exception->getMessage();
+    }
+}
+
+function findPersonWithCollationDiagnostics(
+    PDO $connection,
+    PdoPersonRepository $repository,
+    Identification $identification,
+): ?Person {
+    try {
+        return $repository->findByIdentification($identification);
+    } catch (PDOException $exception) {
+        if (!str_contains(strtolower($exception->getMessage()), 'collation')) {
+            throw $exception;
+        }
+
+        throw new RuntimeException(
+            'Person identification lookup failed because of a MariaDB collation conflict. '
+            . mariaDbPersonCollationDiagnostics($connection),
+            previous: $exception,
+        );
+    }
 }
 
 /**
@@ -226,6 +278,19 @@ try {
     ]);
     $managerA = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
     (new MigrationRunner($managerA))->run();
+    $connectionA = $managerA->connection();
+
+    $sessionCollation = $connectionA->query(
+        'SELECT @@character_set_connection AS character_set_connection, '
+        . '@@collation_connection AS collation_connection'
+    )->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $sessionCollation !== false
+        && $sessionCollation['character_set_connection'] === 'utf8mb4'
+        && $sessionCollation['collation_connection'] === 'utf8mb4_unicode_ci',
+        'ConnectionFactory did not establish the approved MariaDB charset and collation. '
+        . mariaDbPersonCollationDiagnostics($connectionA)
+    );
 
     $actualTables = $identity->query(
         'SELECT table_name FROM information_schema.tables '
@@ -242,11 +307,28 @@ try {
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM statuses')->fetchColumn() === 8, 'Status baseline is incomplete.');
 
     $identity->exec(
-        "INSERT INTO sexes (id, code, name, is_active) VALUES (1, 'TEST', 'Disposable test value', TRUE)"
+        "INSERT INTO document_types (id, code, name, is_active) "
+        . "VALUES (1, 'TEST', 'Disposable test value', TRUE)"
+    );
+    $identity->exec(
+        "INSERT INTO sexes (id, code, name, is_active) "
+        . "VALUES (1, 'TEST', 'Disposable test value', TRUE)"
+    );
+    $identity->exec(
+        "INSERT INTO marital_statuses (id, code, name, is_active) "
+        . "VALUES (1, 'TEST', 'Disposable test value', TRUE)"
+    );
+    $identity->exec(
+        "INSERT INTO education_levels (id, code, name, is_active) "
+        . "VALUES (1, 'TEST', 'Disposable test value', TRUE)"
     );
     $generalStatusId = (int) $identity->query(
         "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
         . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE'"
+    )->fetchColumn();
+    $inactiveGeneralStatusId = (int) $identity->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'INACTIVE'"
     )->fetchColumn();
     $disabledUserStatusId = (int) $identity->query(
         "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
@@ -289,8 +371,150 @@ try {
         'AdminSeeder changed an existing User status.'
     );
 
+    $personRepository = new PdoPersonRepository($managerA);
+    $personToday = new DateTimeImmutable('2026-08-01', new DateTimeZone('UTC'));
+    $person = new Person(
+        null,
+        new PersonalName('Disposable', 'Maria', 'Persistence', 'Probe'),
+        new Identification(1, 'Person-100'),
+        new DateTimeImmutable('2000-02-03', new DateTimeZone('UTC')),
+        1,
+        1,
+        1,
+        new ContactInformation('person@example.test', 'mobile extension', 'landline extension'),
+        PersonStatus::Active,
+        $personToday,
+    );
+    $persistedPerson = $personRepository->save($person);
+    $generatedPersonId = $persistedPerson->id();
+    assertIntegration($person->id() === null, 'Person insert replaced the identity of the new aggregate instance.');
+    assertIntegration(
+        $generatedPersonId !== null && $generatedPersonId->value() > 0,
+        'MariaDB did not generate a positive Person identity.'
+    );
+    $secondPerson = new Person(
+        null,
+        new PersonalName('Second', null, 'Persistence', null),
+        null,
+        new DateTimeImmutable('2001-01-01', new DateTimeZone('UTC')),
+        1,
+        null,
+        null,
+        null,
+        PersonStatus::Active,
+        $personToday,
+    );
+    $secondPersistedPerson = $personRepository->save($secondPerson);
+    $secondGeneratedPersonId = $secondPersistedPerson->id();
+    assertIntegration(
+        $secondPerson->id() === null,
+        'Second Person insert received or replaced a manual identity.'
+    );
+    assertIntegration(
+        $secondGeneratedPersonId !== null && $secondGeneratedPersonId->value() > 0,
+        'MariaDB did not generate a positive identity for the second Person.'
+    );
+    assertIntegration(
+        !$generatedPersonId->equals($secondGeneratedPersonId),
+        'MariaDB generated the same identity for two Persons.'
+    );
+    assertIntegration(
+        $personRepository->findById($secondGeneratedPersonId)?->personalName()->firstName() === 'Second',
+        'Second Person could not be reconstructed through its generated identity.'
+    );
+    $createdAtStatement = $identity->prepare('SELECT created_at FROM persons WHERE id = :id');
+    $createdAtStatement->execute([':id' => $generatedPersonId->value()]);
+    $createdAt = $createdAtStatement->fetchColumn();
+    assertIntegration(
+        $personRepository->findById($generatedPersonId)?->personalName()->middleName() === 'Maria',
+        'Person repository did not reconstruct the inserted aggregate by ID.'
+    );
+    assertIntegration(
+        findPersonWithCollationDiagnostics(
+            $connectionA,
+            $personRepository,
+            new Identification(1, '  person-100  '),
+        )?->id()?->value()
+            === $generatedPersonId->value(),
+        'Person repository did not use the normalized identification_key lookup.'
+    );
+
+    $duplicateIdentificationRejected = false;
+    try {
+        $personRepository->save(new Person(
+            null,
+            new PersonalName('Duplicate', null, 'Identification', null),
+            new Identification(1, 'PERSON-100'),
+            new DateTimeImmutable('2001-01-01', new DateTimeZone('UTC')),
+            1,
+            null,
+            null,
+            null,
+            PersonStatus::Active,
+            $personToday,
+        ));
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $duplicateIdentificationRejected = true;
+    }
+    assertIntegration(
+        $duplicateIdentificationRejected,
+        'MariaDB did not enforce normalized Person identification uniqueness.'
+    );
+
+    $persistedPerson->updateIdentity(
+        new PersonalName('Updated', null, 'Persistence', null),
+        null,
+        new DateTimeImmutable('2001-04-05', new DateTimeZone('UTC')),
+        1,
+        null,
+        null,
+        $personToday,
+    );
+    $persistedPerson->updateContactInformation(null);
+    $persistedPerson->deactivate();
+    $updatedPersistedPerson = $personRepository->save($persistedPerson);
+    $updatedPersonStatement = $identity->prepare(
+        'SELECT p.document_type_id, p.document_number, p.identification_key, '
+        . 'p.email, p.mobile_phone, p.landline_phone, p.created_at, '
+        . 's.code AS status_code, st.code AS status_type_code '
+        . 'FROM persons p '
+        . 'INNER JOIN statuses s ON s.id = p.status_id '
+        . 'INNER JOIN status_types st ON st.id = s.status_type_id '
+        . 'WHERE p.id = :id'
+    );
+    $updatedPersonStatement->execute([':id' => $generatedPersonId->value()]);
+    $updatedPerson = $updatedPersonStatement->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $updatedPerson !== false
+        && $updatedPerson['document_type_id'] === null
+        && $updatedPerson['document_number'] === null
+        && $updatedPerson['identification_key'] === null
+        && $updatedPerson['email'] === null
+        && $updatedPerson['mobile_phone'] === null
+        && $updatedPerson['landline_phone'] === null,
+        'Person update did not persist removed identification and contact fields as null.'
+    );
+    assertIntegration(
+        $updatedPerson !== false
+        && $updatedPerson['status_type_code'] === 'GENERAL_STATUS'
+        && $updatedPerson['status_code'] === 'INACTIVE'
+        && (int) $inactiveGeneralStatusId > 0,
+        'Person update did not resolve INACTIVE through GENERAL_STATUS.'
+    );
+    assertIntegration(
+        $updatedPerson !== false && $updatedPerson['created_at'] === $createdAt,
+        'Person update modified created_at.'
+    );
+    assertIntegration(
+        $updatedPersistedPerson->id()?->value() === $generatedPersonId->value()
+        && $updatedPersistedPerson->status() === PersonStatus::Inactive,
+        'Person repository did not reconstruct the updated INACTIVE aggregate.'
+    );
+
     $managerB = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
-    $connectionA = $managerA->connection();
     $connectionB = $managerB->connection();
     assertIntegration(
         $connectionA->query('SELECT @@session.time_zone')->fetchColumn() === '+00:00',
@@ -349,6 +573,9 @@ try {
     echo "PASS MySQL AdminSeeder preserves existing credentials and status\n";
     echo "PASS MySQL UTC repository locked_at persistence\n";
     echo "PASS MySQL concurrent User row locking with specific MariaDB error classification\n";
+    echo "PASS MySQL database-generated Person identities and complete aggregate reconstruction\n";
+    echo "PASS MySQL Person normalized identification lookup and uniqueness\n";
+    echo "PASS MySQL Person update, nullable fields and GENERAL_STATUS mapping\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {
     $cleanupFailures = dropDisposableDatabases($server, $createdDatabases);
