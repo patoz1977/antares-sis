@@ -68,21 +68,32 @@ function expectedBaselineTables(): array
     return $tables;
 }
 
-$requiredEnvironment = [
+$requiredNonEmptyEnvironment = [
     'E0041_DB_HOST',
     'E0041_DB_PORT',
     'E0041_DB_USERNAME',
-    'E0041_DB_PASSWORD',
     'E0041_DB_PREFIX',
 ];
 
-foreach ($requiredEnvironment as $environmentName) {
-    if (getenv($environmentName) === false) {
+$environment = [];
+foreach ($requiredNonEmptyEnvironment as $environmentName) {
+    $environmentValue = getenv($environmentName);
+    if ($environmentValue === false || trim($environmentValue) === '') {
         throw new RuntimeException(
-            sprintf('%s is required; .env fallback is intentionally forbidden.', $environmentName)
+            sprintf('%s must be explicitly defined and non-empty; .env fallback is intentionally forbidden.', $environmentName)
         );
     }
+
+    $environment[$environmentName] = $environmentValue;
 }
+
+$passwordValue = getenv('E0041_DB_PASSWORD');
+if ($passwordValue === false) {
+    throw new RuntimeException(
+        'E0041_DB_PASSWORD must be explicitly defined; an empty value is allowed and .env fallback is intentionally forbidden.'
+    );
+}
+$environment['E0041_DB_PASSWORD'] = $passwordValue;
 
 if (getenv('E0041_DB_ALLOW_DISPOSABLE') !== '1') {
     throw new RuntimeException(
@@ -90,11 +101,11 @@ if (getenv('E0041_DB_ALLOW_DISPOSABLE') !== '1') {
     );
 }
 
-$host = (string) getenv('E0041_DB_HOST');
-$port = (int) getenv('E0041_DB_PORT');
-$username = (string) getenv('E0041_DB_USERNAME');
-$password = (string) getenv('E0041_DB_PASSWORD');
-$databasePrefix = (string) getenv('E0041_DB_PREFIX');
+$host = $environment['E0041_DB_HOST'];
+$port = (int) $environment['E0041_DB_PORT'];
+$username = $environment['E0041_DB_USERNAME'];
+$password = $environment['E0041_DB_PASSWORD'];
+$databasePrefix = $environment['E0041_DB_PREFIX'];
 $charset = 'utf8mb4';
 
 assertIntegration(
