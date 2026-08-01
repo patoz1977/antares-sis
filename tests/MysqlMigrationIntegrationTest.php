@@ -231,6 +231,7 @@ try {
         'SELECT table_name FROM information_schema.tables '
         . 'WHERE table_schema = DATABASE() AND table_type = \'BASE TABLE\' ORDER BY table_name'
     )->fetchAll(PDO::FETCH_COLUMN);
+    sort($actualTables, SORT_STRING);
     $expectedTables = expectedBaselineTables();
     assertIntegration(
         $actualTables === $expectedTables,
