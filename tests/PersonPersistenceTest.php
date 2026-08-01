@@ -31,16 +31,26 @@ function registerPersonPersistenceTests(TestRunner $runner): void
         sort($methods, SORT_STRING);
 
         assertSameValue(['findById', 'findByIdentification', 'save'], $methods);
+        assertSameValue(
+            Person::class,
+            (new ReflectionClass(PersonRepository::class))->getMethod('save')->getReturnType()?->getName(),
+        );
     });
 
     $runner->add('pdo Person repository inserts and reconstructs every aggregate field', function (): void {
         $pdo = sqlitePersonDatabase();
         $repository = personPersistenceRepositoryWithPdo($pdo);
-        $person = completePersistencePerson(10, 'Doc-100');
+        $person = completePersistencePerson(null, 'Doc-100');
 
-        $repository->save($person);
+        $persisted = $repository->save($person);
+        $id = requiredPersistedPersonId($persisted);
 
-        $row = $pdo->query('SELECT * FROM persons WHERE id = 10')->fetch(PDO::FETCH_ASSOC);
+        assertSameValue(null, $person->id());
+        assertSameValue(false, $persisted === $person);
+        assertSameValue(true, $id->value() > 0);
+        $statement = $pdo->prepare('SELECT * FROM persons WHERE id = :id');
+        $statement->execute([':id' => $id->value()]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
         assertSameValue('Ana', $row['first_name']);
         assertSameValue('Maria', $row['middle_name']);
         assertSameValue('Perez', $row['first_surname']);
@@ -59,8 +69,8 @@ function registerPersonPersistenceTests(TestRunner $runner): void
         assertSameValue(true, is_string($row['created_at']) && $row['created_at'] !== '');
         assertSameValue(true, is_string($row['updated_at']) && $row['updated_at'] !== '');
 
-        $reloaded = $repository->findById(new PersonId(10));
-        assertSameValue(10, $reloaded?->id()->value());
+        $reloaded = $repository->findById($id);
+        assertSameValue($id->value(), $reloaded?->id()?->value());
         assertSameValue(true, $reloaded?->personalName()->equals($person->personalName()));
         assertSameValue(true, $reloaded?->identification()?->equals($person->identification()));
         assertSameValue('2000-02-03', $reloaded?->birthDate()->format('Y-m-d'));
@@ -73,13 +83,14 @@ function registerPersonPersistenceTests(TestRunner $runner): void
 
     $runner->add('pdo Person repository finds existing and missing identities', function (): void {
         $repository = personPersistenceRepositoryWithPdo(sqlitePersonDatabase());
-        $repository->save(completePersistencePerson(10, 'Mixed-Case'));
+        $persisted = $repository->save(completePersistencePerson(null, 'Mixed-Case'));
+        $id = requiredPersistedPersonId($persisted);
 
-        assertSameValue(10, $repository->findById(new PersonId(10))?->id()->value());
-        assertSameValue(null, $repository->findById(new PersonId(999)));
+        assertSameValue($id->value(), $repository->findById($id)?->id()?->value());
+        assertSameValue(null, $repository->findById(new PersonId($id->value() + 1000)));
         assertSameValue(
-            10,
-            $repository->findByIdentification(new Identification(1, '  mixed-case  '))?->id()->value(),
+            $id->value(),
+            $repository->findByIdentification(new Identification(1, '  mixed-case  '))?->id()?->value(),
         );
         assertSameValue(
             null,
@@ -90,13 +101,16 @@ function registerPersonPersistenceTests(TestRunner $runner): void
     $runner->add('pdo Person repository persists absent optional identity and contact as null', function (): void {
         $pdo = sqlitePersonDatabase();
         $repository = personPersistenceRepositoryWithPdo($pdo);
-        $repository->save(minimalPersistencePerson(20));
+        $persisted = $repository->save(minimalPersistencePerson(null));
+        $id = requiredPersistedPersonId($persisted);
 
-        $row = $pdo->query(
+        $statement = $pdo->prepare(
             'SELECT middle_name, second_surname, document_type_id, document_number, '
             . 'identification_key, marital_status_id, education_level_id, email, '
-            . 'mobile_phone, landline_phone FROM persons WHERE id = 20'
-        )->fetch(PDO::FETCH_ASSOC);
+            . 'mobile_phone, landline_phone FROM persons WHERE id = :id'
+        );
+        $statement->execute([':id' => $id->value()]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
         assertSameValue([
             'middle_name' => null,
             'second_surname' => null,
@@ -110,19 +124,42 @@ function registerPersonPersistenceTests(TestRunner $runner): void
             'landline_phone' => null,
         ], $row);
 
-        $reloaded = $repository->findById(new PersonId(20));
+        $reloaded = $repository->findById($id);
         assertSameValue(null, $reloaded?->identification());
         assertSameValue(null, $reloaded?->contactInformation());
         assertSameValue(null, $reloaded?->maritalStatusId());
         assertSameValue(null, $reloaded?->educationLevelId());
     });
 
+    $runner->add('pdo repository inserts unpersisted Persons without update and delegates consecutive IDs', function (): void {
+        $pdo = sqlitePersonDatabase();
+        $pdo->exec(
+            "CREATE TRIGGER reject_person_updates BEFORE UPDATE ON persons "
+            . "BEGIN SELECT RAISE(FAIL, 'Unexpected Person update'); END"
+        );
+        $repository = personPersistenceRepositoryWithPdo($pdo);
+        $firstNew = minimalPersistencePerson(null);
+        $secondNew = minimalPersistencePerson(null);
+
+        $firstPersisted = $repository->save($firstNew);
+        $secondPersisted = $repository->save($secondNew);
+        $firstId = requiredPersistedPersonId($firstPersisted);
+        $secondId = requiredPersistedPersonId($secondPersisted);
+
+        assertSameValue(null, $firstNew->id());
+        assertSameValue(null, $secondNew->id());
+        assertSameValue($firstId->value() + 1, $secondId->value());
+    });
+
     $runner->add('pdo Person repository updates state without changing created_at', function (): void {
         $pdo = sqlitePersonDatabase();
         $repository = personPersistenceRepositoryWithPdo($pdo);
-        $person = completePersistencePerson(10, 'Doc-100');
-        $repository->save($person);
-        $pdo->exec("UPDATE persons SET created_at = '2026-01-02 03:04:05' WHERE id = 10");
+        $person = $repository->save(completePersistencePerson(null, 'Doc-100'));
+        $id = requiredPersistedPersonId($person);
+        $createdAtUpdate = $pdo->prepare(
+            "UPDATE persons SET created_at = '2026-01-02 03:04:05' WHERE id = :id"
+        );
+        $createdAtUpdate->execute([':id' => $id->value()]);
 
         $person->updateIdentity(
             new PersonalName('Updated', null, 'Person', null),
@@ -135,12 +172,14 @@ function registerPersonPersistenceTests(TestRunner $runner): void
         );
         $person->updateContactInformation(null);
         $person->deactivate();
-        $repository->save($person);
+        $updated = $repository->save($person);
 
-        $row = $pdo->query(
+        $statement = $pdo->prepare(
             'SELECT first_name, middle_name, document_type_id, document_number, identification_key, '
-            . 'email, mobile_phone, landline_phone, status_id, created_at FROM persons WHERE id = 10'
-        )->fetch(PDO::FETCH_ASSOC);
+            . 'email, mobile_phone, landline_phone, status_id, created_at FROM persons WHERE id = :id'
+        );
+        $statement->execute([':id' => $id->value()]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
         assertSameValue('Updated', $row['first_name']);
         assertSameValue(null, $row['middle_name']);
         assertSameValue(null, $row['document_type_id']);
@@ -151,7 +190,8 @@ function registerPersonPersistenceTests(TestRunner $runner): void
         assertSameValue(null, $row['landline_phone']);
         assertSameValue(2, (int) $row['status_id']);
         assertSameValue('2026-01-02 03:04:05', $row['created_at']);
-        assertSameValue(PersonStatus::Inactive, $repository->findById(new PersonId(10))?->status());
+        assertSameValue($id->value(), $updated->id()?->value());
+        assertSameValue(PersonStatus::Inactive, $updated->status());
     });
 
     $runner->add('pdo Person repository rejects statuses outside the approved type or codes', function (): void {
@@ -172,10 +212,10 @@ function registerPersonPersistenceTests(TestRunner $runner): void
 
     $runner->add('pdo Person repository exposes normalized identification uniqueness violations', function (): void {
         $repository = personPersistenceRepositoryWithPdo(sqlitePersonDatabase());
-        $repository->save(completePersistencePerson(10, 'Unique-100'));
+        $repository->save(completePersistencePerson(null, 'Unique-100'));
 
         assertThrows(
-            static fn (): null => $repository->save(completePersistencePerson(11, 'unique-100')),
+            static fn (): Person => $repository->save(completePersistencePerson(null, 'unique-100')),
             PDOException::class,
         );
     });
@@ -183,18 +223,20 @@ function registerPersonPersistenceTests(TestRunner $runner): void
     $runner->add('pdo Person repository rejects an update whose row disappears', function (): void {
         $pdo = sqlitePersonDatabase();
         $repository = personPersistenceRepositoryWithPdo($pdo);
-        $person = completePersistencePerson(10, 'Doc-100');
-        $repository->save($person);
+        $person = $repository->save(completePersistencePerson(null, 'Doc-100'));
+        $id = requiredPersistedPersonId($person);
         $pdo->exec(
             'CREATE TRIGGER delete_person_before_update BEFORE UPDATE ON persons '
-            . 'WHEN OLD.id = 10 BEGIN '
+            . 'BEGIN '
             . 'DELETE FROM persons WHERE id = OLD.id; '
             . 'SELECT RAISE(IGNORE); END'
         );
         $person->deactivate();
 
-        assertThrows(static fn (): null => $repository->save($person), RuntimeException::class);
-        assertSameValue(0, (int) $pdo->query('SELECT COUNT(*) FROM persons WHERE id = 10')->fetchColumn());
+        assertThrows(static fn (): Person => $repository->save($person), RuntimeException::class);
+        $statement = $pdo->prepare('SELECT COUNT(*) FROM persons WHERE id = :id');
+        $statement->execute([':id' => $id->value()]);
+        assertSameValue(0, (int) $statement->fetchColumn());
     });
 }
 
@@ -254,10 +296,10 @@ function personPersistenceRepositoryWithPdo(PDO $pdo): PdoPersonRepository
     return $repository;
 }
 
-function completePersistencePerson(int $id, string $documentNumber): Person
+function completePersistencePerson(?int $id, string $documentNumber): Person
 {
     return new Person(
-        new PersonId($id),
+        $id === null ? null : new PersonId($id),
         new PersonalName('Ana', 'Maria', 'Perez', 'Lopez'),
         new Identification(1, $documentNumber),
         new DateTimeImmutable('2000-02-03', new DateTimeZone('UTC')),
@@ -270,10 +312,10 @@ function completePersistencePerson(int $id, string $documentNumber): Person
     );
 }
 
-function minimalPersistencePerson(int $id): Person
+function minimalPersistencePerson(?int $id): Person
 {
     return new Person(
-        new PersonId($id),
+        $id === null ? null : new PersonId($id),
         new PersonalName('Luis', null, 'Vega', null),
         null,
         new DateTimeImmutable('2002-03-04', new DateTimeZone('UTC')),
@@ -284,6 +326,16 @@ function minimalPersistencePerson(int $id): Person
         PersonStatus::Active,
         personPersistenceToday(),
     );
+}
+
+function requiredPersistedPersonId(Person $person): PersonId
+{
+    $id = $person->id();
+    if ($id === null) {
+        throw new RuntimeException('Expected a persisted Person identity.');
+    }
+
+    return $id;
 }
 
 function personPersistenceToday(): DateTimeImmutable

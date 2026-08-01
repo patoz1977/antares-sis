@@ -9,7 +9,6 @@ use App\Person\Domain\PersonStatus;
 use App\Person\Domain\ValueObject\ContactInformation;
 use App\Person\Domain\ValueObject\Identification;
 use App\Person\Domain\ValueObject\PersonalName;
-use App\Person\Domain\ValueObject\PersonId;
 use App\Person\Infrastructure\Persistence\PdoPersonRepository;
 use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
@@ -316,7 +315,7 @@ try {
     $personRepository = new PdoPersonRepository($managerA);
     $personToday = new DateTimeImmutable('2026-08-01', new DateTimeZone('UTC'));
     $person = new Person(
-        new PersonId(10),
+        null,
         new PersonalName('Disposable', 'Maria', 'Persistence', 'Probe'),
         new Identification(1, 'Person-100'),
         new DateTimeImmutable('2000-02-03', new DateTimeZone('UTC')),
@@ -327,23 +326,46 @@ try {
         PersonStatus::Active,
         $personToday,
     );
-    $personRepository->save($person);
-    $createdAt = $identity->query(
-        'SELECT created_at FROM persons WHERE id = 10'
-    )->fetchColumn();
+    $persistedPerson = $personRepository->save($person);
+    $generatedPersonId = $persistedPerson->id();
+    assertIntegration($person->id() === null, 'Person insert replaced the identity of the new aggregate instance.');
     assertIntegration(
-        $personRepository->findById(new PersonId(10))?->personalName()->middleName() === 'Maria',
+        $generatedPersonId !== null && $generatedPersonId->value() > 0,
+        'MariaDB did not generate a positive Person identity.'
+    );
+    $secondPersistedPerson = $personRepository->save(new Person(
+        null,
+        new PersonalName('Second', null, 'Persistence', null),
+        null,
+        new DateTimeImmutable('2001-01-01', new DateTimeZone('UTC')),
+        1,
+        null,
+        null,
+        null,
+        PersonStatus::Active,
+        $personToday,
+    ));
+    assertIntegration(
+        $secondPersistedPerson->id()?->value() === $generatedPersonId->value() + 1,
+        'MariaDB did not manage consecutive Person AUTO_INCREMENT identities.'
+    );
+    $createdAtStatement = $identity->prepare('SELECT created_at FROM persons WHERE id = :id');
+    $createdAtStatement->execute([':id' => $generatedPersonId->value()]);
+    $createdAt = $createdAtStatement->fetchColumn();
+    assertIntegration(
+        $personRepository->findById($generatedPersonId)?->personalName()->middleName() === 'Maria',
         'Person repository did not reconstruct the inserted aggregate by ID.'
     );
     assertIntegration(
-        $personRepository->findByIdentification(new Identification(1, '  person-100  '))?->id()->value() === 10,
+        $personRepository->findByIdentification(new Identification(1, '  person-100  '))?->id()?->value()
+            === $generatedPersonId->value(),
         'Person repository did not use the normalized identification_key lookup.'
     );
 
     $duplicateIdentificationRejected = false;
     try {
         $personRepository->save(new Person(
-            new PersonId(11),
+            null,
             new PersonalName('Duplicate', null, 'Identification', null),
             new Identification(1, 'PERSON-100'),
             new DateTimeImmutable('2001-01-01', new DateTimeZone('UTC')),
@@ -365,7 +387,7 @@ try {
         'MariaDB did not enforce normalized Person identification uniqueness.'
     );
 
-    $person->updateIdentity(
+    $persistedPerson->updateIdentity(
         new PersonalName('Updated', null, 'Persistence', null),
         null,
         new DateTimeImmutable('2001-04-05', new DateTimeZone('UTC')),
@@ -374,18 +396,20 @@ try {
         null,
         $personToday,
     );
-    $person->updateContactInformation(null);
-    $person->deactivate();
-    $personRepository->save($person);
-    $updatedPerson = $identity->query(
+    $persistedPerson->updateContactInformation(null);
+    $persistedPerson->deactivate();
+    $updatedPersistedPerson = $personRepository->save($persistedPerson);
+    $updatedPersonStatement = $identity->prepare(
         'SELECT p.document_type_id, p.document_number, p.identification_key, '
         . 'p.email, p.mobile_phone, p.landline_phone, p.created_at, '
         . 's.code AS status_code, st.code AS status_type_code '
         . 'FROM persons p '
         . 'INNER JOIN statuses s ON s.id = p.status_id '
         . 'INNER JOIN status_types st ON st.id = s.status_type_id '
-        . 'WHERE p.id = 10'
-    )->fetch(PDO::FETCH_ASSOC);
+        . 'WHERE p.id = :id'
+    );
+    $updatedPersonStatement->execute([':id' => $generatedPersonId->value()]);
+    $updatedPerson = $updatedPersonStatement->fetch(PDO::FETCH_ASSOC);
     assertIntegration(
         $updatedPerson !== false
         && $updatedPerson['document_type_id'] === null
@@ -408,7 +432,8 @@ try {
         'Person update modified created_at.'
     );
     assertIntegration(
-        $personRepository->findById(new PersonId(10))?->status() === PersonStatus::Inactive,
+        $updatedPersistedPerson->id()?->value() === $generatedPersonId->value()
+        && $updatedPersistedPerson->status() === PersonStatus::Inactive,
         'Person repository did not reconstruct the updated INACTIVE aggregate.'
     );
 
@@ -472,7 +497,7 @@ try {
     echo "PASS MySQL AdminSeeder preserves existing credentials and status\n";
     echo "PASS MySQL UTC repository locked_at persistence\n";
     echo "PASS MySQL concurrent User row locking with specific MariaDB error classification\n";
-    echo "PASS MySQL Person insert and complete aggregate reconstruction\n";
+    echo "PASS MySQL database-generated Person identities and complete aggregate reconstruction\n";
     echo "PASS MySQL Person normalized identification lookup and uniqueness\n";
     echo "PASS MySQL Person update, nullable fields and GENERAL_STATUS mapping\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";

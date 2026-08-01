@@ -107,7 +107,7 @@ function registerPersonDomainTests(TestRunner $runner): void
     $runner->add('Person represents the complete approved identity state', function (): void {
         $person = personDomainFixture();
 
-        assertSameValue(1, $person->id()->value());
+        assertSameValue(1, $person->id()?->value());
         assertSameValue('Ana', $person->personalName()->firstName());
         assertSameValue('0912345678', $person->identification()?->documentNumber());
         assertSameValue('2010-05-20', $person->birthDate()->format('Y-m-d'));
@@ -118,6 +118,26 @@ function registerPersonDomainTests(TestRunner $runner): void
         assertSameValue('ana@example.com', $person->contactInformation()?->email());
         assertSameValue(PersonStatus::Active, $person->status());
         assertSameValue(true, $person->isActive());
+    });
+
+    $runner->add('Person may be new without exposing persisted identity reassignment', function (): void {
+        $person = new Person(
+            null,
+            new PersonalName('New', null, 'Person', null),
+            null,
+            new DateTimeImmutable('2012-01-01'),
+            1,
+            null,
+            null,
+            null,
+            PersonStatus::Active,
+            new DateTimeImmutable('2026-08-01'),
+        );
+        $identityProperty = (new \ReflectionClass(Person::class))->getProperty('id');
+
+        assertSameValue(null, $person->id());
+        assertSameValue(true, $identityProperty->isReadOnly());
+        assertSameValue(false, method_exists($person, 'setId'));
     });
 
     $runner->add('Person may exist without Identification or ContactInformation', function (): void {

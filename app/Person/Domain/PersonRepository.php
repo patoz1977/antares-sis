@@ -13,5 +13,5 @@ interface PersonRepository
 
     public function findByIdentification(Identification $identification): ?Person;
 
-    public function save(Person $person): void;
+    public function save(Person $person): Person;
 }

@@ -14,7 +14,7 @@ use DateTimeImmutable;
 final class Person
 {
     public function __construct(
-        private readonly PersonId $id,
+        private readonly ?PersonId $id,
         private PersonalName $personalName,
         private ?Identification $identification,
         DateTimeImmutable $birthDate,
@@ -32,7 +32,7 @@ final class Person
 
     private DateTimeImmutable $birthDate;
 
-    public function id(): PersonId
+    public function id(): ?PersonId
     {
         return $this->id;
     }

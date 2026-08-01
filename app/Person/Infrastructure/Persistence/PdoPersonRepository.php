@@ -53,29 +53,27 @@ final class PdoPersonRepository implements PersonRepository
         return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));
     }
 
-    public function save(Person $person): void
+    public function save(Person $person): Person
     {
         $statusId = $this->resolveStatusId($person->status());
 
-        if ($this->exists($person->id())) {
-            $this->update($person, $statusId);
-
-            return;
+        if ($person->id() === null) {
+            return $this->insert($person, $statusId);
         }
 
-        $this->insert($person, $statusId);
+        return $this->update($person, $statusId);
     }
 
-    private function insert(Person $person, int $statusId): void
+    private function insert(Person $person, int $statusId): Person
     {
         $statement = $this->connection->prepare(
             'INSERT INTO persons ('
-            . 'id, first_name, middle_name, first_surname, second_surname, '
+            . 'first_name, middle_name, first_surname, second_surname, '
             . 'document_type_id, document_number, birth_date, sex_id, '
             . 'marital_status_id, education_level_id, email, mobile_phone, '
             . 'landline_phone, status_id'
             . ') VALUES ('
-            . ':id, :firstName, :middleName, :firstSurname, :secondSurname, '
+            . ':firstName, :middleName, :firstSurname, :secondSurname, '
             . ':documentTypeId, :documentNumber, :birthDate, :sexId, '
             . ':maritalStatusId, :educationLevelId, :email, :mobilePhone, '
             . ':landlinePhone, :statusId'
@@ -86,10 +84,27 @@ final class PdoPersonRepository implements PersonRepository
         if ($statement->rowCount() !== 1) {
             throw new RuntimeException('Person insert did not affect exactly one row.');
         }
+
+        $generatedId = (int) $this->connection->lastInsertId();
+        if ($generatedId <= 0) {
+            throw new RuntimeException('Person insert did not produce a positive database identity.');
+        }
+
+        $persisted = $this->findById(new PersonId($generatedId));
+        if ($persisted === null) {
+            throw new RuntimeException('Inserted Person could not be reconstructed.');
+        }
+
+        return $persisted;
     }
 
-    private function update(Person $person, int $statusId): void
+    private function update(Person $person, int $statusId): Person
     {
+        $id = $person->id();
+        if ($id === null) {
+            throw new RuntimeException('A Person without persisted identity cannot be updated.');
+        }
+
         $statement = $this->connection->prepare(
             'UPDATE persons SET '
             . 'first_name = :firstName, middle_name = :middleName, '
@@ -100,27 +115,25 @@ final class PdoPersonRepository implements PersonRepository
             . 'email = :email, mobile_phone = :mobilePhone, landline_phone = :landlinePhone, '
             . 'status_id = :statusId WHERE id = :id'
         );
-        $statement->execute($this->persistenceValues($person, $statusId));
+        $values = $this->persistenceValues($person, $statusId);
+        $values[':id'] = $id->value();
+        $statement->execute($values);
 
-        if ($statement->rowCount() === 1) {
-            return;
+        $affectedRows = $statement->rowCount();
+        if ($affectedRows !== 0 && $affectedRows !== 1) {
+            throw new RuntimeException('Person update did not affect zero or one row.');
         }
 
-        if ($statement->rowCount() === 0 && $this->persistedStateMatches($person)) {
-            return;
+        $persisted = $this->findById($id);
+        if ($persisted === null) {
+            throw new RuntimeException('Person update failed because the persisted row disappeared.');
         }
 
-        throw new RuntimeException('Person update failed because the persisted row changed or disappeared.');
-    }
+        if ($affectedRows === 0 && !$this->sameState($persisted, $person)) {
+            throw new RuntimeException('Person update did not persist the requested state.');
+        }
 
-    private function exists(PersonId $id): bool
-    {
-        $statement = $this->connection->prepare(
-            'SELECT COUNT(*) FROM persons WHERE id = :id'
-        );
-        $statement->execute([':id' => $id->value()]);
-
-        return (int) $statement->fetchColumn() === 1;
+        return $persisted;
     }
 
     private function resolveStatusId(PersonStatus $status): int
@@ -151,7 +164,6 @@ final class PdoPersonRepository implements PersonRepository
         $contact = $person->contactInformation();
 
         return [
-            ':id' => $person->id()->value(),
             ':firstName' => $name->firstName(),
             ':middleName' => $name->middleName(),
             ':firstSurname' => $name->firstSurname(),
@@ -263,10 +275,11 @@ final class PdoPersonRepository implements PersonRepository
         return new ContactInformation($email, $mobilePhone, $landlinePhone);
     }
 
-    private function persistedStateMatches(Person $person): bool
+    private function sameState(Person $persisted, Person $person): bool
     {
-        $persisted = $this->findById($person->id());
-        if ($persisted === null) {
+        $persistedId = $persisted->id();
+        $personId = $person->id();
+        if ($persistedId === null || $personId === null || !$persistedId->equals($personId)) {
             return false;
         }
 
