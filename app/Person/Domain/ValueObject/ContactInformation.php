@@ -67,12 +67,8 @@ final readonly class ContactInformation
             return null;
         }
 
-        $hasValidLength = mb_strlen($normalized, 'UTF-8') <= 30;
-        $usesPhoneCharacters = preg_match('/^[0-9+().\s-]+$/u', $normalized) === 1;
-        $containsDigit = preg_match('/\d/u', $normalized) === 1;
-
-        if (!$hasValidLength || !$usesPhoneCharacters || !$containsDigit) {
-            throw new InvalidPersonState(sprintf('%s format is invalid.', $label));
+        if (mb_strlen($normalized, 'UTF-8') > 30) {
+            throw new InvalidPersonState(sprintf('%s cannot exceed 30 characters.', $label));
         }
 
         return $normalized;

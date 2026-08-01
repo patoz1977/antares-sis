@@ -75,15 +75,16 @@ function registerPersonDomainTests(TestRunner $runner): void
         );
     });
 
-    $runner->add('ContactInformation accepts optional valid personal contact data', function (): void {
-        $contact = new ContactInformation(' ana@example.com ', ' +593 99 123 4567 ', ' (02) 234-5678 ');
+    $runner->add('ContactInformation normalizes optional contact data without phone format rules', function (): void {
+        $maximumLengthPhone = str_repeat('x', 30);
+        $contact = new ContactInformation(' ana@example.com ', " $maximumLengthPhone ", ' desk: ext. ABC/42 ');
 
         assertSameValue('ana@example.com', $contact->email());
-        assertSameValue('+593 99 123 4567', $contact->mobilePhone());
-        assertSameValue('(02) 234-5678', $contact->landlinePhone());
+        assertSameValue($maximumLengthPhone, $contact->mobilePhone());
+        assertSameValue('desk: ext. ABC/42', $contact->landlinePhone());
         assertSameValue(
             true,
-            $contact->equals(new ContactInformation('ana@example.com', '+593 99 123 4567', '(02) 234-5678'))
+            $contact->equals(new ContactInformation('ana@example.com', $maximumLengthPhone, 'desk: ext. ABC/42'))
         );
 
         $empty = new ContactInformation(' ', null, '');
@@ -92,17 +93,13 @@ function registerPersonDomainTests(TestRunner $runner): void
         assertSameValue(null, $empty->landlinePhone());
     });
 
-    $runner->add('ContactInformation rejects invalid informed formats', function (): void {
+    $runner->add('ContactInformation rejects invalid email and phones longer than 30 characters', function (): void {
         assertThrows(
             static fn (): ContactInformation => new ContactInformation('invalid-email', null, null),
             InvalidPersonState::class
         );
         assertThrows(
-            static fn (): ContactInformation => new ContactInformation(null, 'not-a-phone', null),
-            InvalidPersonState::class
-        );
-        assertThrows(
-            static fn (): ContactInformation => new ContactInformation(null, str_repeat('1', 31), null),
+            static fn (): ContactInformation => new ContactInformation(null, str_repeat('x', 31), null),
             InvalidPersonState::class
         );
     });
