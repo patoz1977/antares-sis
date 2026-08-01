@@ -68,6 +68,35 @@ function expectedBaselineTables(): array
     return $tables;
 }
 
+/**
+ * @param list<string> $expected
+ * @param list<string> $actual
+ */
+function schemaInventoryDifferenceMessage(array $expected, array $actual): string
+{
+    sort($expected, SORT_STRING);
+    sort($actual, SORT_STRING);
+
+    $missing = array_values(array_diff($expected, $actual));
+    $unexpected = array_values(array_diff($actual, $expected));
+
+    return sprintf(
+        "Clean migration inventory differs from the baseline.\n"
+        . "Expected table count: %d\n"
+        . "Actual table count: %d\n"
+        . "Missing tables: %s\n"
+        . "Unexpected tables: %s\n"
+        . "Expected inventory: %s\n"
+        . "Actual inventory: %s",
+        count($expected),
+        count($actual),
+        $missing === [] ? '(none)' : implode(', ', $missing),
+        $unexpected === [] ? '(none)' : implode(', ', $unexpected),
+        implode(', ', $expected),
+        implode(', ', $actual),
+    );
+}
+
 $requiredNonEmptyEnvironment = [
     'E0041_DB_HOST',
     'E0041_DB_PORT',
@@ -202,7 +231,11 @@ try {
         'SELECT table_name FROM information_schema.tables '
         . 'WHERE table_schema = DATABASE() AND table_type = \'BASE TABLE\' ORDER BY table_name'
     )->fetchAll(PDO::FETCH_COLUMN);
-    assertIntegration($actualTables === expectedBaselineTables(), 'Clean migration inventory differs from the baseline.');
+    $expectedTables = expectedBaselineTables();
+    assertIntegration(
+        $actualTables === $expectedTables,
+        schemaInventoryDifferenceMessage($expectedTables, $actualTables)
+    );
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM migrations')->fetchColumn() === 9, 'Not all baseline migrations were recorded.');
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM status_types')->fetchColumn() === 3, 'Status type baseline is incomplete.');
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM statuses')->fetchColumn() === 8, 'Status baseline is incomplete.');
