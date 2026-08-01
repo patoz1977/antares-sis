@@ -10,10 +10,14 @@ final class StatusSeeder
 {
     public function run(PDO $connection): void
     {
-        $types = $connection->prepare('SELECT id, code FROM status_types WHERE code IN (:userCode, :personCode)');
+        $types = $connection->prepare(
+            'SELECT id, code FROM status_types '
+            . 'WHERE code IN (:userCode, :generalCode, :enrollmentCode)'
+        );
         $types->execute([
             ':userCode' => 'USER_STATUS',
-            ':personCode' => 'PERSON_STATUS',
+            ':generalCode' => 'GENERAL_STATUS',
+            ':enrollmentCode' => 'ENROLLMENT_STATUS',
         ]);
 
         $typeRows = $types->fetchAll(PDO::FETCH_ASSOC);
@@ -28,15 +32,13 @@ final class StatusSeeder
 
         $insert = $connection->prepare(
             'INSERT INTO statuses '
-            . '(status_type_id, code, name, description, display_order, color, is_default, is_terminal, created_at, updated_at) '
-            . 'VALUES (:statusTypeId, :code, :name, :description, :displayOrder, :color, :isDefault, :isTerminal, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) '
+            . '(status_type_id, code, name, description, sort_order, is_active, created_at, updated_at) '
+            . 'VALUES (:statusTypeId, :code, :name, :description, :sortOrder, TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) '
             . 'ON DUPLICATE KEY UPDATE '
             . 'name = VALUES(name), '
             . 'description = VALUES(description), '
-            . 'display_order = VALUES(display_order), '
-            . 'color = VALUES(color), '
-            . 'is_default = VALUES(is_default), '
-            . 'is_terminal = VALUES(is_terminal), '
+            . 'sort_order = VALUES(sort_order), '
+            . 'is_active = VALUES(is_active), '
             . 'updated_at = CURRENT_TIMESTAMP'
         );
 
@@ -46,30 +48,56 @@ final class StatusSeeder
                 'code' => 'ACTIVE',
                 'name' => 'Active',
                 'description' => 'Cuenta activa',
-                'displayOrder' => 1,
-                'color' => '#28a745',
-                'isDefault' => 1,
-                'isTerminal' => 0,
+                'sortOrder' => 1,
             ],
             [
                 'typeCode' => 'USER_STATUS',
                 'code' => 'DISABLED',
                 'name' => 'Disabled',
                 'description' => 'Cuenta deshabilitada',
-                'displayOrder' => 2,
-                'color' => '#6c757d',
-                'isDefault' => 0,
-                'isTerminal' => 1,
+                'sortOrder' => 2,
             ],
             [
-                'typeCode' => 'PERSON_STATUS',
+                'typeCode' => 'GENERAL_STATUS',
                 'code' => 'ACTIVE',
                 'name' => 'Active',
-                'description' => 'Persona activa',
-                'displayOrder' => 1,
-                'color' => '#28a745',
-                'isDefault' => 1,
-                'isTerminal' => 0,
+                'description' => 'Registro activo',
+                'sortOrder' => 1,
+            ],
+            [
+                'typeCode' => 'GENERAL_STATUS',
+                'code' => 'INACTIVE',
+                'name' => 'Inactive',
+                'description' => 'Registro inactivo',
+                'sortOrder' => 2,
+            ],
+            [
+                'typeCode' => 'ENROLLMENT_STATUS',
+                'code' => 'DRAFT',
+                'name' => 'Draft',
+                'description' => 'Matrícula en borrador',
+                'sortOrder' => 1,
+            ],
+            [
+                'typeCode' => 'ENROLLMENT_STATUS',
+                'code' => 'SUBMITTED',
+                'name' => 'Submitted',
+                'description' => 'Matrícula enviada',
+                'sortOrder' => 2,
+            ],
+            [
+                'typeCode' => 'ENROLLMENT_STATUS',
+                'code' => 'COMPLETED',
+                'name' => 'Completed',
+                'description' => 'Matrícula completada',
+                'sortOrder' => 3,
+            ],
+            [
+                'typeCode' => 'ENROLLMENT_STATUS',
+                'code' => 'CANCELLED',
+                'name' => 'Cancelled',
+                'description' => 'Matrícula cancelada',
+                'sortOrder' => 4,
             ],
         ];
 
@@ -83,10 +111,7 @@ final class StatusSeeder
                 ':code' => $row['code'],
                 ':name' => $row['name'],
                 ':description' => $row['description'],
-                ':displayOrder' => $row['displayOrder'],
-                ':color' => $row['color'],
-                ':isDefault' => $row['isDefault'],
-                ':isTerminal' => $row['isTerminal'],
+                ':sortOrder' => $row['sortOrder'],
             ]);
         }
     }
