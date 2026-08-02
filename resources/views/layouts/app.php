@@ -6,7 +6,7 @@
 
 <meta charset="utf-8">
 
-<title><?= $title ?></title>
+<title><?= htmlspecialchars((string) $title, ENT_QUOTES, 'UTF-8') ?></title>
 
 </head>
 

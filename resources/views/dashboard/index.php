@@ -13,6 +13,10 @@ declare(strict_types=1);
     <h1>Dashboard</h1>
     <p>Authentication successful.</p>
 
+    <?php if (($canAccessPersons ?? false) === true): ?>
+    <p><a href="/persons">Manage Persons</a></p>
+    <?php endif; ?>
+
     <form method="post" action="/logout">
         <input type="hidden" name="_csrf_token" value="<?= htmlspecialchars((string) ($csrfToken ?? ''), ENT_QUOTES, 'UTF-8') ?>">
         <button type="submit">Sign out</button>

@@ -30,6 +30,15 @@ use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\IdentityAccess\Infrastructure\Session\PhpSessionManager;
 use App\IdentityAccess\Infrastructure\Session\SessionCsrfTokenManager;
 use App\IdentityAccess\Infrastructure\Time\SystemClock;
+use App\Person\Application\CreatePerson;
+use App\Person\Application\GetPerson;
+use App\Person\Application\UpdatePerson;
+use App\Person\Domain\PersonRepository;
+use App\Person\Http\PersonAdministrationMiddleware;
+use App\Person\Http\PersonController;
+use App\Person\Http\PersonFormOptionsProvider;
+use App\Person\Infrastructure\Persistence\PdoPersonFormOptionsProvider;
+use App\Person\Infrastructure\Persistence\PdoPersonRepository;
 
 use App\Services\AuthenticationService;
 use App\Services\AuthenticationServiceInterface;
@@ -141,6 +150,13 @@ $container->instance(
 $container->singleton(AuthenticatedUserProviderInterface::class, AuthenticationService::class);
 $container->singleton(AuthenticationController::class, AuthenticationController::class);
 $container->singleton(AuthenticationMiddleware::class, AuthenticationMiddleware::class);
+$container->singleton(PersonRepository::class, PdoPersonRepository::class);
+$container->singleton(CreatePerson::class, CreatePerson::class);
+$container->singleton(GetPerson::class, GetPerson::class);
+$container->singleton(UpdatePerson::class, UpdatePerson::class);
+$container->singleton(PersonFormOptionsProvider::class, PdoPersonFormOptionsProvider::class);
+$container->singleton(PersonController::class, PersonController::class);
+$container->singleton(PersonAdministrationMiddleware::class, PersonAdministrationMiddleware::class);
 
 $app = new Application($config, $container);
 
