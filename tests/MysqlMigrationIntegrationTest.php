@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
+use App\Family\Domain\Family;
+use App\Family\Domain\FamilyStatus;
+use App\Family\Domain\ValueObject\DisplayName;
+use App\Family\Domain\ValueObject\RelationshipTypeId;
+use App\Family\Domain\ValueObject\RepresentativeId as FamilyRepresentativeReference;
+use App\Family\Domain\ValueObject\StudentId as FamilyStudentReference;
+use App\Family\Infrastructure\Persistence\PdoFamilyRepository;
 use App\Person\Domain\Person;
 use App\Person\Domain\PersonStatus;
 use App\Person\Domain\ValueObject\ContactInformation;
@@ -754,6 +761,290 @@ try {
         'Student administrative update or exact GENERAL_STATUS mapping failed.'
     );
 
+    $relationshipTypeInsert = $identity->prepare(
+        'INSERT INTO relationship_types (code, name, is_active) '
+        . 'VALUES (:code, :name, TRUE)'
+    );
+    $relationshipTypeInsert->execute([
+        ':code' => 'DISPOSABLE_TEST_RELATIONSHIP',
+        ':name' => 'Disposable test relationship',
+    ]);
+    $generatedRelationshipTypeId = (int) $identity->lastInsertId();
+    assertIntegration(
+        $generatedRelationshipTypeId > 0,
+        'MariaDB did not generate the technical RelationshipType identity.'
+    );
+
+    $secondRepresentative = $representativeRepository->save(new Representative(
+        null,
+        new RepresentativePersonId($secondGeneratedPersonId->value()),
+        null,
+        RepresentativeStatus::Active,
+    ));
+    $secondRepresentativeId = $secondRepresentative->id();
+    assertIntegration(
+        $secondRepresentativeId !== null && $secondRepresentativeId->value() > 0,
+        'MariaDB did not generate the additional Representative identity.'
+    );
+
+    $secondStudent = $studentRepository->save(new Student(
+        null,
+        new StudentPersonId($secondGeneratedPersonId->value()),
+        new InstitutionalCode('DISPOSABLE-STUDENT-200'),
+        new AdmissionDate(
+            new DateTimeImmutable('2021-01-02', new DateTimeZone('UTC')),
+            $personToday,
+        ),
+        StudentStatus::Active,
+    ));
+    $secondStudentId = $secondStudent->id();
+    assertIntegration(
+        $secondStudentId !== null && $secondStudentId->value() > 0,
+        'MariaDB did not generate the additional Student identity.'
+    );
+
+    $familyRepository = new PdoFamilyRepository($managerA);
+    $familyStartedAt = new DateTimeImmutable('2026-08-01 10:11:12-05:00');
+    $newFamily = Family::create(
+        new DisplayName('Disposable Family One'),
+        FamilyStatus::Active,
+        new FamilyRepresentativeReference($generatedRepresentativeId->value()),
+        new RelationshipTypeId($generatedRelationshipTypeId),
+        $familyStartedAt,
+    );
+    $newFamily->addRepresentative(
+        new FamilyRepresentativeReference($secondRepresentativeId->value()),
+        new RelationshipTypeId($generatedRelationshipTypeId),
+        new DateTimeImmutable('2026-08-02 09:00:00', new DateTimeZone('UTC')),
+    );
+    $newFamily->addStudent(
+        new FamilyStudentReference($generatedStudentId->value()),
+        new DateTimeImmutable('2026-08-03 09:00:00', new DateTimeZone('UTC')),
+    );
+    $persistedFamily = $familyRepository->save($newFamily);
+    $generatedFamilyId = $persistedFamily->id();
+    $initialFamilyRepresentative = $persistedFamily->primaryRepresentative();
+    assertIntegration(
+        $newFamily->id() === null
+        && $generatedFamilyId !== null
+        && $generatedFamilyId->value() > 0
+        && $initialFamilyRepresentative->id() !== null
+        && $initialFamilyRepresentative->id()->value() > 0
+        && $initialFamilyRepresentative->isActive()
+        && $initialFamilyRepresentative->isPrimary(),
+        'MariaDB did not atomically generate Family and its active primary membership identities.'
+    );
+    assertIntegration(
+        count($persistedFamily->representatives()) === 2
+        && count($persistedFamily->students()) === 1
+        && $persistedFamily->students()[0]->id() !== null
+        && $persistedFamily->students()[0]->id()->value() > 0,
+        'Family repository did not reconstruct every generated membership identity.'
+    );
+
+    $familyTimestampStatement = $identity->prepare(
+        'SELECT fr.started_at, fr.ended_at, fr.is_primary, '
+        . 's.code AS status_code, st.code AS status_type_code '
+        . 'FROM family_representatives fr '
+        . 'INNER JOIN families f ON f.id = fr.family_id '
+        . 'INNER JOIN statuses s ON s.id = f.status_id '
+        . 'INNER JOIN status_types st ON st.id = s.status_type_id '
+        . 'WHERE fr.id = :id'
+    );
+    $familyTimestampStatement->execute([':id' => $initialFamilyRepresentative->id()->value()]);
+    $familyTimestampRow = $familyTimestampStatement->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $familyTimestampRow !== false
+        && $familyTimestampRow['started_at'] === '2026-08-01 15:11:12'
+        && $familyTimestampRow['ended_at'] === null
+        && (int) $familyTimestampRow['is_primary'] === 1
+        && $familyTimestampRow['status_type_code'] === 'GENERAL_STATUS'
+        && $familyTimestampRow['status_code'] === 'ACTIVE',
+        'Family persistence did not store UTC seconds or resolve exact GENERAL_STATUS.'
+    );
+
+    $secondFamily = $familyRepository->save(Family::create(
+        new DisplayName('Disposable Family Two'),
+        FamilyStatus::Inactive,
+        new FamilyRepresentativeReference($generatedRepresentativeId->value()),
+        new RelationshipTypeId($generatedRelationshipTypeId),
+        new DateTimeImmutable('2026-08-04 09:00:00', new DateTimeZone('UTC')),
+    ));
+    $generatedSecondFamilyId = $secondFamily->id();
+    assertIntegration(
+        $generatedSecondFamilyId !== null
+        && $generatedSecondFamilyId->value() > 0
+        && !$generatedFamilyId->equals($generatedSecondFamilyId),
+        'MariaDB Family AUTO_INCREMENT identities must be positive and distinct.'
+    );
+    $representativeFamilies = $familyRepository->findActiveByRepresentativeId(
+        new FamilyRepresentativeReference($generatedRepresentativeId->value())
+    );
+    assertIntegration(
+        array_map(
+            static fn (Family $family): ?int => $family->id()?->value(),
+            $representativeFamilies,
+        ) === [$generatedFamilyId->value(), $generatedSecondFamilyId->value()],
+        'Representative active-Family lookup did not return all complete Families deterministically.'
+    );
+    assertIntegration(
+        $familyRepository->findActiveByStudentId(
+            new FamilyStudentReference($generatedStudentId->value())
+        )?->id()?->value() === $generatedFamilyId->value(),
+        'Student active-Family lookup did not reconstruct the complete Family.'
+    );
+
+    $duplicateActiveRepresentativeRejected = false;
+    try {
+        $duplicateActiveRepresentative = $identity->prepare(
+            'INSERT INTO family_representatives ('
+            . 'family_id, representative_id, relationship_type_id, is_primary, started_at, ended_at'
+            . ') VALUES (:familyId, :representativeId, :relationshipTypeId, FALSE, :startedAt, NULL)'
+        );
+        $duplicateActiveRepresentative->execute([
+            ':familyId' => $generatedFamilyId->value(),
+            ':representativeId' => $generatedRepresentativeId->value(),
+            ':relationshipTypeId' => $generatedRelationshipTypeId,
+            ':startedAt' => '2026-08-05 09:00:00',
+        ]);
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $duplicateActiveRepresentativeRejected = true;
+    }
+    assertIntegration(
+        $duplicateActiveRepresentativeRejected,
+        'MariaDB did not enforce unique active Family and Representative membership.'
+    );
+
+    $persistedFamily->endRepresentativeMembership(
+        new FamilyRepresentativeReference($secondRepresentativeId->value()),
+        new DateTimeImmutable('2026-08-06 09:00:00', new DateTimeZone('UTC')),
+    );
+    $persistedFamily->endStudentMembership(
+        new FamilyStudentReference($generatedStudentId->value()),
+        new DateTimeImmutable('2026-08-06 10:00:00', new DateTimeZone('UTC')),
+    );
+    $persistedFamily->updateDisplayName(new DisplayName('Disposable Family Updated'));
+    $persistedFamily->deactivate();
+    $updatedFamily = $familyRepository->save($persistedFamily);
+    assertIntegration(
+        $updatedFamily->displayName()->value() === 'Disposable Family Updated'
+        && $updatedFamily->status() === FamilyStatus::Inactive
+        && count($updatedFamily->representatives()) === 2
+        && count($updatedFamily->activeRepresentatives()) === 1
+        && count($updatedFamily->students()) === 1
+        && count($updatedFamily->activeStudents()) === 0,
+        'Family update did not preserve history or persist the approved mutable state.'
+    );
+
+    $principalUniquenessRejected = false;
+    try {
+        $secondPrimary = $identity->prepare(
+            'INSERT INTO family_representatives ('
+            . 'family_id, representative_id, relationship_type_id, is_primary, started_at, ended_at'
+            . ') VALUES (:familyId, :representativeId, :relationshipTypeId, TRUE, :startedAt, NULL)'
+        );
+        $secondPrimary->execute([
+            ':familyId' => $generatedFamilyId->value(),
+            ':representativeId' => $secondRepresentativeId->value(),
+            ':relationshipTypeId' => $generatedRelationshipTypeId,
+            ':startedAt' => '2026-08-06 11:00:00',
+        ]);
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $principalUniquenessRejected = true;
+    }
+    assertIntegration(
+        $principalUniquenessRejected,
+        'MariaDB did not enforce one active primary Representative per Family.'
+    );
+
+    $immutableMembershipStatement = $identity->prepare(
+        'SELECT representative_id, relationship_type_id, is_primary, started_at, ended_at '
+        . 'FROM family_representatives WHERE family_id = :familyId AND representative_id = :representativeId'
+    );
+    $immutableMembershipStatement->execute([
+        ':familyId' => $generatedFamilyId->value(),
+        ':representativeId' => $secondRepresentativeId->value(),
+    ]);
+    $immutableMembershipRow = $immutableMembershipStatement->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $immutableMembershipRow !== false
+        && (int) $immutableMembershipRow['representative_id'] === $secondRepresentativeId->value()
+        && (int) $immutableMembershipRow['relationship_type_id'] === $generatedRelationshipTypeId
+        && (int) $immutableMembershipRow['is_primary'] === 0
+        && $immutableMembershipRow['started_at'] === '2026-08-02 09:00:00'
+        && $immutableMembershipRow['ended_at'] === '2026-08-06 09:00:00',
+        'FamilyRepresentative update changed immutable persisted fields.'
+    );
+
+    $secondFamily->addStudent(
+        new FamilyStudentReference($generatedStudentId->value()),
+        new DateTimeImmutable('2026-08-07 09:00:00', new DateTimeZone('UTC')),
+    );
+    $secondFamily = $familyRepository->save($secondFamily);
+    assertIntegration(
+        $familyRepository->findActiveByStudentId(
+            new FamilyStudentReference($generatedStudentId->value())
+        )?->id()?->value() === $generatedSecondFamilyId->value(),
+        'MariaDB did not permit a later Student membership after the previous one ended.'
+    );
+
+    $duplicateActiveStudentRejected = false;
+    try {
+        $persistedAgain = $familyRepository->findById($generatedFamilyId);
+        assertIntegration($persistedAgain !== null, 'Family disappeared before Student uniqueness probe.');
+        $persistedAgain->addStudent(
+            new FamilyStudentReference($generatedStudentId->value()),
+            new DateTimeImmutable('2026-08-08 09:00:00', new DateTimeZone('UTC')),
+        );
+        $familyRepository->save($persistedAgain);
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $duplicateActiveStudentRejected = true;
+    }
+    assertIntegration(
+        $duplicateActiveStudentRejected,
+        'MariaDB did not enforce one active Family per Student.'
+    );
+
+    $invalidRelationshipRejected = false;
+    $familyCountBeforeRollback = (int) $identity->query('SELECT COUNT(*) FROM families')->fetchColumn();
+    try {
+        $familyRepository->save(Family::create(
+            new DisplayName('Rollback Probe Family'),
+            FamilyStatus::Active,
+            new FamilyRepresentativeReference($secondRepresentativeId->value()),
+            new RelationshipTypeId(999999999),
+            new DateTimeImmutable('2026-08-09 09:00:00', new DateTimeZone('UTC')),
+        ));
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $invalidRelationshipRejected = true;
+    }
+    assertIntegration(
+        $invalidRelationshipRejected
+        && (int) $identity->query('SELECT COUNT(*) FROM families')->fetchColumn()
+            === $familyCountBeforeRollback,
+        'Family creation failure did not roll back its root row atomically.'
+    );
+    assertIntegration(
+        (int) $identity->query(
+            'SELECT COUNT(*) FROM families f '
+            . 'LEFT JOIN family_representatives fr ON fr.family_id = f.id '
+            . 'WHERE fr.id IS NULL'
+        )->fetchColumn() === 0,
+        'Family persistence left an orphan Family without a Representative membership.'
+    );
+
     $managerB = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
     $connectionB = $managerB->connection();
     assertIntegration(
@@ -820,6 +1111,9 @@ try {
     echo "PASS MySQL Representative update uniqueness and exact GENERAL_STATUS mapping\n";
     echo "PASS MySQL Student AUTO_INCREMENT lookups and AdmissionDate reconstruction\n";
     echo "PASS MySQL Student administrative update uniqueness collation and exact GENERAL_STATUS mapping\n";
+    echo "PASS MySQL Family atomic AUTO_INCREMENT creation and complete Aggregate reconstruction\n";
+    echo "PASS MySQL Family Representative and Student active lookups and historical membership\n";
+    echo "PASS MySQL Family physical uniqueness UTC status mapping and transactional rollback\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {
     $cleanupFailures = dropDisposableDatabases($server, $createdDatabases);
