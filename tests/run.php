@@ -14,6 +14,7 @@ require __DIR__ . '/PersonPersistenceTest.php';
 require __DIR__ . '/PersonApplicationTest.php';
 require __DIR__ . '/PersonDeliveryTest.php';
 require __DIR__ . '/RepresentativeDomainTest.php';
+require __DIR__ . '/StudentDomainTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
@@ -22,6 +23,7 @@ require __DIR__ . '/SchemaBaselineTest.php';
 \Tests\registerPersonApplicationTests($runner);
 \Tests\registerPersonDeliveryTests($runner);
 \Tests\registerRepresentativeDomainTests($runner);
+\Tests\registerStudentDomainTests($runner);
 \Tests\registerSchemaBaselineTests($runner);
 
 ob_start();
