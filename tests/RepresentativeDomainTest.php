@@ -223,8 +223,8 @@ function registerRepresentativeDomainTests(TestRunner $runner): void
 
         sort($phpFiles, SORT_STRING);
 
-        assertSameValue(6, count($phpFiles));
-        foreach (['App\\Person', 'Student', 'Family', 'Enrollment', 'PDO', 'Repository', 'Service', 'Controller', 'Http'] as $forbidden) {
+        assertSameValue(7, count($phpFiles));
+        foreach (['App\\Person', 'Student', 'Family', 'Enrollment', 'PDO', 'Service', 'Controller', 'Http'] as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden));
         }
     });

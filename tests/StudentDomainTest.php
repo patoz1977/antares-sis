@@ -261,12 +261,12 @@ function registerStudentDomainTests(TestRunner $runner): void
         );
         sort($properties, SORT_STRING);
 
-        assertSameValue(7, count($phpFiles));
+        assertSameValue(8, count($phpFiles));
         assertSameValue(['admissionDate', 'id', 'institutionalCode', 'personId', 'status'], $properties);
         assertSameValue(false, method_exists(Student::class, 'grade'));
         assertSameValue(false, method_exists(Student::class, 'section'));
 
-        foreach (['App\\Person', 'App\\Representative', 'Family', 'Enrollment', 'Grade', 'Section', 'PDO', 'SQL', 'Repository', 'Service', 'Controller', 'Http', 'View'] as $forbidden) {
+        foreach (['App\\Person', 'App\\Representative', 'Family', 'Enrollment', 'Grade', 'Section', 'PDO', 'SQL', 'Service', 'Controller', 'Http', 'View'] as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden));
         }
     });
