@@ -12,11 +12,19 @@ require __DIR__ . '/IdentityAccessTest.php';
 require __DIR__ . '/PersonDomainTest.php';
 require __DIR__ . '/PersonPersistenceTest.php';
 require __DIR__ . '/PersonApplicationTest.php';
+require __DIR__ . '/PersonDeliveryTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
 \Tests\registerPersonDomainTests($runner);
 \Tests\registerPersonPersistenceTests($runner);
 \Tests\registerPersonApplicationTests($runner);
+\Tests\registerPersonDeliveryTests($runner);
 \Tests\registerSchemaBaselineTests($runner);
-$runner->run();
+
+ob_start();
+try {
+    $runner->run();
+} finally {
+    echo (string) ob_get_clean();
+}

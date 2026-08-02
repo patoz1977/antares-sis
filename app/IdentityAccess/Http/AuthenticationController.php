@@ -84,9 +84,12 @@ final class AuthenticationController extends Controller
 
     public function dashboard(): string
     {
+        $user = $this->getAuthenticatedUser->handle();
+
         return $this->view('dashboard.index', [
             'title' => 'Dashboard',
             'csrfToken' => $this->csrf->token(),
+            'canAccessPersons' => $user?->loginIdentifier === 'admin',
         ]);
     }
 

@@ -219,12 +219,12 @@ function registerSchemaBaselineTests(TestRunner $runner): void
         assertBaselineSame(false, str_contains($statusTypes . $statuses, 'PERSON_STATUS'), 'PERSON_STATUS is not approved.');
     });
 
-    $runner->add('application boots without removed Person and Family flows', function (): void {
+    $runner->add('application boots without removed legacy Person and Family flows', function (): void {
         $application = require dirname(__DIR__) . '/bootstrap/app.php';
         assertBaselineSame(true, $application instanceof Application, 'Application bootstrap did not return an Application.');
 
         $routes = (string) file_get_contents(dirname(__DIR__) . '/routes/web.php');
-        foreach (['PersonController', 'FamilyController', "'/persons", "'/families"] as $legacyRoute) {
+        foreach (['App\\Controllers\\PersonController', 'FamilyController', "'/families"] as $legacyRoute) {
             assertBaselineSame(false, str_contains($routes, $legacyRoute), sprintf('Legacy route remains: %s.', $legacyRoute));
         }
     });

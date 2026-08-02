@@ -10,6 +10,7 @@ use App\Person\Domain\ValueObject\ContactInformation;
 use App\Person\Domain\ValueObject\Identification;
 use App\Person\Domain\ValueObject\PersonalName;
 use App\Person\Infrastructure\Persistence\PdoPersonRepository;
+use App\Person\Infrastructure\Persistence\PdoPersonFormOptionsProvider;
 use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
@@ -315,6 +316,10 @@ try {
         . "VALUES (1, 'TEST', 'Disposable test value', TRUE)"
     );
     $identity->exec(
+        "INSERT INTO sexes (id, code, name, is_active) "
+        . "VALUES (2, 'INACTIVE_TEST', 'Inactive disposable test value', FALSE)"
+    );
+    $identity->exec(
         "INSERT INTO marital_statuses (id, code, name, is_active) "
         . "VALUES (1, 'TEST', 'Disposable test value', TRUE)"
     );
@@ -334,6 +339,23 @@ try {
         "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
         . "WHERE st.code = 'USER_STATUS' AND s.code = 'DISABLED'"
     )->fetchColumn();
+
+    $personFormOptions = (new PdoPersonFormOptionsProvider($managerA))->get();
+    assertIntegration(
+        count($personFormOptions->documentTypes) === 1
+        && count($personFormOptions->sexes) === 1
+        && count($personFormOptions->maritalStatuses) === 1
+        && count($personFormOptions->educationLevels) === 1,
+        'Person form options did not load only active reference Catalog rows.'
+    );
+    assertIntegration(
+        $personFormOptions->isReadyForSave()
+        && array_map(
+            static fn ($option): string => $option->code,
+            $personFormOptions->statuses,
+        ) === ['ACTIVE', 'INACTIVE'],
+        'Person form options did not load the active GENERAL_STATUS values in order.'
+    );
     $personInsert = $identity->prepare(
         'INSERT INTO persons (id, first_name, first_surname, birth_date, sex_id, status_id) '
         . 'VALUES (1, :firstName, :firstSurname, :birthDate, 1, :statusId)'
