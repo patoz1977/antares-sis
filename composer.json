@@ -36,7 +36,8 @@
             "Tests\\": "tests/"
         },
         "exclude-from-classmap": [
-            "tests/IdentityAccessTest.php"
+            "tests/IdentityAccessTest.php",
+            "tests/PersonDeliveryTest.php"
         ]
     },
     "config": {
