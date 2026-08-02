@@ -11,6 +11,17 @@ use App\Person\Domain\ValueObject\Identification;
 use App\Person\Domain\ValueObject\PersonalName;
 use App\Person\Infrastructure\Persistence\PdoPersonRepository;
 use App\Person\Infrastructure\Persistence\PdoPersonFormOptionsProvider;
+use App\Representative\Domain\Representative;
+use App\Representative\Domain\RepresentativeStatus;
+use App\Representative\Domain\ValueObject\EmploymentInformation;
+use App\Representative\Domain\ValueObject\PersonId as RepresentativePersonId;
+use App\Representative\Infrastructure\Persistence\PdoRepresentativeRepository;
+use App\Student\Domain\Student;
+use App\Student\Domain\StudentStatus;
+use App\Student\Domain\ValueObject\AdmissionDate;
+use App\Student\Domain\ValueObject\InstitutionalCode;
+use App\Student\Domain\ValueObject\PersonId as StudentPersonId;
+use App\Student\Infrastructure\Persistence\PdoStudentRepository;
 use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
@@ -536,6 +547,213 @@ try {
         'Person repository did not reconstruct the updated INACTIVE aggregate.'
     );
 
+    $representativeRepository = new PdoRepresentativeRepository($managerA);
+    $newRepresentative = new Representative(
+        null,
+        new RepresentativePersonId($generatedPersonId->value()),
+        new EmploymentInformation(
+            'Disposable occupation',
+            'Disposable company',
+            'Disposable position',
+            'disposable work phone',
+            'representative@example.test',
+        ),
+        RepresentativeStatus::Active,
+    );
+    $persistedRepresentative = $representativeRepository->save($newRepresentative);
+    $generatedRepresentativeId = $persistedRepresentative->id();
+    assertIntegration(
+        $newRepresentative->id() === null,
+        'Representative insert replaced the identity of the new aggregate instance.'
+    );
+    assertIntegration(
+        $generatedRepresentativeId !== null && $generatedRepresentativeId->value() > 0,
+        'MariaDB did not generate a positive Representative identity.'
+    );
+    assertIntegration(
+        $representativeRepository->findById($generatedRepresentativeId)?->employmentInformation()?->companyName()
+            === 'Disposable company',
+        'Representative repository did not reconstruct complete EmploymentInformation by ID.'
+    );
+    assertIntegration(
+        $representativeRepository->findByPersonId(
+            new RepresentativePersonId($generatedPersonId->value())
+        )?->id()?->value() === $generatedRepresentativeId->value(),
+        'Representative repository did not find the aggregate by PersonId.'
+    );
+
+    $duplicateRepresentativeRejected = false;
+    try {
+        $representativeRepository->save(new Representative(
+            null,
+            new RepresentativePersonId($generatedPersonId->value()),
+            null,
+            RepresentativeStatus::Active,
+        ));
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $duplicateRepresentativeRejected = true;
+    }
+    assertIntegration(
+        $duplicateRepresentativeRejected,
+        'MariaDB did not enforce Representative uniqueness by Person.'
+    );
+
+    $persistedRepresentative->replaceEmploymentInformation(
+        new EmploymentInformation('Updated occupation', null, null, 'updated phone', null)
+    );
+    $persistedRepresentative->deactivate();
+    $updatedRepresentative = $representativeRepository->save($persistedRepresentative);
+    assertIntegration(
+        $updatedRepresentative->status() === RepresentativeStatus::Inactive
+        && $updatedRepresentative->employmentInformation()?->occupation() === 'Updated occupation'
+        && $updatedRepresentative->employmentInformation()?->companyName() === null,
+        'Representative update did not persist partial EmploymentInformation and INACTIVE status.'
+    );
+
+    $updatedRepresentative->replaceEmploymentInformation(null);
+    $updatedRepresentative->activate();
+    $clearedRepresentative = $representativeRepository->save($updatedRepresentative);
+    $representativeStatusStatement = $identity->prepare(
+        'SELECT r.occupation, r.company, r.position, r.work_phone, r.work_email, '
+        . 's.code AS status_code, st.code AS status_type_code '
+        . 'FROM representatives r '
+        . 'INNER JOIN statuses s ON s.id = r.status_id '
+        . 'INNER JOIN status_types st ON st.id = s.status_type_id '
+        . 'WHERE r.id = :id'
+    );
+    $representativeStatusStatement->execute([':id' => $generatedRepresentativeId->value()]);
+    $representativeRow = $representativeStatusStatement->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $representativeRow !== false
+        && $representativeRow['occupation'] === null
+        && $representativeRow['company'] === null
+        && $representativeRow['position'] === null
+        && $representativeRow['work_phone'] === null
+        && $representativeRow['work_email'] === null
+        && $representativeRow['status_type_code'] === 'GENERAL_STATUS'
+        && $representativeRow['status_code'] === 'ACTIVE'
+        && $clearedRepresentative->employmentInformation() === null,
+        'Representative EmploymentInformation removal or exact GENERAL_STATUS mapping failed.'
+    );
+
+    $studentRepository = new PdoStudentRepository($managerA);
+    $newStudent = new Student(
+        null,
+        new StudentPersonId($generatedPersonId->value()),
+        new InstitutionalCode('Disposable-Student-100'),
+        new AdmissionDate(
+            new DateTimeImmutable('2020-09-01', new DateTimeZone('UTC')),
+            $personToday,
+        ),
+        StudentStatus::Active,
+    );
+    $persistedStudent = $studentRepository->save($newStudent);
+    $generatedStudentId = $persistedStudent->id();
+    assertIntegration(
+        $newStudent->id() === null,
+        'Student insert replaced the identity of the new aggregate instance.'
+    );
+    assertIntegration(
+        $generatedStudentId !== null && $generatedStudentId->value() > 0,
+        'MariaDB did not generate a positive Student identity.'
+    );
+    assertIntegration(
+        $studentRepository->findById($generatedStudentId)?->admissionDate()->value()->format('Y-m-d')
+            === '2020-09-01',
+        'Student repository did not reconstruct AdmissionDate by ID.'
+    );
+    assertIntegration(
+        $studentRepository->findByPersonId(
+            new StudentPersonId($generatedPersonId->value())
+        )?->id()?->value() === $generatedStudentId->value(),
+        'Student repository did not find the aggregate by PersonId.'
+    );
+    assertIntegration(
+        $studentRepository->findByInstitutionalCode(
+            new InstitutionalCode('disposable-student-100')
+        )?->id()?->value() === $generatedStudentId->value(),
+        'Student institutional-code lookup did not follow the official table collation.'
+    );
+
+    $duplicateStudentPersonRejected = false;
+    try {
+        $studentRepository->save(new Student(
+            null,
+            new StudentPersonId($generatedPersonId->value()),
+            new InstitutionalCode('OTHER-STUDENT-CODE'),
+            new AdmissionDate(
+                new DateTimeImmutable('2021-01-01', new DateTimeZone('UTC')),
+                $personToday,
+            ),
+            StudentStatus::Active,
+        ));
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $duplicateStudentPersonRejected = true;
+    }
+    assertIntegration(
+        $duplicateStudentPersonRejected,
+        'MariaDB did not enforce Student uniqueness by Person.'
+    );
+
+    $duplicateStudentCodeRejected = false;
+    try {
+        $studentRepository->save(new Student(
+            null,
+            new StudentPersonId($secondGeneratedPersonId->value()),
+            new InstitutionalCode('DISPOSABLE-STUDENT-100'),
+            new AdmissionDate(
+                new DateTimeImmutable('2021-01-02', new DateTimeZone('UTC')),
+                $personToday,
+            ),
+            StudentStatus::Active,
+        ));
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $duplicateStudentCodeRejected = true;
+    }
+    assertIntegration(
+        $duplicateStudentCodeRejected,
+        'MariaDB did not enforce InstitutionalCode uniqueness under the official collation.'
+    );
+
+    $persistedStudent->updateAcademicInformation(
+        new InstitutionalCode('Updated-Student-100'),
+        new AdmissionDate(
+            new DateTimeImmutable('2022-03-04', new DateTimeZone('UTC')),
+            $personToday,
+        ),
+    );
+    $persistedStudent->deactivate();
+    $updatedStudent = $studentRepository->save($persistedStudent);
+    $studentStatusStatement = $identity->prepare(
+        'SELECT s.person_id, s.institutional_code, s.admission_date, '
+        . 'status_row.code AS status_code, st.code AS status_type_code '
+        . 'FROM students s '
+        . 'INNER JOIN statuses status_row ON status_row.id = s.status_id '
+        . 'INNER JOIN status_types st ON st.id = status_row.status_type_id '
+        . 'WHERE s.id = :id'
+    );
+    $studentStatusStatement->execute([':id' => $generatedStudentId->value()]);
+    $studentRow = $studentStatusStatement->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $studentRow !== false
+        && (int) $studentRow['person_id'] === $generatedPersonId->value()
+        && $studentRow['institutional_code'] === 'Updated-Student-100'
+        && $studentRow['admission_date'] === '2022-03-04'
+        && $studentRow['status_type_code'] === 'GENERAL_STATUS'
+        && $studentRow['status_code'] === 'INACTIVE'
+        && $updatedStudent->status() === StudentStatus::Inactive,
+        'Student administrative update or exact GENERAL_STATUS mapping failed.'
+    );
+
     $managerB = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
     $connectionB = $managerB->connection();
     assertIntegration(
@@ -598,6 +816,10 @@ try {
     echo "PASS MySQL database-generated Person identities and complete aggregate reconstruction\n";
     echo "PASS MySQL Person normalized identification lookup and uniqueness\n";
     echo "PASS MySQL Person update, nullable fields and GENERAL_STATUS mapping\n";
+    echo "PASS MySQL Representative AUTO_INCREMENT lookup and EmploymentInformation persistence\n";
+    echo "PASS MySQL Representative update uniqueness and exact GENERAL_STATUS mapping\n";
+    echo "PASS MySQL Student AUTO_INCREMENT lookups and AdmissionDate reconstruction\n";
+    echo "PASS MySQL Student administrative update uniqueness collation and exact GENERAL_STATUS mapping\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {
     $cleanupFailures = dropDisposableDatabases($server, $createdDatabases);
