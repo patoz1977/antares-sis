@@ -45,6 +45,71 @@ function assertIntegration(bool $condition, string $message): void
     }
 }
 
+function diagnosticValue(mixed $value): string
+{
+    if (is_string($value)) {
+        $encoded = json_encode(
+            $value,
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE,
+        );
+
+        return $encoded === false ? '"(unrepresentable string)"' : $encoded;
+    }
+
+    if ($value === null || is_int($value) || is_float($value) || is_bool($value)) {
+        return var_export($value, true);
+    }
+
+    return sprintf('[%s value]', get_debug_type($value));
+}
+
+/**
+ * @param array<string, mixed>|false $row
+ * @param array<string, mixed>|false $timeZone
+ */
+function mariaDbFamilyPersistenceDiagnostics(array|false $row, array|false $timeZone): string
+{
+    $expected = [
+        'started_at' => '2026-08-01 15:11:12',
+        'ended_at' => null,
+        'is_primary' => 1,
+        'status_type_code' => 'GENERAL_STATUS',
+        'status_code' => 'ACTIVE',
+    ];
+    $lines = ['Family persistence did not store UTC seconds or resolve exact GENERAL_STATUS.'];
+
+    foreach ($expected as $field => $expectedValue) {
+        $actualValue = $row !== false && array_key_exists($field, $row) ? $row[$field] : null;
+        $lines[] = sprintf(
+            '%s: expected=%s; actual=%s; actual PHP type=%s',
+            $field,
+            diagnosticValue($expectedValue),
+            diagnosticValue($actualValue),
+            get_debug_type($actualValue),
+        );
+    }
+
+    $sessionTimeZone = $timeZone !== false && array_key_exists('session_time_zone', $timeZone)
+        ? $timeZone['session_time_zone']
+        : null;
+    $systemTimeZone = $timeZone !== false && array_key_exists('system_time_zone', $timeZone)
+        ? $timeZone['system_time_zone']
+        : null;
+    $lines[] = 'MariaDB session timezone: ' . diagnosticValue($sessionTimeZone);
+    $lines[] = sprintf(
+        '@@session.time_zone: actual=%s; actual PHP type=%s',
+        diagnosticValue($sessionTimeZone),
+        get_debug_type($sessionTimeZone),
+    );
+    $lines[] = sprintf(
+        '@@system_time_zone: actual=%s; actual PHP type=%s',
+        diagnosticValue($systemTimeZone),
+        get_debug_type($systemTimeZone),
+    );
+
+    return implode(PHP_EOL, $lines);
+}
+
 function isExpectedMariaDbLockException(PDOException $exception): bool
 {
     $sqlState = $exception->errorInfo[0] ?? (string) $exception->getCode();
@@ -853,6 +918,9 @@ try {
     );
     $familyTimestampStatement->execute([':id' => $initialFamilyRepresentative->id()->value()]);
     $familyTimestampRow = $familyTimestampStatement->fetch(PDO::FETCH_ASSOC);
+    $familyTimeZoneRow = $identity->query(
+        'SELECT @@session.time_zone AS session_time_zone, @@system_time_zone AS system_time_zone'
+    )->fetch(PDO::FETCH_ASSOC);
     assertIntegration(
         $familyTimestampRow !== false
         && $familyTimestampRow['started_at'] === '2026-08-01 15:11:12'
@@ -860,7 +928,7 @@ try {
         && (int) $familyTimestampRow['is_primary'] === 1
         && $familyTimestampRow['status_type_code'] === 'GENERAL_STATUS'
         && $familyTimestampRow['status_code'] === 'ACTIVE',
-        'Family persistence did not store UTC seconds or resolve exact GENERAL_STATUS.'
+        mariaDbFamilyPersistenceDiagnostics($familyTimestampRow, $familyTimeZoneRow)
     );
 
     $secondFamily = $familyRepository->save(Family::create(
