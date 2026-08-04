@@ -351,6 +351,11 @@ try {
         $password,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]
     );
+    $identity->exec("SET time_zone = '+00:00'");
+    assertIntegration(
+        $identity->query('SELECT @@session.time_zone')->fetchColumn() === '+00:00',
+        'MariaDB harness inspection session did not establish the UTC SQL convention.'
+    );
     $databaseConfig = new DatabaseConfig([
         'driver' => 'mysql',
         'host' => $host,
