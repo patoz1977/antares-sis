@@ -4,9 +4,20 @@ declare(strict_types=1);
 
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
+use App\Family\Application\AddStudentToFamily;
+use App\Family\Application\CreateFamily;
+use App\Family\Application\Exception\RelationshipTypeNotFound;
+use App\Family\Application\GetFamily;
+use App\Family\Application\Orchestration\CreateRepresentativeFamily;
+use App\Family\Application\Orchestration\CreateStudentInFamily;
+use App\Family\Application\Orchestration\Dto\CreateRepresentativeFamilyInput;
+use App\Family\Application\Orchestration\Dto\CreateStudentInFamilyInput;
+use App\Family\Application\RelationshipTypeLookup;
 use App\Family\Domain\Family;
+use App\Family\Domain\FamilyRepository;
 use App\Family\Domain\FamilyStatus;
 use App\Family\Domain\ValueObject\DisplayName;
+use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\RelationshipTypeId;
 use App\Family\Domain\ValueObject\RepresentativeId as FamilyRepresentativeReference;
 use App\Family\Domain\ValueObject\StudentId as FamilyStudentReference;
@@ -16,23 +27,27 @@ use App\Person\Domain\PersonStatus;
 use App\Person\Domain\ValueObject\ContactInformation;
 use App\Person\Domain\ValueObject\Identification;
 use App\Person\Domain\ValueObject\PersonalName;
+use App\Person\Application\CreatePerson;
 use App\Person\Infrastructure\Persistence\PdoPersonRepository;
 use App\Person\Infrastructure\Persistence\PdoPersonFormOptionsProvider;
 use App\Representative\Domain\Representative;
 use App\Representative\Domain\RepresentativeStatus;
 use App\Representative\Domain\ValueObject\EmploymentInformation;
 use App\Representative\Domain\ValueObject\PersonId as RepresentativePersonId;
+use App\Representative\Application\CreateRepresentative;
 use App\Representative\Infrastructure\Persistence\PdoRepresentativeRepository;
 use App\Student\Domain\Student;
 use App\Student\Domain\StudentStatus;
 use App\Student\Domain\ValueObject\AdmissionDate;
 use App\Student\Domain\ValueObject\InstitutionalCode;
 use App\Student\Domain\ValueObject\PersonId as StudentPersonId;
+use App\Student\Application\CreateStudent;
 use App\Student\Infrastructure\Persistence\PdoStudentRepository;
 use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
 use Core\Database\MigrationRunner;
+use Core\Database\PdoTransactionRunner;
 use Database\Seeders\AdminSeeder;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -108,6 +123,31 @@ function mariaDbFamilyPersistenceDiagnostics(array|false $row, array|false $time
     );
 
     return implode(PHP_EOL, $lines);
+}
+
+/** @return array{family: array<string, mixed>|false, representatives: array<int, array<string, mixed>>, students: array<int, array<string, mixed>>} */
+function mariaDbFamilyPhysicalState(PDO $connection, int $familyId): array
+{
+    $family = $connection->prepare(
+        'SELECT id, display_name, status_id, created_at, updated_at FROM families WHERE id = :id'
+    );
+    $family->execute([':id' => $familyId]);
+    $representatives = $connection->prepare(
+        'SELECT id, representative_id, relationship_type_id, is_primary, started_at, ended_at '
+        . 'FROM family_representatives WHERE family_id = :familyId ORDER BY id'
+    );
+    $representatives->execute([':familyId' => $familyId]);
+    $students = $connection->prepare(
+        'SELECT id, student_id, started_at, ended_at '
+        . 'FROM family_students WHERE family_id = :familyId ORDER BY id'
+    );
+    $students->execute([':familyId' => $familyId]);
+
+    return [
+        'family' => $family->fetch(PDO::FETCH_ASSOC),
+        'representatives' => $representatives->fetchAll(PDO::FETCH_ASSOC),
+        'students' => $students->fetchAll(PDO::FETCH_ASSOC),
+    ];
 }
 
 function isExpectedMariaDbLockException(PDOException $exception): bool
@@ -1118,6 +1158,314 @@ try {
         'Family persistence left an orphan Family without a Representative membership.'
     );
 
+    $relationshipTypes = new class($connectionA) implements RelationshipTypeLookup {
+        public function __construct(private readonly PDO $connection)
+        {
+        }
+
+        public function exists(int $relationshipTypeId): bool
+        {
+            $statement = $this->connection->prepare(
+                'SELECT 1 FROM relationship_types WHERE id = :id'
+            );
+            $statement->execute([':id' => $relationshipTypeId]);
+
+            return $statement->fetchColumn() !== false;
+        }
+    };
+    $transactions = new PdoTransactionRunner($managerA);
+    $createPerson = new CreatePerson($personRepository);
+    $createRepresentative = new CreateRepresentative(
+        $personRepository,
+        $representativeRepository,
+    );
+    $createStudent = new CreateStudent($personRepository, $studentRepository);
+    $createFamily = new CreateFamily(
+        $familyRepository,
+        $representativeRepository,
+        $relationshipTypes,
+    );
+    $compositeToday = new DateTimeImmutable('2026-08-10', new DateTimeZone('UTC'));
+    $representativeFlow = new CreateRepresentativeFamily(
+        $transactions,
+        $createPerson,
+        $createRepresentative,
+        $createFamily,
+    );
+    $representativeFlowOutput = $representativeFlow->handle(
+        new CreateRepresentativeFamilyInput(
+            firstName: 'Composite',
+            middleName: 'MariaDB',
+            firstSurname: 'Representative',
+            secondSurname: 'Success',
+            documentTypeId: 1,
+            documentNumber: 'COMPOSITE-REP-SUCCESS',
+            birthDate: new DateTimeImmutable('1985-04-05', new DateTimeZone('UTC')),
+            sexId: 1,
+            maritalStatusId: 1,
+            educationLevelId: 1,
+            email: 'composite-representative@example.test',
+            mobilePhone: 'composite mobile',
+            landlinePhone: null,
+            personStatus: PersonStatus::Active,
+            occupation: 'Tester',
+            companyName: null,
+            position: null,
+            workPhone: null,
+            workEmail: 'composite-work@example.test',
+            representativeStatus: RepresentativeStatus::Active,
+            displayName: 'MariaDB Composite Representative Family',
+            familyStatus: FamilyStatus::Active,
+            relationshipTypeId: $generatedRelationshipTypeId,
+            startedAt: new DateTimeImmutable('2026-08-10 10:11:12-05:00'),
+        ),
+        $compositeToday,
+    );
+    $representativeFlowRow = $identity->prepare(
+        'SELECT p.id AS person_id, r.id AS representative_id, f.id AS family_id, '
+        . 'fr.id AS membership_id, fr.representative_id AS membership_representative_id, '
+        . 'fr.relationship_type_id, fr.is_primary, fr.ended_at '
+        . 'FROM persons p INNER JOIN representatives r ON r.person_id = p.id '
+        . 'INNER JOIN family_representatives fr ON fr.representative_id = r.id '
+        . 'INNER JOIN families f ON f.id = fr.family_id '
+        . 'WHERE p.document_number = :documentNumber AND f.display_name = :displayName'
+    );
+    $representativeFlowRow->execute([
+        ':documentNumber' => 'COMPOSITE-REP-SUCCESS',
+        ':displayName' => 'MariaDB Composite Representative Family',
+    ]);
+    $representativePhysical = $representativeFlowRow->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $representativePhysical !== false
+        && (int) $representativePhysical['person_id'] === $representativeFlowOutput->person->id
+        && (int) $representativePhysical['representative_id']
+            === $representativeFlowOutput->representative->id
+        && (int) $representativePhysical['family_id'] === $representativeFlowOutput->family->id
+        && (int) $representativePhysical['membership_id'] > 0
+        && (int) $representativePhysical['membership_representative_id']
+            === $representativeFlowOutput->representative->id
+        && (int) $representativePhysical['relationship_type_id'] === $generatedRelationshipTypeId
+        && (int) $representativePhysical['is_primary'] === 1
+        && $representativePhysical['ended_at'] === null
+        && !$connectionA->inTransaction(),
+        'Composite Representative flow did not commit Person, role, Family and primary membership.'
+    );
+
+    $representativeRollbackRejected = false;
+    try {
+        $representativeFlow->handle(
+            new CreateRepresentativeFamilyInput(
+                firstName: 'Composite',
+                middleName: 'MariaDB',
+                firstSurname: 'Representative',
+                secondSurname: 'Rollback',
+                documentTypeId: 1,
+                documentNumber: 'COMPOSITE-REP-ROLLBACK',
+                birthDate: new DateTimeImmutable('1986-05-06', new DateTimeZone('UTC')),
+                sexId: 1,
+                maritalStatusId: null,
+                educationLevelId: null,
+                email: null,
+                mobilePhone: null,
+                landlinePhone: null,
+                personStatus: PersonStatus::Active,
+                occupation: null,
+                companyName: null,
+                position: null,
+                workPhone: null,
+                workEmail: null,
+                representativeStatus: RepresentativeStatus::Active,
+                displayName: 'MariaDB Composite Representative Rollback',
+                familyStatus: FamilyStatus::Active,
+                relationshipTypeId: 999999999,
+                startedAt: new DateTimeImmutable('2026-08-10 12:00:00', new DateTimeZone('UTC')),
+            ),
+            $compositeToday,
+        );
+    } catch (RelationshipTypeNotFound) {
+        $representativeRollbackRejected = true;
+    }
+    $representativeRollbackCounts = $identity->prepare(
+        'SELECT '
+        . '(SELECT COUNT(*) FROM persons WHERE document_number = :personDocumentNumber) AS persons_count, '
+        . '(SELECT COUNT(*) FROM representatives r INNER JOIN persons p ON p.id = r.person_id '
+        . 'WHERE p.document_number = :representativeDocumentNumber) AS representatives_count, '
+        . '(SELECT COUNT(*) FROM families WHERE display_name = :familyDisplayName) AS families_count, '
+        . '(SELECT COUNT(*) FROM family_representatives fr INNER JOIN families f ON f.id = fr.family_id '
+        . 'WHERE f.display_name = :membershipDisplayName) AS memberships_count'
+    );
+    $representativeRollbackCounts->execute([
+        ':personDocumentNumber' => 'COMPOSITE-REP-ROLLBACK',
+        ':representativeDocumentNumber' => 'COMPOSITE-REP-ROLLBACK',
+        ':familyDisplayName' => 'MariaDB Composite Representative Rollback',
+        ':membershipDisplayName' => 'MariaDB Composite Representative Rollback',
+    ]);
+    $representativeRollbackRows = $representativeRollbackCounts->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $representativeRollbackRejected
+        && $representativeRollbackRows !== false
+        && (int) $representativeRollbackRows['persons_count'] === 0
+        && (int) $representativeRollbackRows['representatives_count'] === 0
+        && (int) $representativeRollbackRows['families_count'] === 0
+        && (int) $representativeRollbackRows['memberships_count'] === 0
+        && !$connectionA->inTransaction(),
+        'Composite Representative failure did not roll back every inserted row.'
+    );
+
+    $studentFlow = new CreateStudentInFamily(
+        $transactions,
+        new GetFamily($familyRepository),
+        $createPerson,
+        $createStudent,
+        new AddStudentToFamily($familyRepository, $studentRepository),
+    );
+    $studentFlowOutput = $studentFlow->handle(
+        new CreateStudentInFamilyInput(
+            familyId: $generatedFamilyId->value(),
+            firstName: 'Composite',
+            middleName: 'MariaDB',
+            firstSurname: 'Student',
+            secondSurname: 'Success',
+            documentTypeId: 1,
+            documentNumber: 'COMPOSITE-STUDENT-SUCCESS',
+            birthDate: new DateTimeImmutable('2015-06-07', new DateTimeZone('UTC')),
+            sexId: 1,
+            maritalStatusId: null,
+            educationLevelId: null,
+            email: null,
+            mobilePhone: null,
+            landlinePhone: null,
+            personStatus: PersonStatus::Active,
+            institutionalCode: 'COMPOSITE-STUDENT-SUCCESS',
+            admissionDate: new DateTimeImmutable('2026-08-10', new DateTimeZone('UTC')),
+            studentStatus: StudentStatus::Active,
+            startedAt: new DateTimeImmutable('2026-08-10 13:14:15+02:00'),
+        ),
+        $compositeToday,
+    );
+    $studentFlowRow = $identity->prepare(
+        'SELECT p.id AS person_id, s.id AS student_id, fs.id AS membership_id, '
+        . 'fs.family_id, fs.student_id AS membership_student_id, fs.ended_at '
+        . 'FROM persons p INNER JOIN students s ON s.person_id = p.id '
+        . 'INNER JOIN family_students fs ON fs.student_id = s.id '
+        . 'WHERE p.document_number = :documentNumber AND s.institutional_code = :institutionalCode'
+    );
+    $studentFlowRow->execute([
+        ':documentNumber' => 'COMPOSITE-STUDENT-SUCCESS',
+        ':institutionalCode' => 'COMPOSITE-STUDENT-SUCCESS',
+    ]);
+    $studentPhysical = $studentFlowRow->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $studentPhysical !== false
+        && (int) $studentPhysical['person_id'] === $studentFlowOutput->person->id
+        && (int) $studentPhysical['student_id'] === $studentFlowOutput->student->id
+        && (int) $studentPhysical['membership_id'] > 0
+        && (int) $studentPhysical['family_id'] === $generatedFamilyId->value()
+        && (int) $studentPhysical['membership_student_id'] === $studentFlowOutput->student->id
+        && $studentPhysical['ended_at'] === null
+        && count($studentFlowOutput->family->students) === 2
+        && !$connectionA->inTransaction(),
+        'Composite Student flow did not commit Person, role and active Family membership with history.'
+    );
+
+    $studentRollbackFailure = new RuntimeException('simulated physical FamilyStudent restriction');
+    $failingFamilyRepository = new class(
+        $familyRepository,
+        $studentRollbackFailure,
+    ) implements FamilyRepository {
+        public function __construct(
+            private readonly FamilyRepository $delegate,
+            private readonly Throwable $failure,
+        ) {
+        }
+
+        public function findById(FamilyId $id): ?Family
+        {
+            return $this->delegate->findById($id);
+        }
+
+        public function findActiveByRepresentativeId(
+            FamilyRepresentativeReference $representativeId,
+        ): array {
+            return $this->delegate->findActiveByRepresentativeId($representativeId);
+        }
+
+        public function findActiveByStudentId(FamilyStudentReference $studentId): ?Family
+        {
+            return $this->delegate->findActiveByStudentId($studentId);
+        }
+
+        public function save(Family $family): Family
+        {
+            $this->delegate->save($family);
+            throw $this->failure;
+        }
+    };
+    $studentRollbackFlow = new CreateStudentInFamily(
+        $transactions,
+        new GetFamily($failingFamilyRepository),
+        $createPerson,
+        $createStudent,
+        new AddStudentToFamily($failingFamilyRepository, $studentRepository),
+    );
+    $familyStateBeforeStudentRollback = mariaDbFamilyPhysicalState(
+        $identity,
+        $generatedFamilyId->value(),
+    );
+    $caughtStudentRollbackFailure = null;
+    try {
+        $studentRollbackFlow->handle(
+            new CreateStudentInFamilyInput(
+                familyId: $generatedFamilyId->value(),
+                firstName: 'Composite',
+                middleName: 'MariaDB',
+                firstSurname: 'Student',
+                secondSurname: 'Rollback',
+                documentTypeId: 1,
+                documentNumber: 'COMPOSITE-STUDENT-ROLLBACK',
+                birthDate: new DateTimeImmutable('2014-07-08', new DateTimeZone('UTC')),
+                sexId: 1,
+                maritalStatusId: null,
+                educationLevelId: null,
+                email: null,
+                mobilePhone: null,
+                landlinePhone: null,
+                personStatus: PersonStatus::Active,
+                institutionalCode: 'COMPOSITE-STUDENT-ROLLBACK',
+                admissionDate: new DateTimeImmutable('2026-08-10', new DateTimeZone('UTC')),
+                studentStatus: StudentStatus::Active,
+                startedAt: new DateTimeImmutable('2026-08-10 14:15:16', new DateTimeZone('UTC')),
+            ),
+            $compositeToday,
+        );
+    } catch (Throwable $exception) {
+        $caughtStudentRollbackFailure = $exception;
+    }
+    $studentRollbackCounts = $identity->prepare(
+        'SELECT '
+        . '(SELECT COUNT(*) FROM persons WHERE document_number = :documentNumber) AS persons_count, '
+        . '(SELECT COUNT(*) FROM students WHERE institutional_code = :studentCode) AS students_count, '
+        . '(SELECT COUNT(*) FROM family_students fs INNER JOIN students s ON s.id = fs.student_id '
+        . 'WHERE s.institutional_code = :membershipCode) AS memberships_count'
+    );
+    $studentRollbackCounts->execute([
+        ':documentNumber' => 'COMPOSITE-STUDENT-ROLLBACK',
+        ':studentCode' => 'COMPOSITE-STUDENT-ROLLBACK',
+        ':membershipCode' => 'COMPOSITE-STUDENT-ROLLBACK',
+    ]);
+    $studentRollbackRows = $studentRollbackCounts->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $caughtStudentRollbackFailure === $studentRollbackFailure
+        && $studentRollbackRows !== false
+        && (int) $studentRollbackRows['persons_count'] === 0
+        && (int) $studentRollbackRows['students_count'] === 0
+        && (int) $studentRollbackRows['memberships_count'] === 0
+        && mariaDbFamilyPhysicalState($identity, $generatedFamilyId->value())
+            === $familyStateBeforeStudentRollback
+        && !$connectionA->inTransaction(),
+        'Composite Student failure did not restore Person, Student and existing Family state.'
+    );
+
     $managerB = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
     $connectionB = $managerB->connection();
     assertIntegration(
@@ -1187,6 +1535,8 @@ try {
     echo "PASS MySQL Family atomic AUTO_INCREMENT creation and complete Aggregate reconstruction\n";
     echo "PASS MySQL Family Representative and Student active lookups and historical membership\n";
     echo "PASS MySQL Family physical uniqueness UTC status mapping and transactional rollback\n";
+    echo "PASS MySQL composite Representative Person role Family atomic commit and rollback\n";
+    echo "PASS MySQL composite Student Person role membership atomic commit and rollback\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {
     $cleanupFailures = dropDisposableDatabases($server, $createdDatabases);
