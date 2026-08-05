@@ -970,7 +970,13 @@ function familyApplicationSource(): string
         dirname(__DIR__) . '/app/Family/Application'
     ));
     foreach ($iterator as $file) {
-        if ($file->isFile() && $file->getExtension() === 'php') {
+        if ($file->isFile()
+            && $file->getExtension() === 'php'
+            && !str_contains(
+                $file->getPathname(),
+                DIRECTORY_SEPARATOR . 'Orchestration' . DIRECTORY_SEPARATOR,
+            )
+        ) {
             $files[] = $file->getPathname();
         }
     }
