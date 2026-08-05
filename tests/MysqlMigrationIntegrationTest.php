@@ -1185,7 +1185,7 @@ try {
         $representativeRepository,
         $relationshipTypes,
     );
-    $compositeToday = new DateTimeImmutable('2026-08-10', new DateTimeZone('UTC'));
+    $compositeToday = new DateTimeImmutable('2026-08-04', new DateTimeZone('UTC'));
     $representativeFlow = new CreateRepresentativeFamily(
         $transactions,
         $createPerson,
@@ -1337,7 +1337,7 @@ try {
             landlinePhone: null,
             personStatus: PersonStatus::Active,
             institutionalCode: 'COMPOSITE-STUDENT-SUCCESS',
-            admissionDate: new DateTimeImmutable('2026-08-10', new DateTimeZone('UTC')),
+            admissionDate: new DateTimeImmutable('2026-08-01', new DateTimeZone('UTC')),
             studentStatus: StudentStatus::Active,
             startedAt: new DateTimeImmutable('2026-08-10 13:14:15+02:00'),
         ),
@@ -1432,7 +1432,7 @@ try {
                 landlinePhone: null,
                 personStatus: PersonStatus::Active,
                 institutionalCode: 'COMPOSITE-STUDENT-ROLLBACK',
-                admissionDate: new DateTimeImmutable('2026-08-10', new DateTimeZone('UTC')),
+                admissionDate: new DateTimeImmutable('2026-08-01', new DateTimeZone('UTC')),
                 studentStatus: StudentStatus::Active,
                 startedAt: new DateTimeImmutable('2026-08-10 14:15:16', new DateTimeZone('UTC')),
             ),
