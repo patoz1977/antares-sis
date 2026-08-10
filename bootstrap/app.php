@@ -26,9 +26,13 @@ use App\IdentityAccess\Application\Contract\SessionManager;
 use App\IdentityAccess\Application\Contract\TransactionManager;
 use App\IdentityAccess\Application\CreateRepresentativeUser;
 use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
+use App\IdentityAccess\Application\GetAuthorizedFamilies;
 use App\IdentityAccess\Application\GetUserByPersonId;
 use App\IdentityAccess\Application\Orchestration\UpdatePersonWithRepresentativeUserSync;
+use App\IdentityAccess\Application\RepresentativeFamilyContextSession;
+use App\IdentityAccess\Application\ResolveFamilyContext;
 use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
+use App\IdentityAccess\Application\SelectAuthorizedFamily;
 use App\IdentityAccess\Domain\UserRepository as IdentityUserRepository;
 use App\IdentityAccess\Http\AuthenticationController;
 use App\IdentityAccess\Http\RepresentativeUserController;
@@ -187,6 +191,13 @@ $container->singleton(UpdatePerson::class, UpdatePerson::class);
 $container->singleton(GetUserByPersonId::class, GetUserByPersonId::class);
 $container->singleton(CreateRepresentativeUser::class, CreateRepresentativeUser::class);
 $container->singleton(GetAuthenticatedRepresentative::class, GetAuthenticatedRepresentative::class);
+$container->singleton(GetAuthorizedFamilies::class, GetAuthorizedFamilies::class);
+$container->singleton(
+    RepresentativeFamilyContextSession::class,
+    RepresentativeFamilyContextSession::class,
+);
+$container->singleton(ResolveFamilyContext::class, ResolveFamilyContext::class);
+$container->singleton(SelectAuthorizedFamily::class, SelectAuthorizedFamily::class);
 $container->singleton(
     ChangeRepresentativeUserPassword::class,
     ChangeRepresentativeUserPassword::class,

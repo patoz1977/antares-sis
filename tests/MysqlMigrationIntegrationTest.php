@@ -11,10 +11,15 @@ use App\IdentityAccess\Application\Contract\SessionManager;
 use App\IdentityAccess\Application\CreateRepresentativeUser;
 use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
 use App\IdentityAccess\Application\GetAuthenticatedUser;
+use App\IdentityAccess\Application\GetAuthorizedFamilies;
+use App\IdentityAccess\Application\RepresentativeFamilyContextSession;
+use App\IdentityAccess\Application\ResolveFamilyContext;
+use App\IdentityAccess\Application\SelectAuthorizedFamily;
 use App\IdentityAccess\Application\Dto\ChangeRepresentativeUserPasswordInput;
 use App\IdentityAccess\Application\Dto\CreateRepresentativeUserInput;
 use App\IdentityAccess\Application\Exception\RepresentativeLoginIdentifierAlreadyUsed;
 use App\IdentityAccess\Application\Exception\RepresentativeUserRequiresIdentification;
+use App\IdentityAccess\Application\Exception\FamilyContextNotAuthorized;
 use App\IdentityAccess\Application\Orchestration\UpdatePersonWithRepresentativeUserSync;
 use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
 use App\IdentityAccess\Domain\User;
@@ -101,6 +106,19 @@ function diagnosticValue(mixed $value): string
     }
 
     return sprintf('[%s value]', get_debug_type($value));
+}
+
+/** @return array<string, list<array<string, mixed>>> */
+function mariaDbRepresentativeFamilyAccessState(PDO $connection): array
+{
+    $state = [];
+    foreach (['users', 'representatives', 'families', 'family_representatives'] as $table) {
+        $state[$table] = $connection->query(
+            sprintf('SELECT * FROM %s ORDER BY id', $table)
+        )->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    return $state;
 }
 
 /**
@@ -1892,6 +1910,7 @@ try {
 
         public function regenerateForUser(int $userId): void
         {
+            unset($this->values['representative_family_context_id']);
             $this->userId = $userId;
         }
 
@@ -1905,12 +1924,22 @@ try {
             $this->values[$key] = $value;
         }
 
+        public function get(string $key, mixed $default = null): mixed
+        {
+            return $this->values[$key] ?? $default;
+        }
+
         public function pull(string $key, mixed $default = null): mixed
         {
             $value = $this->values[$key] ?? $default;
             unset($this->values[$key]);
 
             return $value;
+        }
+
+        public function remove(string $key): void
+        {
+            unset($this->values[$key]);
         }
 
         public function destroy(): void
@@ -2030,6 +2059,128 @@ try {
         'Authenticated User without Representative unexpectedly received Representative Access.'
     );
     echo "PASS MySQL authenticated Representative access resolution read-only identity and fail-closed behavior\n";
+
+    $phase4FamilyA = Family::create(
+        new DisplayName('E007 Phase 4 Family A'),
+        FamilyStatus::Inactive,
+        new FamilyRepresentativeReference($secondRepresentativeId->value()),
+        new RelationshipTypeId($generatedRelationshipTypeId),
+        new DateTimeImmutable('2026-08-10 09:00:00', new DateTimeZone('UTC')),
+    );
+    $phase4FamilyA->addRepresentative(
+        new FamilyRepresentativeReference($representativeUserRoleId->value()),
+        new RelationshipTypeId($generatedRelationshipTypeId),
+        new DateTimeImmutable('2026-08-10 09:01:00', new DateTimeZone('UTC')),
+    );
+    $phase4FamilyA = $familyRepository->save($phase4FamilyA);
+    $phase4FamilyAId = $phase4FamilyA->id();
+    assertIntegration(
+        $phase4FamilyAId !== null && $phase4FamilyAId->value() > 0,
+        'MariaDB did not generate the first E007 Phase 4 Family identity.'
+    );
+
+    $authenticationSession->userId = $generatedRepresentativeUserId;
+    $getAuthorizedFamilies = new GetAuthorizedFamilies(
+        $getAuthenticatedRepresentative,
+        $familyRepository,
+    );
+    $familyContextSession = new RepresentativeFamilyContextSession($authenticationSession);
+    $resolveFamilyContext = new ResolveFamilyContext($getAuthorizedFamilies, $familyContextSession);
+    $selectAuthorizedFamily = new SelectAuthorizedFamily(
+        $getAuthorizedFamilies,
+        $familyContextSession,
+    );
+    $singleFamilyAccess = $resolveFamilyContext->handle();
+    assertIntegration(
+        $singleFamilyAccess !== null
+        && count($singleFamilyAccess->authorizedFamilies) === 1
+        && $singleFamilyAccess->authorizedFamilies[0]->familyId === $phase4FamilyAId->value()
+        && $singleFamilyAccess->authorizedFamilies[0]->displayName === 'E007 Phase 4 Family A'
+        && $singleFamilyAccess->context?->familyId === $phase4FamilyAId->value()
+        && !$singleFamilyAccess->requiresSelection,
+        'One active FamilyRepresentative membership did not auto-resolve its exact Family context.'
+    );
+
+    $phase4FamilyB = Family::create(
+        new DisplayName('E007 Phase 4 Family B'),
+        FamilyStatus::Active,
+        new FamilyRepresentativeReference($secondRepresentativeId->value()),
+        new RelationshipTypeId($generatedRelationshipTypeId),
+        new DateTimeImmutable('2026-08-10 10:00:00', new DateTimeZone('UTC')),
+    );
+    $phase4FamilyB->addRepresentative(
+        new FamilyRepresentativeReference($representativeUserRoleId->value()),
+        new RelationshipTypeId($generatedRelationshipTypeId),
+        new DateTimeImmutable('2026-08-10 10:01:00', new DateTimeZone('UTC')),
+    );
+    $phase4FamilyB = $familyRepository->save($phase4FamilyB);
+    $phase4FamilyBId = $phase4FamilyB->id();
+    assertIntegration(
+        $phase4FamilyBId !== null && $phase4FamilyBId->value() > 0,
+        'MariaDB did not generate the second E007 Phase 4 Family identity.'
+    );
+
+    $phase4StateBeforeReadOnlyAccess = mariaDbRepresentativeFamilyAccessState($identity);
+    $familyContextSession->clear();
+    $multipleFamilyAccess = $resolveFamilyContext->handle();
+    assertIntegration(
+        $multipleFamilyAccess !== null
+        && array_map(
+            static fn ($family): int => $family->familyId,
+            $multipleFamilyAccess->authorizedFamilies,
+        ) === [$phase4FamilyAId->value(), $phase4FamilyBId->value()]
+        && $multipleFamilyAccess->context === null
+        && $multipleFamilyAccess->requiresSelection,
+        'Two active FamilyRepresentative memberships did not require explicit deterministic selection.'
+    );
+    $selectedFamilyA = $selectAuthorizedFamily->handle($phase4FamilyAId->value());
+    $selectedFamilyB = $selectAuthorizedFamily->handle($phase4FamilyBId->value());
+    $otherRepresentativeFamilyRejected = false;
+    try {
+        $selectAuthorizedFamily->handle($generatedFamilyId->value());
+    } catch (FamilyContextNotAuthorized) {
+        $otherRepresentativeFamilyRejected = true;
+    }
+    $phase4StateAfterReadOnlyAccess = mariaDbRepresentativeFamilyAccessState($identity);
+    assertIntegration(
+        $selectedFamilyA->familyId === $phase4FamilyAId->value()
+        && $selectedFamilyA->representativeId === $representativeUserRoleId->value()
+        && $selectedFamilyB->familyId === $phase4FamilyBId->value()
+        && $selectedFamilyB->representativeId === $representativeUserRoleId->value()
+        && $otherRepresentativeFamilyRejected
+        && $familyContextSession->selectedFamilyId() === $phase4FamilyBId->value()
+        && $phase4StateAfterReadOnlyAccess === $phase4StateBeforeReadOnlyAccess,
+        'Family selection change authorization or read-only persistence state was not exact.'
+    );
+
+    $phase4FamilyB->endRepresentativeMembership(
+        new FamilyRepresentativeReference($representativeUserRoleId->value()),
+        new DateTimeImmutable('2026-08-10 11:00:00', new DateTimeZone('UTC')),
+    );
+    $familyRepository->save($phase4FamilyB);
+    $phase4StateAfterMembershipEnd = mariaDbRepresentativeFamilyAccessState($identity);
+    $staleFamilyAccess = $resolveFamilyContext->handle();
+    $adminUser = $representativeUsers->findByLoginIdentifier(new LoginIdentifier('admin'));
+    $adminUserId = $adminUser?->id();
+    assertIntegration(
+        $adminUserId !== null,
+        'Existing administrator identity was unavailable for Family context compatibility.'
+    );
+    $authenticationSession->userId = $adminUserId->value();
+    $adminFamilyAccess = $resolveFamilyContext->handle();
+    $phase4StateAfterStaleAndAdminResolution = mariaDbRepresentativeFamilyAccessState($identity);
+    assertIntegration(
+        $staleFamilyAccess !== null
+        && count($staleFamilyAccess->authorizedFamilies) === 1
+        && $staleFamilyAccess->authorizedFamilies[0]->familyId === $phase4FamilyAId->value()
+        && $staleFamilyAccess->context?->familyId === $phase4FamilyAId->value()
+        && !$staleFamilyAccess->requiresSelection
+        && $adminFamilyAccess === null
+        && $familyContextSession->selectedFamilyId() === null
+        && $phase4StateAfterStaleAndAdminResolution === $phase4StateAfterMembershipEnd,
+        'Stale historical membership or administrator Family context did not fail closed without writes.'
+    );
+    echo "PASS MySQL Representative Family context authorization selection stale invalidation and read-only behavior\n";
 
     assertIntegration(
         $representativePasswordHasher->verify('DisposableAdminPassword', $hash)

@@ -12,7 +12,11 @@ interface SessionManager
 
     public function put(string $key, mixed $value): void;
 
+    public function get(string $key, mixed $default = null): mixed;
+
     public function pull(string $key, mixed $default = null): mixed;
+
+    public function remove(string $key): void;
 
     public function destroy(): void;
 }
