@@ -42,6 +42,15 @@ final class AuthenticationController extends Controller
         ]);
     }
 
+    public function showForgotPassword(): string
+    {
+        http_response_code(200);
+
+        return $this->view('auth.forgot-password', [
+            'title' => 'Forgot password',
+        ]);
+    }
+
     public function login(): string
     {
         $input = (new Request())->input();

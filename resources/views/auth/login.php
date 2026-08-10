@@ -22,3 +22,5 @@ declare(strict_types=1);
 
     <button type="submit">Sign in</button>
 </form>
+
+<p><a href="/forgot-password">Forgot password?</a></p>
