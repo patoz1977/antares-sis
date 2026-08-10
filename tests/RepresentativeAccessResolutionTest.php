@@ -151,15 +151,12 @@ function registerRepresentativeAccessResolutionTests(TestRunner $runner): void
         ));
     });
 
-    $runner->add('Representative access adds no Family context session state or portal route', function (): void {
+    $runner->add('Representative access remains independent of Family context and Portal delivery', function (): void {
         $source = representativeAccessSource(GetAuthenticatedRepresentative::class);
-        $routes = (string) file_get_contents(dirname(__DIR__) . '/routes/web.php');
 
         assertSameValue(false, str_contains($source, 'Family'));
         assertSameValue(false, str_contains($source, 'SessionManager'));
-        foreach (['/representative', '/portal', '/families/select'] as $route) {
-            assertSameValue(false, str_contains($routes, "'" . $route . "'"), $route);
-        }
+        assertSameValue(false, str_contains($source, 'Http'));
     });
 }
 
