@@ -12,7 +12,6 @@ use App\Family\Application\Orchestration\CreateRepresentativeFamily;
 use App\Family\Application\Orchestration\CreateStudentInFamily;
 use App\Family\Application\Orchestration\Dto\CreateRepresentativeFamilyInput;
 use App\Family\Application\Orchestration\Dto\CreateStudentInFamilyInput;
-use App\Family\Application\RelationshipTypeLookup;
 use App\Family\Domain\Family;
 use App\Family\Domain\FamilyRepository;
 use App\Family\Domain\FamilyStatus;
@@ -22,6 +21,8 @@ use App\Family\Domain\ValueObject\RelationshipTypeId;
 use App\Family\Domain\ValueObject\RepresentativeId as FamilyRepresentativeReference;
 use App\Family\Domain\ValueObject\StudentId as FamilyStudentReference;
 use App\Family\Infrastructure\Persistence\PdoFamilyRepository;
+use App\Family\Infrastructure\Persistence\PdoFamilyFormOptionsProvider;
+use App\Family\Infrastructure\Persistence\PdoRelationshipTypeLookup;
 use App\Person\Domain\Person;
 use App\Person\Domain\PersonStatus;
 use App\Person\Domain\ValueObject\ContactInformation;
@@ -884,6 +885,19 @@ try {
         $generatedRelationshipTypeId > 0,
         'MariaDB did not generate the technical RelationshipType identity.'
     );
+    $relationshipTypeInsert = $identity->prepare(
+        'INSERT INTO relationship_types (code, name, is_active) '
+        . 'VALUES (:code, :name, FALSE)'
+    );
+    $relationshipTypeInsert->execute([
+        ':code' => 'DISPOSABLE_INACTIVE_RELATIONSHIP',
+        ':name' => 'Inactive disposable relationship',
+    ]);
+    $inactiveRelationshipTypeId = (int) $identity->lastInsertId();
+    assertIntegration(
+        $inactiveRelationshipTypeId > 0,
+        'MariaDB did not generate the inactive RelationshipType identity.'
+    );
 
     $secondRepresentative = $representativeRepository->save(new Representative(
         null,
@@ -1158,21 +1172,24 @@ try {
         'Family persistence left an orphan Family without a Representative membership.'
     );
 
-    $relationshipTypes = new class($connectionA) implements RelationshipTypeLookup {
-        public function __construct(private readonly PDO $connection)
-        {
-        }
-
-        public function exists(int $relationshipTypeId): bool
-        {
-            $statement = $this->connection->prepare(
-                'SELECT 1 FROM relationship_types WHERE id = :id'
-            );
-            $statement->execute([':id' => $relationshipTypeId]);
-
-            return $statement->fetchColumn() !== false;
-        }
-    };
+    $relationshipTypes = new PdoRelationshipTypeLookup($managerA);
+    assertIntegration(
+        $relationshipTypes->exists($generatedRelationshipTypeId)
+        && !$relationshipTypes->exists($inactiveRelationshipTypeId)
+        && !$relationshipTypes->exists(0)
+        && !$relationshipTypes->exists(999999999),
+        'Productive RelationshipTypeLookup did not enforce positive active catalog identity.'
+    );
+    $familyFormOptions = (new PdoFamilyFormOptionsProvider($managerA))->get();
+    assertIntegration(
+        $familyFormOptions->isReadyForSave()
+        && array_map(
+            static fn ($option): string => $option->code,
+            $familyFormOptions->relationshipTypes,
+        ) === ['DISPOSABLE_TEST_RELATIONSHIP']
+        && $familyFormOptions->statuses === [FamilyStatus::Active, FamilyStatus::Inactive],
+        'Productive Family form options did not expose only active relationships and exact statuses.'
+    );
     $transactions = new PdoTransactionRunner($managerA);
     $createPerson = new CreatePerson($personRepository);
     $createRepresentative = new CreateRepresentative(
@@ -1535,6 +1552,7 @@ try {
     echo "PASS MySQL Family atomic AUTO_INCREMENT creation and complete Aggregate reconstruction\n";
     echo "PASS MySQL Family Representative and Student active lookups and historical membership\n";
     echo "PASS MySQL Family physical uniqueness UTC status mapping and transactional rollback\n";
+    echo "PASS MySQL Family delivery relationship lookup active options and exact statuses\n";
     echo "PASS MySQL composite Representative Person role Family atomic commit and rollback\n";
     echo "PASS MySQL composite Student Person role membership atomic commit and rollback\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";

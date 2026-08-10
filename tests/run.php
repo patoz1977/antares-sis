@@ -24,6 +24,7 @@ require __DIR__ . '/FamilyMembershipPersistenceTest.php';
 require __DIR__ . '/FamilyMembershipApplicationTest.php';
 require __DIR__ . '/TransactionRunnerTest.php';
 require __DIR__ . '/FamilyCompositeOrchestrationTest.php';
+require __DIR__ . '/FamilyDeliveryTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
@@ -42,6 +43,7 @@ require __DIR__ . '/SchemaBaselineTest.php';
 \Tests\registerFamilyMembershipApplicationTests($runner);
 \Tests\registerTransactionRunnerTests($runner);
 \Tests\registerFamilyCompositeOrchestrationTests($runner);
+\Tests\registerFamilyDeliveryTests($runner);
 \Tests\registerSchemaBaselineTests($runner);
 
 ob_start();
