@@ -35,6 +35,7 @@ use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
 use App\IdentityAccess\Application\SelectAuthorizedFamily;
 use App\IdentityAccess\Domain\UserRepository as IdentityUserRepository;
 use App\IdentityAccess\Http\AuthenticationController;
+use App\IdentityAccess\Http\RepresentativePortalController;
 use App\IdentityAccess\Http\RepresentativeUserController;
 use App\IdentityAccess\Infrastructure\Logging\ErrorLogSecurityEventLogger;
 use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
@@ -183,6 +184,7 @@ $container->instance(
 );
 $container->singleton(AuthenticatedUserProviderInterface::class, AuthenticationService::class);
 $container->singleton(AuthenticationController::class, AuthenticationController::class);
+$container->singleton(RepresentativePortalController::class, RepresentativePortalController::class);
 $container->singleton(AuthenticationMiddleware::class, AuthenticationMiddleware::class);
 $container->singleton(PersonRepository::class, PdoPersonRepository::class);
 $container->singleton(CreatePerson::class, CreatePerson::class);
