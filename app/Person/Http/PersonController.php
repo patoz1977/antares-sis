@@ -7,6 +7,9 @@ namespace App\Person\Http;
 use App\Controllers\Controller;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
+use App\IdentityAccess\Application\Exception\RepresentativeLoginIdentifierAlreadyUsed;
+use App\IdentityAccess\Application\Exception\RepresentativeUserRequiresIdentification;
+use App\IdentityAccess\Application\Orchestration\UpdatePersonWithRepresentativeUserSync;
 use App\Person\Application\CreatePerson;
 use App\Person\Application\Dto\CreatePersonInput;
 use App\Person\Application\Dto\PersonOutput;
@@ -14,7 +17,6 @@ use App\Person\Application\Dto\UpdatePersonInput;
 use App\Person\Application\Exception\IdentificationAlreadyUsed;
 use App\Person\Application\Exception\PersonNotFound;
 use App\Person\Application\GetPerson;
-use App\Person\Application\UpdatePerson;
 use App\Person\Domain\Exception\InvalidPersonState;
 use App\Person\Domain\PersonStatus;
 use Core\Http\Request;
@@ -30,7 +32,7 @@ final class PersonController extends Controller
     public function __construct(
         private readonly CreatePerson $createPerson,
         private readonly GetPerson $getPerson,
-        private readonly UpdatePerson $updatePerson,
+        private readonly UpdatePersonWithRepresentativeUserSync $updatePerson,
         private readonly PersonFormOptionsProvider $formOptions,
         private readonly CsrfTokenManager $csrf,
         private readonly SessionManager $session,
@@ -205,6 +207,28 @@ final class PersonController extends Controller
                 'edit',
                 $values,
                 ['A Person already uses that identification.'],
+                $options,
+                422,
+                $trustedId,
+            );
+        } catch (RepresentativeLoginIdentifierAlreadyUsed) {
+            $this->session->put(self::EDIT_ID_KEY, $trustedId);
+
+            return $this->formView(
+                'edit',
+                $values,
+                ['That document number is already used as another Representative username.'],
+                $options,
+                422,
+                $trustedId,
+            );
+        } catch (RepresentativeUserRequiresIdentification) {
+            $this->session->put(self::EDIT_ID_KEY, $trustedId);
+
+            return $this->formView(
+                'edit',
+                $values,
+                ['A Representative with User must retain complete identification.'],
                 $options,
                 422,
                 $trustedId,

@@ -9,6 +9,7 @@ use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\GetAuthenticatedUser;
 use App\IdentityAccess\Application\LogoutUser;
+use App\IdentityAccess\Application\Orchestration\UpdatePersonWithRepresentativeUserSync;
 use App\IdentityAccess\Domain\User;
 use App\IdentityAccess\Domain\UserStatus;
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
@@ -299,6 +300,62 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         assertSameValue(0, $repository->saveCalls());
     });
 
+    $runner->add('Person delivery synchronizes Representative username when document changes', function (): void {
+        [$controller, $persons, $users] = deliveryControllerWithRepresentativeUser();
+        deliveryRequest('GET', '/persons/edit?id=60', ['id' => '60']);
+        $controller->showEdit();
+
+        deliveryRequest('POST', '/persons/update', deliveryInput([
+            'id' => '60',
+            'document_number' => 'NEW-REP-60',
+        ]));
+        assertSameValue('', $controller->update());
+        assertSameValue(303, http_response_code());
+        assertSameValue(
+            'NEW-REP-60',
+            $persons->findById(new PersonId(60))?->identification()?->documentNumber(),
+        );
+        assertSameValue(
+            'new-rep-60',
+            $users->findByPersonId(new UserPersonId(60))?->loginIdentifier()->value(),
+        );
+    });
+
+    $runner->add('Person delivery safely rejects Identification removal for Representative User', function (): void {
+        [$controller, $persons, $users] = deliveryControllerWithRepresentativeUser();
+        deliveryRequest('GET', '/persons/edit?id=60', ['id' => '60']);
+        $controller->showEdit();
+
+        deliveryRequest('POST', '/persons/update', deliveryInput([
+            'id' => '60',
+            'document_type_id' => '',
+            'document_number' => '',
+        ]));
+        $html = $controller->update();
+
+        assertSameValue(422, http_response_code());
+        deliveryAssertContains('must retain complete identification', $html);
+        assertSameValue('REP-60', $persons->findById(new PersonId(60))?->identification()?->documentNumber());
+        assertSameValue('rep-60', $users->findByPersonId(new UserPersonId(60))?->loginIdentifier()->value());
+    });
+
+    $runner->add('Person delivery leaves no partial state when synchronized User save fails', function (): void {
+        [$controller, $persons, $users] = deliveryControllerWithRepresentativeUser();
+        deliveryRequest('GET', '/persons/edit?id=60', ['id' => '60']);
+        $controller->showEdit();
+        $users->failNextSave(new \RuntimeException('simulated User write failure'));
+        deliveryRequest('POST', '/persons/update', deliveryInput([
+            'id' => '60',
+            'first_name' => 'Partial',
+            'document_number' => 'PARTIAL-REP-60',
+        ]));
+
+        assertThrows(fn () => $controller->update(), \RuntimeException::class);
+        assertSameValue('Stored', $persons->findById(new PersonId(60))?->personalName()->firstName());
+        assertSameValue('REP-60', $persons->findById(new PersonId(60))?->identification()?->documentNumber());
+        assertSameValue('rep-60', $users->findByPersonId(new UserPersonId(60))?->loginIdentifier()->value());
+    });
+
     $runner->add('Person delivery routes enforce both middleware and expose no delete flow', function (): void {
         $routes = (string) file_get_contents(dirname(__DIR__) . '/routes/web.php');
         foreach ([
@@ -342,17 +399,63 @@ function registerPersonDeliveryTests(TestRunner $runner): void
 function deliveryController(?PersonFormOptions $options = null): array
 {
     $repository = new InMemoryPersonApplicationRepository(deliveryToday());
+    $users = new InMemoryRepresentativeUserRepository();
+    $representatives = new InMemoryRepresentativeApplicationRepository();
+    $transactions = new InMemoryCompositeTransactionRunner([$repository, $users]);
     $session = new FakeSessionManager();
     $controller = new PersonController(
         new CreatePerson($repository),
         new GetPerson($repository),
-        new UpdatePerson($repository),
+        new UpdatePersonWithRepresentativeUserSync(
+            new UpdatePerson($repository),
+            $repository,
+            $users,
+            $representatives,
+            $transactions,
+        ),
         new FakePersonFormOptionsProvider($options ?? deliveryOptions()),
         new FakeDeliveryCsrf(),
         $session,
     );
 
     return [$controller, $repository, $session];
+}
+
+/** @return array{PersonController, InMemoryPersonApplicationRepository, InMemoryRepresentativeUserRepository} */
+function deliveryControllerWithRepresentativeUser(): array
+{
+    $repository = new InMemoryPersonApplicationRepository(deliveryToday());
+    $repository->seed(deliveryPerson(60, 'REP-60'));
+    $users = new InMemoryRepresentativeUserRepository();
+    $users->seed(new User(
+        new UserId(60),
+        new UserPersonId(60),
+        new LoginIdentifier('rep-60'),
+        new PasswordHash((new NativePasswordHasher())->hash('preserved-password')),
+        UserStatus::Active,
+        2,
+        null,
+        deliveryToday()->modify('-1 day'),
+    ));
+    $representatives = new InMemoryRepresentativeApplicationRepository();
+    $representatives->seed(representativeUserRepresentative(600, 60));
+    $transactions = new InMemoryCompositeTransactionRunner([$repository, $users]);
+    $controller = new PersonController(
+        new CreatePerson($repository),
+        new GetPerson($repository),
+        new UpdatePersonWithRepresentativeUserSync(
+            new UpdatePerson($repository),
+            $repository,
+            $users,
+            $representatives,
+            $transactions,
+        ),
+        new FakePersonFormOptionsProvider(deliveryOptions()),
+        new FakeDeliveryCsrf(),
+        new FakeSessionManager(),
+    );
+
+    return [$controller, $repository, $users];
 }
 
 /** @return array{PersonAdministrationMiddleware, FakeSessionManager} */

@@ -14,10 +14,10 @@ use DateTimeImmutable;
 final class User
 {
     public function __construct(
-        private readonly UserId $id,
+        private readonly ?UserId $id,
         private readonly PersonId $personId,
-        private readonly LoginIdentifier $loginIdentifier,
-        private readonly PasswordHash $passwordHash,
+        private LoginIdentifier $loginIdentifier,
+        private PasswordHash $passwordHash,
         private UserStatus $status,
         private int $failedLoginAttempts = 0,
         private ?DateTimeImmutable $lockedAt = null,
@@ -28,7 +28,7 @@ final class User
         }
     }
 
-    public function id(): UserId
+    public function id(): ?UserId
     {
         return $this->id;
     }
@@ -46,6 +46,16 @@ final class User
     public function passwordHash(): PasswordHash
     {
         return $this->passwordHash;
+    }
+
+    public function changeLoginIdentifier(LoginIdentifier $loginIdentifier): void
+    {
+        $this->loginIdentifier = $loginIdentifier;
+    }
+
+    public function changePasswordHash(PasswordHash $passwordHash): void
+    {
+        $this->passwordHash = $passwordHash;
     }
 
     public function status(): UserStatus

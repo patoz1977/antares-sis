@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\IdentityAccess\Domain;
 
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
+use App\IdentityAccess\Domain\ValueObject\PersonId;
 use App\IdentityAccess\Domain\ValueObject\UserId;
 
 interface UserRepository
@@ -15,5 +16,7 @@ interface UserRepository
 
     public function findById(UserId $id): ?User;
 
-    public function save(User $user): void;
+    public function findByPersonId(PersonId $personId): ?User;
+
+    public function save(User $user): User;
 }

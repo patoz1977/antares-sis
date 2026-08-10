@@ -43,6 +43,46 @@ function registerIdentityAccessTests(TestRunner $runner): void
         assertSameValue(null, $user->lockedAt());
     });
 
+    $runner->add('domain represents new and persisted User identities explicitly', function (): void {
+        $newUser = new User(
+            null,
+            new PersonId(7),
+            new LoginIdentifier('DOC-7'),
+            new PasswordHash('test-hash'),
+            UserStatus::Active,
+        );
+
+        assertSameValue(null, $newUser->id());
+        assertSameValue(1, testUser()->id()?->value());
+    });
+
+    $runner->add('domain changes login and password hash without changing auth state', function (): void {
+        $lockedAt = testNow()->modify('-100 seconds');
+        $lastAccessAt = testNow()->modify('-200 seconds');
+        $user = new User(
+            new UserId(9),
+            new PersonId(8),
+            new LoginIdentifier('old-document'),
+            new PasswordHash('old-hash'),
+            UserStatus::Disabled,
+            5,
+            $lockedAt,
+            $lastAccessAt,
+        );
+
+        $user->changeLoginIdentifier(new LoginIdentifier('new-document'));
+        $user->changePasswordHash(new PasswordHash('new-hash'));
+
+        assertSameValue(9, $user->id()?->value());
+        assertSameValue(8, $user->personId()->value());
+        assertSameValue('new-document', $user->loginIdentifier()->value());
+        assertSameValue('new-hash', $user->passwordHash()->value());
+        assertSameValue(UserStatus::Disabled, $user->status());
+        assertSameValue(5, $user->failedLoginAttempts());
+        assertSameValue($lockedAt->getTimestamp(), $user->lockedAt()?->getTimestamp());
+        assertSameValue($lastAccessAt->getTimestamp(), $user->lastAccessAt()?->getTimestamp());
+    });
+
     $runner->add('domain rejects invalid identifiers and negative attempts', function (): void {
         assertThrows(fn () => new UserId(0), InvalidUserState::class);
         assertThrows(fn () => new PersonId(0), InvalidUserState::class);
@@ -109,6 +149,22 @@ function registerIdentityAccessTests(TestRunner $runner): void
         assertSameValue(1, $session->regenerations);
         assertSameValue(0, $repository->user->failedLoginAttempts());
         assertContainsValue('authentication.succeeded', $events->events);
+    });
+
+    $runner->add('authentication rejects an unpersisted User identity', function (): void {
+        $newUser = new User(
+            null,
+            new PersonId(1),
+            new LoginIdentifier('admin'),
+            testUser()->passwordHash(),
+            UserStatus::Active,
+        );
+        [$useCase] = authenticationFixture($newUser);
+
+        assertThrows(
+            fn () => $useCase->handle('admin', 'correct-password'),
+            InvalidUserState::class,
+        );
     });
 
     $runner->add('unknown identifier returns generic failure', function (): void {
@@ -259,6 +315,16 @@ function registerIdentityAccessTests(TestRunner $runner): void
         assertSameValue(false, $csrf->isValid($token));
     });
 
+    $runner->add('native password hashing is non-reversible and verifies through its contract', function (): void {
+        $hasher = new NativePasswordHasher();
+        $plainText = 'abcde';
+        $hash = $hasher->hash($plainText);
+
+        assertSameValue(false, $hash === $plainText);
+        assertSameValue(true, $hasher->verify($plainText, $hash));
+        assertSameValue(false, $hasher->verify('different', $hash));
+    });
+
     $runner->add('pdo repository maps and persists User aggregate', function (): void {
         $pdo = sqliteIdentityDatabase();
         $repository = repositoryWithPdo($pdo);
@@ -266,6 +332,7 @@ function registerIdentityAccessTests(TestRunner $runner): void
         assertSameValue(1, $user?->personId()->value());
         assertSameValue(UserStatus::Active, $user?->status());
         assertSameValue(1, $repository->findById(new UserId(1))?->id()->value());
+        assertSameValue(1, $repository->findByPersonId(new PersonId(1))?->id()?->value());
 
         $user?->recordFailedLogin(testNow(), 5);
         $repository->save($user);
@@ -275,6 +342,52 @@ function registerIdentityAccessTests(TestRunner $runner): void
         )->fetch(PDO::FETCH_ASSOC);
         assertSameValue(1, (int) $row['failed_login_attempts']);
         assertSameValue(null, $row['locked_at']);
+    });
+
+    $runner->add('pdo repository inserts database-generated User identity and reloads exact state', function (): void {
+        $pdo = sqliteIdentityDatabase();
+        $pdo->exec('INSERT INTO persons (id) VALUES (2)');
+        $repository = repositoryWithPdo($pdo);
+        $newUser = new User(
+            null,
+            new PersonId(2),
+            new LoginIdentifier(' DOC-2 '),
+            new PasswordHash('generated-hash'),
+            UserStatus::Disabled,
+        );
+
+        $persisted = $repository->save($newUser);
+
+        assertSameValue(null, $newUser->id());
+        assertSameValue(true, ($persisted->id()?->value() ?? 0) > 0);
+        assertSameValue(2, $persisted->personId()->value());
+        assertSameValue('doc-2', $persisted->loginIdentifier()->value());
+        assertSameValue('generated-hash', $persisted->passwordHash()->value());
+        assertSameValue(UserStatus::Disabled, $persisted->status());
+        assertSameValue(
+            $persisted->id()?->value(),
+            $repository->findByPersonId(new PersonId(2))?->id()?->value(),
+        );
+    });
+
+    $runner->add('pdo repository updates mutable User state and accepts identical update', function (): void {
+        $pdo = sqliteIdentityDatabase();
+        $repository = repositoryWithPdo($pdo);
+        $user = $repository->findById(new UserId(1));
+        if ($user === null) {
+            throw new RuntimeException('User fixture was not found.');
+        }
+
+        $user->changeLoginIdentifier(new LoginIdentifier('changed-login'));
+        $user->changePasswordHash(new PasswordHash('changed-hash'));
+        $persisted = $repository->save($user);
+        $identical = $repository->save($persisted);
+
+        assertSameValue(1, $identical->id()?->value());
+        assertSameValue(1, $identical->personId()->value());
+        assertSameValue('changed-login', $identical->loginIdentifier()->value());
+        assertSameValue('changed-hash', $identical->passwordHash()->value());
+        assertSameValue(UserStatus::Active, $identical->status());
     });
 
     $runner->add('pdo row-lock load requires an active transaction', function (): void {
@@ -446,15 +559,16 @@ function sqliteIdentityDatabase(): PDO
         . 'CREATE TABLE status_types (id INTEGER PRIMARY KEY, code TEXT NOT NULL);'
         . 'CREATE TABLE statuses (id INTEGER PRIMARY KEY, status_type_id INTEGER NOT NULL, code TEXT NOT NULL);'
         . 'CREATE TABLE users ('
-        . 'id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL, status_id INTEGER NOT NULL, '
+        . 'id INTEGER PRIMARY KEY AUTOINCREMENT, person_id INTEGER NOT NULL UNIQUE, status_id INTEGER NOT NULL, '
         . 'login_identifier TEXT NOT NULL, normalized_login_identifier TEXT NOT NULL, password_hash TEXT NOT NULL, '
         . 'failed_login_attempts INTEGER NOT NULL DEFAULT 0, locked_at TEXT NULL, '
-        . 'last_access_at TEXT NULL, updated_at TEXT NULL);'
+        . 'last_access_at TEXT NULL, updated_at TEXT NULL, UNIQUE(normalized_login_identifier));'
     );
     $hash = password_hash('correct-password', PASSWORD_DEFAULT);
     $pdo->exec('INSERT INTO persons (id) VALUES (1)');
     $pdo->exec("INSERT INTO status_types (id, code) VALUES (1, 'USER_STATUS')");
     $pdo->exec("INSERT INTO statuses (id, status_type_id, code) VALUES (1, 1, 'ACTIVE')");
+    $pdo->exec("INSERT INTO statuses (id, status_type_id, code) VALUES (2, 1, 'DISABLED')");
     $statement = $pdo->prepare(
         'INSERT INTO users '
         . '(id, person_id, status_id, login_identifier, normalized_login_identifier, password_hash) '
@@ -556,13 +670,20 @@ final class InMemoryUserRepository implements UserRepository
 
     public function findById(UserId $id): ?User
     {
-        return $this->user?->id()->value() === $id->value() ? $this->user : null;
+        return $this->user?->id()?->value() === $id->value() ? $this->user : null;
     }
 
-    public function save(User $user): void
+    public function findByPersonId(PersonId $personId): ?User
+    {
+        return $this->user?->personId()->value() === $personId->value() ? $this->user : null;
+    }
+
+    public function save(User $user): User
     {
         $this->user = $user;
         $this->saves++;
+
+        return $user;
     }
 }
 
@@ -614,6 +735,11 @@ final class CountingPasswordHasher implements PasswordHasher
     public function __construct()
     {
         $this->delegate = new NativePasswordHasher();
+    }
+
+    public function hash(string $plainTextPassword): string
+    {
+        return $this->delegate->hash($plainTextPassword);
     }
 
     public function verify(string $plainTextPassword, string $passwordHash): bool
