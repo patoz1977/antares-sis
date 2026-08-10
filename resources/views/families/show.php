@@ -34,6 +34,7 @@ $timestamp = static fn (DateTimeImmutable $value): string => $value->format(Date
         <dt>Started at</dt><dd><?= $escape($timestamp($membership->startedAt)) ?></dd>
         <dt>Ended at</dt><dd><?= $membership->endedAt === null ? 'Not ended' : $escape($timestamp($membership->endedAt)) ?></dd>
     </dl>
+    <p><a href="/representative-users/manage?representative_id=<?= $escape($membership->representativeId) ?>">Manage Representative User</a></p>
 </section>
 <?php endforeach; ?>
 <?php endif; ?>

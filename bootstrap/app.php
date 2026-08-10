@@ -17,14 +17,20 @@ use Core\Security\AuthenticatedUserProviderInterface;
 use Core\Session\Session;
 use Core\Session\SessionInterface;
 use App\IdentityAccess\Application\AuthenticationPolicy;
+use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
 use App\IdentityAccess\Application\Contract\Clock;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\PasswordHasher;
 use App\IdentityAccess\Application\Contract\SecurityEventLogger;
 use App\IdentityAccess\Application\Contract\SessionManager;
 use App\IdentityAccess\Application\Contract\TransactionManager;
+use App\IdentityAccess\Application\CreateRepresentativeUser;
+use App\IdentityAccess\Application\GetUserByPersonId;
+use App\IdentityAccess\Application\Orchestration\UpdatePersonWithRepresentativeUserSync;
+use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
 use App\IdentityAccess\Domain\UserRepository as IdentityUserRepository;
 use App\IdentityAccess\Http\AuthenticationController;
+use App\IdentityAccess\Http\RepresentativeUserController;
 use App\IdentityAccess\Infrastructure\Logging\ErrorLogSecurityEventLogger;
 use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
@@ -55,6 +61,7 @@ use App\Person\Http\PersonFormOptionsProvider;
 use App\Person\Infrastructure\Persistence\PdoPersonFormOptionsProvider;
 use App\Person\Infrastructure\Persistence\PdoPersonRepository;
 use App\Representative\Application\CreateRepresentative;
+use App\Representative\Application\GetRepresentative;
 use App\Representative\Domain\RepresentativeRepository;
 use App\Representative\Infrastructure\Persistence\PdoRepresentativeRepository;
 use App\Student\Application\CreateStudent;
@@ -151,6 +158,7 @@ $container->singleton(PasswordHasher::class, NativePasswordHasher::class);
 $container->singleton(SecurityEventLogger::class, ErrorLogSecurityEventLogger::class);
 $container->singleton(TransactionManager::class, PdoTransactionManager::class);
 $container->singleton(IdentityUserRepository::class, PdoUserRepository::class);
+$container->singleton(RepresentativePasswordPolicy::class, RepresentativePasswordPolicy::class);
 $maximumFailedAttempts = filter_var(
     $config['auth_max_failed_attempts'],
     FILTER_VALIDATE_INT,
@@ -175,6 +183,16 @@ $container->singleton(PersonRepository::class, PdoPersonRepository::class);
 $container->singleton(CreatePerson::class, CreatePerson::class);
 $container->singleton(GetPerson::class, GetPerson::class);
 $container->singleton(UpdatePerson::class, UpdatePerson::class);
+$container->singleton(GetUserByPersonId::class, GetUserByPersonId::class);
+$container->singleton(CreateRepresentativeUser::class, CreateRepresentativeUser::class);
+$container->singleton(
+    ChangeRepresentativeUserPassword::class,
+    ChangeRepresentativeUserPassword::class,
+);
+$container->singleton(
+    UpdatePersonWithRepresentativeUserSync::class,
+    UpdatePersonWithRepresentativeUserSync::class,
+);
 $container->singleton(PersonFormOptionsProvider::class, PdoPersonFormOptionsProvider::class);
 $container->singleton(PersonController::class, PersonController::class);
 $container->singleton(PersonAdministrationMiddleware::class, PersonAdministrationMiddleware::class);
@@ -185,6 +203,7 @@ $container->singleton(FamilyRepository::class, PdoFamilyRepository::class);
 $container->singleton(RelationshipTypeLookup::class, PdoRelationshipTypeLookup::class);
 $container->singleton(FamilyFormOptionsProvider::class, PdoFamilyFormOptionsProvider::class);
 $container->singleton(CreateRepresentative::class, CreateRepresentative::class);
+$container->singleton(GetRepresentative::class, GetRepresentative::class);
 $container->singleton(CreateStudent::class, CreateStudent::class);
 $container->singleton(CreateFamily::class, CreateFamily::class);
 $container->singleton(AddStudentToFamily::class, AddStudentToFamily::class);
@@ -193,6 +212,7 @@ $container->singleton(CreateRepresentativeFamily::class, CreateRepresentativeFam
 $container->singleton(CreateStudentInFamily::class, CreateStudentInFamily::class);
 $container->singleton(FamilyController::class, FamilyController::class);
 $container->singleton(FamilyAdministrationMiddleware::class, FamilyAdministrationMiddleware::class);
+$container->singleton(RepresentativeUserController::class, RepresentativeUserController::class);
 
 $app = new Application($config, $container);
 

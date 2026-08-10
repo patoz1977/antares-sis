@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\IdentityAccess\Http\AuthenticationController;
+use App\IdentityAccess\Http\RepresentativeUserController;
 use App\Family\Http\FamilyAdministrationMiddleware;
 use App\Family\Http\FamilyController;
 use App\Person\Http\PersonAdministrationMiddleware;
@@ -14,6 +15,7 @@ use Core\Routing\Router;
 /** @var Router $router */
 /** @var Application $app */
 $authenticationController = $app->container()->make(AuthenticationController::class);
+$representativeUserController = $app->container()->make(RepresentativeUserController::class);
 $personController = $app->container()->make(PersonController::class);
 $familyController = $app->container()->make(FamilyController::class);
 $personMiddleware = [
@@ -23,6 +25,10 @@ $personMiddleware = [
 $familyMiddleware = [
     AuthenticationMiddleware::class,
     FamilyAdministrationMiddleware::class,
+];
+$representativeUserMiddleware = [
+    AuthenticationMiddleware::class,
+    PersonAdministrationMiddleware::class,
 ];
 
 $router->get('/login', [$authenticationController, 'showLogin']);
@@ -41,3 +47,18 @@ $router->post('/families/create', [$familyController, 'createRepresentativeFamil
 $router->get('/families/show', [$familyController, 'show'], $familyMiddleware);
 $router->get('/families/students/create', [$familyController, 'showCreateStudent'], $familyMiddleware);
 $router->post('/families/students/create', [$familyController, 'createStudent'], $familyMiddleware);
+$router->get(
+    '/representative-users/manage',
+    [$representativeUserController, 'showManage'],
+    $representativeUserMiddleware,
+);
+$router->post(
+    '/representative-users/create',
+    [$representativeUserController, 'create'],
+    $representativeUserMiddleware,
+);
+$router->post(
+    '/representative-users/password',
+    [$representativeUserController, 'changePassword'],
+    $representativeUserMiddleware,
+);
