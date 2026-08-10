@@ -697,6 +697,7 @@ final class FakeSessionManager implements SessionManager
     public function regenerateForUser(int $userId): void
     {
         $this->regenerations++;
+        unset($this->values['representative_family_context_id']);
         $this->userId = $userId;
     }
 
@@ -710,12 +711,22 @@ final class FakeSessionManager implements SessionManager
         $this->values[$key] = $value;
     }
 
+    public function get(string $key, mixed $default = null): mixed
+    {
+        return $this->values[$key] ?? $default;
+    }
+
     public function pull(string $key, mixed $default = null): mixed
     {
         $value = $this->values[$key] ?? $default;
         unset($this->values[$key]);
 
         return $value;
+    }
+
+    public function remove(string $key): void
+    {
+        unset($this->values[$key]);
     }
 
     public function destroy(): void
