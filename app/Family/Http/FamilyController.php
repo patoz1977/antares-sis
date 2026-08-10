@@ -27,6 +27,7 @@ use App\Person\Http\PersonFormOptions;
 use App\Person\Http\PersonFormOptionsProvider;
 use App\Representative\Application\Exception\InvalidPersistedRepresentativeResult;
 use App\Representative\Application\Exception\RepresentativeAlreadyExistsForPerson;
+use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
 use App\Representative\Domain\Exception\InvalidRepresentativeState;
 use App\Representative\Domain\RepresentativeStatus;
 use App\Student\Application\Exception\InstitutionalCodeAlreadyUsed;
@@ -134,6 +135,14 @@ final class FamilyController extends Controller
             return $this->representativeFormView(
                 $values,
                 ['The Person already has a Representative role.'],
+                $personOptions,
+                $familyOptions,
+                422,
+            );
+        } catch (RepresentativeRequiresContactEmail) {
+            return $this->representativeFormView(
+                $values,
+                ['Personal email is required for a Representative.'],
                 $personOptions,
                 $familyOptions,
                 422,
@@ -378,6 +387,9 @@ final class FamilyController extends Controller
         $errors = [];
         $values = $this->preservedValues($input, $this->representativeFields(), $errors);
         $person = $this->personData($values, $personOptions, $errors);
+        if ($person['email'] === null) {
+            $errors[] = 'Personal email is required for a Representative.';
+        }
 
         $representativeStatus = RepresentativeStatus::tryFrom($values['representative_status']);
         if ($representativeStatus === null) {

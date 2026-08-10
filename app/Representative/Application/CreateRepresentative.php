@@ -11,6 +11,7 @@ use App\Representative\Application\Dto\RepresentativeOutput;
 use App\Representative\Application\Exception\InvalidPersistedRepresentativeResult;
 use App\Representative\Application\Exception\RepresentativeAlreadyExistsForPerson;
 use App\Representative\Application\Exception\RepresentativePersonNotFound;
+use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
 use App\Representative\Domain\Representative;
 use App\Representative\Domain\RepresentativeRepository;
 use App\Representative\Domain\ValueObject\EmploymentInformation;
@@ -29,8 +30,14 @@ final readonly class CreateRepresentative
         $personDomainId = new PersonDomainId($input->personId);
         $employment = $this->employmentInformation($input);
 
-        if ($this->persons->findById($personDomainId) === null) {
+        $person = $this->persons->findById($personDomainId);
+        if ($person === null) {
             throw new RepresentativePersonNotFound('Person for Representative was not found.');
+        }
+        if ($person->contactInformation()?->email() === null) {
+            throw new RepresentativeRequiresContactEmail(
+                'Representative requires a Person contact email.'
+            );
         }
 
         $personId = new PersonId($input->personId);

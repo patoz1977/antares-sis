@@ -20,6 +20,7 @@ use App\IdentityAccess\Domain\ValueObject\PersonId as UserPersonId;
 use App\Person\Domain\PersonRepository;
 use App\Person\Domain\ValueObject\PersonId;
 use App\Representative\Application\Exception\RepresentativeNotFound;
+use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
 use App\Representative\Domain\RepresentativeRepository;
 use App\Representative\Domain\ValueObject\RepresentativeId;
 
@@ -48,6 +49,11 @@ final readonly class CreateRepresentativeUser
         if ($person === null) {
             throw new RepresentativeUserPersonNotFound(
                 'Representative references a Person that was not found.'
+            );
+        }
+        if ($person->contactInformation()?->email() === null) {
+            throw new RepresentativeRequiresContactEmail(
+                'Representative requires a Person contact email.'
             );
         }
 

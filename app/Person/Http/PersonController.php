@@ -19,6 +19,7 @@ use App\Person\Application\Exception\PersonNotFound;
 use App\Person\Application\GetPerson;
 use App\Person\Domain\Exception\InvalidPersonState;
 use App\Person\Domain\PersonStatus;
+use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
 use Core\Http\Request;
 use DateTimeImmutable;
 
@@ -229,6 +230,17 @@ final class PersonController extends Controller
                 'edit',
                 $values,
                 ['A Representative with User must retain complete identification.'],
+                $options,
+                422,
+                $trustedId,
+            );
+        } catch (RepresentativeRequiresContactEmail) {
+            $this->session->put(self::EDIT_ID_KEY, $trustedId);
+
+            return $this->formView(
+                'edit',
+                $values,
+                ['A Representative must retain a valid personal email.'],
                 $options,
                 422,
                 $trustedId,

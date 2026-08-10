@@ -90,8 +90,8 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
             </select>
         </div>
         <div>
-            <label for="email">Email</label>
-            <input id="email" name="email" type="email" value="<?= $escape($values['email'] ?? '') ?>">
+            <label for="email">Personal email (required)</label>
+            <input id="email" name="email" type="email" value="<?= $escape($values['email'] ?? '') ?>" required>
         </div>
         <div>
             <label for="mobile-phone">Mobile phone</label>
