@@ -34,6 +34,7 @@ $representativeUserMiddleware = [
 ];
 
 $router->get('/login', [$authenticationController, 'showLogin']);
+$router->get('/forgot-password', [$authenticationController, 'showForgotPassword']);
 $router->post('/login', [$authenticationController, 'login']);
 $router->post('/logout', [$authenticationController, 'logout']);
 $router->get('/', [$authenticationController, 'dashboard'], AuthenticationMiddleware::class);

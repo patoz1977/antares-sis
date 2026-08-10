@@ -33,7 +33,6 @@ use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\Family\Application\AddStudentToFamily;
 use App\Family\Application\CreateFamily;
-use App\Family\Application\Exception\RelationshipTypeNotFound;
 use App\Family\Application\GetFamily;
 use App\Family\Application\Orchestration\CreateRepresentativeFamily;
 use App\Family\Application\Orchestration\CreateStudentInFamily;
@@ -65,6 +64,8 @@ use App\Representative\Domain\RepresentativeStatus;
 use App\Representative\Domain\ValueObject\EmploymentInformation;
 use App\Representative\Domain\ValueObject\PersonId as RepresentativePersonId;
 use App\Representative\Application\CreateRepresentative;
+use App\Representative\Application\Dto\CreateRepresentativeInput;
+use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
 use App\Representative\Infrastructure\Persistence\PdoRepresentativeRepository;
 use App\Student\Domain\Student;
 use App\Student\Domain\StudentStatus;
@@ -1281,7 +1282,7 @@ try {
         $compositeToday,
     );
     $representativeFlowRow = $identity->prepare(
-        'SELECT p.id AS person_id, r.id AS representative_id, f.id AS family_id, '
+        'SELECT p.id AS person_id, p.email, r.id AS representative_id, f.id AS family_id, '
         . 'fr.id AS membership_id, fr.representative_id AS membership_representative_id, '
         . 'fr.relationship_type_id, fr.is_primary, fr.ended_at '
         . 'FROM persons p INNER JOIN representatives r ON r.person_id = p.id '
@@ -1297,6 +1298,7 @@ try {
     assertIntegration(
         $representativePhysical !== false
         && (int) $representativePhysical['person_id'] === $representativeFlowOutput->person->id
+        && $representativePhysical['email'] === 'composite-representative@example.test'
         && (int) $representativePhysical['representative_id']
             === $representativeFlowOutput->representative->id
         && (int) $representativePhysical['family_id'] === $representativeFlowOutput->family->id
@@ -1308,6 +1310,45 @@ try {
         && $representativePhysical['ended_at'] === null
         && !$connectionA->inTransaction(),
         'Composite Representative flow did not commit Person, role, Family and primary membership.'
+    );
+
+    $missingEmailPerson = $personRepository->save(new Person(
+        null,
+        new PersonalName('Missing', null, 'Representative', 'Email'),
+        new Identification(1, 'REPRESENTATIVE-MISSING-EMAIL'),
+        new DateTimeImmutable('1987-06-07', new DateTimeZone('UTC')),
+        1,
+        null,
+        null,
+        new ContactInformation(null, 'phone only', null),
+        PersonStatus::Active,
+        $personToday,
+    ));
+    $missingEmailPersonId = $missingEmailPerson->id();
+    assertIntegration(
+        $missingEmailPersonId !== null,
+        'MariaDB did not persist the Person used for Representative email rejection.'
+    );
+    $missingEmailRepresentativeRejected = false;
+    try {
+        $createRepresentative->handle(new CreateRepresentativeInput(
+            $missingEmailPersonId->value(),
+            'Tester',
+            null,
+            null,
+            null,
+            'work-email-does-not-substitute@example.test',
+            RepresentativeStatus::Active,
+        ));
+    } catch (RepresentativeRequiresContactEmail) {
+        $missingEmailRepresentativeRejected = true;
+    }
+    assertIntegration(
+        $missingEmailRepresentativeRejected
+        && $representativeRepository->findByPersonId(
+            new RepresentativePersonId($missingEmailPersonId->value())
+        ) === null,
+        'Representative creation accepted a Person without personal email or persisted the role.'
     );
 
     $representativeRollbackRejected = false;
@@ -1332,16 +1373,16 @@ try {
                 companyName: null,
                 position: null,
                 workPhone: null,
-                workEmail: null,
+                workEmail: 'composite-work-does-not-substitute@example.test',
                 representativeStatus: RepresentativeStatus::Active,
                 displayName: 'MariaDB Composite Representative Rollback',
                 familyStatus: FamilyStatus::Active,
-                relationshipTypeId: 999999999,
+                relationshipTypeId: $generatedRelationshipTypeId,
                 startedAt: new DateTimeImmutable('2026-08-10 12:00:00', new DateTimeZone('UTC')),
             ),
             $compositeToday,
         );
-    } catch (RelationshipTypeNotFound) {
+    } catch (RepresentativeRequiresContactEmail) {
         $representativeRollbackRejected = true;
     }
     $representativeRollbackCounts = $identity->prepare(
@@ -1533,7 +1574,7 @@ try {
         1,
         null,
         null,
-        null,
+        new ContactInformation('e007-representative@example.test', null, null),
         PersonStatus::Active,
         $personToday,
     ));
@@ -1563,6 +1604,23 @@ try {
         $representativeUsers,
         $representativePasswordHasher,
         $representativePasswordPolicy,
+    );
+    $missingEmailProvisioningRejected = false;
+    try {
+        $createRepresentativeUser->handle(new CreateRepresentativeUserInput(
+            $generatedRepresentativeId->value(),
+            'abcde',
+            UserStatus::Active,
+        ));
+    } catch (RepresentativeRequiresContactEmail) {
+        $missingEmailProvisioningRejected = true;
+    }
+    assertIntegration(
+        $missingEmailProvisioningRejected
+        && $representativeUsers->findByPersonId(
+            new UserPersonId($generatedPersonId->value())
+        ) === null,
+        'Representative User provisioning accepted historical Representative data without personal email.'
     );
     $initialRepresentativePassword = 'abcde';
     $representativeUserOutput = $createRepresentativeUser->handle(
@@ -1703,6 +1761,143 @@ try {
         $representativeRepository,
         $transactions,
     );
+    $representativeWithoutUserPerson = $personRepository->save(new Person(
+        null,
+        new PersonalName('E007', null, 'Representative', 'Without User'),
+        new Identification(1, 'E007-REP-NO-USER'),
+        new DateTimeImmutable('1988-11-12', new DateTimeZone('UTC')),
+        1,
+        null,
+        null,
+        new ContactInformation('representative-without-user@example.test', null, null),
+        PersonStatus::Active,
+        $personToday,
+    ));
+    $representativeWithoutUserPersonId = $representativeWithoutUserPerson->id();
+    assertIntegration(
+        $representativeWithoutUserPersonId !== null,
+        'MariaDB did not persist the Representative Person without User.'
+    );
+    $representativeRepository->save(new Representative(
+        null,
+        new RepresentativePersonId($representativeWithoutUserPersonId->value()),
+        null,
+        RepresentativeStatus::Active,
+    ));
+    $representativeWithoutUserEmailRemovalRejected = false;
+    try {
+        $updateRepresentativePerson->handle(new UpdatePersonInput(
+            $representativeWithoutUserPersonId->value(),
+            'E007',
+            null,
+            'Representative',
+            'Without User',
+            1,
+            'E007-REP-NO-USER',
+            new DateTimeImmutable('1988-11-12', new DateTimeZone('UTC')),
+            1,
+            null,
+            null,
+            null,
+            null,
+            null,
+            PersonStatus::Active,
+        ), $personToday);
+    } catch (RepresentativeRequiresContactEmail) {
+        $representativeWithoutUserEmailRemovalRejected = true;
+    }
+    assertIntegration(
+        $representativeWithoutUserEmailRemovalRejected
+        && $personRepository->findById(
+            $representativeWithoutUserPersonId
+        )?->contactInformation()?->email() === 'representative-without-user@example.test'
+        && $representativeUsers->findByPersonId(
+            new UserPersonId($representativeWithoutUserPersonId->value())
+        ) === null,
+        'Representative without User lost the required Person contact email.'
+    );
+
+    $beforeRepresentativeEmailChange = $representativeUsers->findById(
+        new \App\IdentityAccess\Domain\ValueObject\UserId($generatedRepresentativeUserId)
+    );
+    $representativeEmailUpdate = $updateRepresentativePerson->handle(
+        new UpdatePersonInput(
+            $representativeUserPersonId->value(),
+            'E007',
+            null,
+            'Representative',
+            'User',
+            1,
+            'E007-LOGIN-OLD',
+            new DateTimeImmutable('1984-09-10', new DateTimeZone('UTC')),
+            1,
+            null,
+            null,
+            'updated-representative@example.test',
+            null,
+            null,
+            PersonStatus::Active,
+        ),
+        $personToday,
+    );
+    $afterRepresentativeEmailChange = $representativeUsers->findById(
+        new \App\IdentityAccess\Domain\ValueObject\UserId($generatedRepresentativeUserId)
+    );
+    assertIntegration(
+        $representativeEmailUpdate->email === 'updated-representative@example.test'
+        && $beforeRepresentativeEmailChange !== null
+        && $afterRepresentativeEmailChange !== null
+        && $afterRepresentativeEmailChange->id()?->value()
+            === $beforeRepresentativeEmailChange->id()?->value()
+        && $afterRepresentativeEmailChange->personId()->value()
+            === $beforeRepresentativeEmailChange->personId()->value()
+        && $afterRepresentativeEmailChange->loginIdentifier()->value()
+            === $beforeRepresentativeEmailChange->loginIdentifier()->value()
+        && $afterRepresentativeEmailChange->passwordHash()->value()
+            === $beforeRepresentativeEmailChange->passwordHash()->value()
+        && $afterRepresentativeEmailChange->status() === $beforeRepresentativeEmailChange->status()
+        && $afterRepresentativeEmailChange->failedLoginAttempts()
+            === $beforeRepresentativeEmailChange->failedLoginAttempts()
+        && $afterRepresentativeEmailChange->lockedAt()?->getTimestamp()
+            === $beforeRepresentativeEmailChange->lockedAt()?->getTimestamp()
+        && $afterRepresentativeEmailChange->lastAccessAt()?->getTimestamp()
+            === $beforeRepresentativeEmailChange->lastAccessAt()?->getTimestamp(),
+        'Representative email update changed User identity login password or authentication state.'
+    );
+
+    $representativeUserEmailRemovalRejected = false;
+    try {
+        $updateRepresentativePerson->handle(new UpdatePersonInput(
+            $representativeUserPersonId->value(),
+            'E007',
+            null,
+            'Representative',
+            'User',
+            1,
+            'E007-LOGIN-OLD',
+            new DateTimeImmutable('1984-09-10', new DateTimeZone('UTC')),
+            1,
+            null,
+            null,
+            null,
+            null,
+            null,
+            PersonStatus::Active,
+        ), $personToday);
+    } catch (RepresentativeRequiresContactEmail) {
+        $representativeUserEmailRemovalRejected = true;
+    }
+    assertIntegration(
+        $representativeUserEmailRemovalRejected
+        && $personRepository->findById(
+            $representativeUserPersonId
+        )?->contactInformation()?->email() === 'updated-representative@example.test'
+        && $representativeUsers->findById(
+            new \App\IdentityAccess\Domain\ValueObject\UserId($generatedRepresentativeUserId)
+        )?->passwordHash()->value() === $afterRepresentativeEmailChange->passwordHash()->value(),
+        'Representative User flow removed personal email or changed persisted authentication state.'
+    );
+
     $beforeDocumentChange = $representativeUsers->findById(
         new \App\IdentityAccess\Domain\ValueObject\UserId($generatedRepresentativeUserId)
     );
@@ -1719,7 +1914,7 @@ try {
             1,
             null,
             null,
-            null,
+            'updated-representative@example.test',
             null,
             null,
             PersonStatus::Active,
@@ -1767,7 +1962,7 @@ try {
                 1,
                 null,
                 null,
-                null,
+                'updated-representative@example.test',
                 null,
                 null,
                 PersonStatus::Active,
@@ -1802,7 +1997,7 @@ try {
                 1,
                 null,
                 null,
-                null,
+                'updated-representative@example.test',
                 null,
                 null,
                 PersonStatus::Active,
@@ -1880,7 +2075,7 @@ try {
                 1,
                 null,
                 null,
-                null,
+                'updated-representative@example.test',
                 null,
                 null,
                 PersonStatus::Active,
@@ -2259,10 +2454,11 @@ try {
     echo "PASS MySQL Family physical uniqueness UTC status mapping and transactional rollback\n";
     echo "PASS MySQL Family delivery relationship lookup active options and exact statuses\n";
     echo "PASS MySQL composite Representative Person role Family atomic commit and rollback\n";
+    echo "PASS MySQL Representative personal email invariant and work-email non-substitution\n";
     echo "PASS MySQL composite Student Person role membership atomic commit and rollback\n";
-    echo "PASS MySQL Representative User AUTO_INCREMENT provisioning lookup hashing and physical uniqueness\n";
+    echo "PASS MySQL Representative User email-gated AUTO_INCREMENT provisioning lookup hashing and physical uniqueness\n";
     echo "PASS MySQL Representative administrative password change preserves authentication state\n";
-    echo "PASS MySQL Representative document login synchronization conflict rollback and authentication\n";
+    echo "PASS MySQL Representative email document login synchronization conflict rollback and authentication\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {
     $cleanupFailures = dropDisposableDatabases($server, $createdDatabases);

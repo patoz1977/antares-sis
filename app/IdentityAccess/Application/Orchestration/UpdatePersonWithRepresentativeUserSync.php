@@ -16,6 +16,7 @@ use App\Person\Application\Exception\PersonNotFound;
 use App\Person\Application\UpdatePerson;
 use App\Person\Domain\PersonRepository;
 use App\Person\Domain\ValueObject\PersonId;
+use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
 use App\Representative\Domain\RepresentativeRepository;
 use App\Representative\Domain\ValueObject\PersonId as RepresentativePersonId;
 use Core\Application\TransactionRunner;
@@ -48,6 +49,14 @@ final readonly class UpdatePersonWithRepresentativeUserSync
             );
             $userPersonId = new UserPersonId($personId->value());
             $user = $this->users->findByPersonId($userPersonId);
+
+            if ($representative !== null
+                && ($input->email === null || trim($input->email) === '')
+            ) {
+                throw new RepresentativeRequiresContactEmail(
+                    'Representative requires a Person contact email.'
+                );
+            }
 
             if ($representative === null || $user === null) {
                 return $this->updatePerson->handle($input, $today);

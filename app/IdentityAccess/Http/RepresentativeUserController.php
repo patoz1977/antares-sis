@@ -22,6 +22,7 @@ use App\IdentityAccess\Domain\UserStatus;
 use App\Person\Application\Exception\PersonNotFound;
 use App\Person\Application\GetPerson;
 use App\Representative\Application\Exception\RepresentativeNotFound;
+use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
 use App\Representative\Application\GetRepresentative;
 use Core\Http\Request;
 
@@ -115,6 +116,12 @@ final class RepresentativeUserController extends Controller
             return $this->formFailure(
                 $trustedId,
                 ['Representative User requires complete Person identification.'],
+                $statusValue,
+            );
+        } catch (RepresentativeRequiresContactEmail) {
+            return $this->formFailure(
+                $trustedId,
+                ['Representative User requires a Person personal email.'],
                 $statusValue,
             );
         } catch (RepresentativeUserAlreadyExists) {

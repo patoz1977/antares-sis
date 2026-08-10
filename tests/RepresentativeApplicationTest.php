@@ -7,6 +7,7 @@ namespace Tests;
 use App\Person\Domain\Person;
 use App\Person\Domain\PersonRepository;
 use App\Person\Domain\PersonStatus;
+use App\Person\Domain\ValueObject\ContactInformation;
 use App\Person\Domain\ValueObject\PersonalName;
 use App\Person\Domain\ValueObject\PersonId as PersonDomainId;
 use App\Representative\Application\CreateRepresentative;
@@ -16,6 +17,7 @@ use App\Representative\Application\Exception\InvalidPersistedRepresentativeResul
 use App\Representative\Application\Exception\RepresentativeAlreadyExistsForPerson;
 use App\Representative\Application\Exception\RepresentativeNotFound;
 use App\Representative\Application\Exception\RepresentativePersonNotFound;
+use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
 use App\Representative\Application\GetRepresentative;
 use App\Representative\Application\UpdateRepresentative;
 use App\Representative\Domain\Exception\InvalidRepresentativeState;
@@ -108,6 +110,32 @@ function registerRepresentativeApplicationTests(TestRunner $runner): void
             RepresentativePersonNotFound::class,
         );
         assertSameValue(0, $representatives->saveCalls());
+    });
+
+    $runner->add('CreateRepresentative requires Person personal email without work-email fallback', function (): void {
+        foreach ([
+            'without contact' => [90, representativePersonRepository(90, null), null],
+            'phone only' => [91, representativePersonRepository(91, null, 'personal phone'), null],
+            'work email only' => [92, representativePersonRepository(92, null), 'work@example.test'],
+        ] as [$personId, $persons, $workEmail]) {
+            $representatives = new InMemoryRepresentativeApplicationRepository();
+
+            assertThrows(
+                static fn () => (new CreateRepresentative($persons, $representatives))->handle(
+                    new CreateRepresentativeInput(
+                        $personId,
+                        null,
+                        null,
+                        null,
+                        null,
+                        $workEmail,
+                        RepresentativeStatus::Active,
+                    )
+                ),
+                RepresentativeRequiresContactEmail::class,
+            );
+            assertSameValue(0, $representatives->saveCalls());
+        }
     });
 
     $runner->add('CreateRepresentative rejects a second role for the same Person', function (): void {
@@ -317,7 +345,11 @@ function representativeToday(): DateTimeImmutable
     return new DateTimeImmutable('2026-08-01 23:30:00', new DateTimeZone('UTC'));
 }
 
-function representativePersonRepository(int $personId): InMemoryPersonApplicationRepository
+function representativePersonRepository(
+    int $personId,
+    ?string $email = 'personal@example.test',
+    ?string $mobilePhone = null,
+): InMemoryPersonApplicationRepository
 {
     $repository = new InMemoryPersonApplicationRepository(representativeToday());
     $repository->seed(new Person(
@@ -328,7 +360,9 @@ function representativePersonRepository(int $personId): InMemoryPersonApplicatio
         1,
         null,
         null,
-        null,
+        $email === null && $mobilePhone === null
+            ? null
+            : new ContactInformation($email, $mobilePhone, null),
         PersonStatus::Active,
         representativeToday(),
     ));
