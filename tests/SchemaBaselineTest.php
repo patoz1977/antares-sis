@@ -219,14 +219,24 @@ function registerSchemaBaselineTests(TestRunner $runner): void
         assertBaselineSame(false, str_contains($statusTypes . $statuses, 'PERSON_STATUS'), 'PERSON_STATUS is not approved.');
     });
 
-    $runner->add('application boots without removed legacy Person and Family flows', function (): void {
+    $runner->add('application boots with modular Person and Family delivery', function (): void {
         $application = require dirname(__DIR__) . '/bootstrap/app.php';
         assertBaselineSame(true, $application instanceof Application, 'Application bootstrap did not return an Application.');
 
         $routes = (string) file_get_contents(dirname(__DIR__) . '/routes/web.php');
-        foreach (['App\\Controllers\\PersonController', 'FamilyController', "'/families"] as $legacyRoute) {
+        foreach (['App\\Controllers\\PersonController', 'App\\Controllers\\FamilyController'] as $legacyRoute) {
             assertBaselineSame(false, str_contains($routes, $legacyRoute), sprintf('Legacy route remains: %s.', $legacyRoute));
         }
+        assertBaselineSame(
+            true,
+            str_contains($routes, 'App\\Person\\Http\\PersonController'),
+            'Modular Person delivery route is missing.',
+        );
+        assertBaselineSame(
+            true,
+            str_contains($routes, 'App\\Family\\Http\\FamilyController'),
+            'Modular Family delivery route is missing.',
+        );
     });
 }
 
