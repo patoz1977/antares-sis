@@ -272,6 +272,55 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         assertSameValue(null, $stored?->contactInformation());
     });
 
+    $runner->add('Person delivery rejects Representative email removal with and without User', function (): void {
+        foreach ([false, true] as $withUser) {
+            [$controller, $persons, $users] = deliveryControllerWithRepresentative($withUser);
+            deliveryRequest('GET', '/persons/edit?id=60', ['id' => '60']);
+            $controller->showEdit();
+            deliveryRequest('POST', '/persons/update', deliveryInput([
+                'id' => '60',
+                'email' => '',
+            ]));
+
+            $html = $controller->update();
+            assertSameValue(422, http_response_code());
+            deliveryAssertContains('must retain a valid personal email', $html);
+            assertSameValue(
+                'stored@example.test',
+                $persons->findById(new PersonId(60))?->contactInformation()?->email(),
+            );
+            assertSameValue(0, $persons->saveCalls());
+            assertSameValue($withUser, $users->findByPersonId(new UserPersonId(60)) !== null);
+        }
+    });
+
+    $runner->add('Person delivery changes Representative email without changing User state', function (): void {
+        [$controller, $persons, $users] = deliveryControllerWithRepresentativeUser();
+        $before = $users->findByPersonId(new UserPersonId(60));
+        deliveryRequest('GET', '/persons/edit?id=60', ['id' => '60']);
+        $controller->showEdit();
+        deliveryRequest('POST', '/persons/update', deliveryInput([
+            'id' => '60',
+            'document_number' => 'REP-60',
+            'email' => 'changed@example.test',
+        ]));
+
+        assertSameValue('', $controller->update());
+        assertSameValue(303, http_response_code());
+        $after = $users->findByPersonId(new UserPersonId(60));
+        assertSameValue(
+            'changed@example.test',
+            $persons->findById(new PersonId(60))?->contactInformation()?->email(),
+        );
+        assertSameValue($before?->id()?->value(), $after?->id()?->value());
+        assertSameValue($before?->loginIdentifier()->value(), $after?->loginIdentifier()->value());
+        assertSameValue($before?->passwordHash()->value(), $after?->passwordHash()->value());
+        assertSameValue($before?->status(), $after?->status());
+        assertSameValue($before?->failedLoginAttempts(), $after?->failedLoginAttempts());
+        assertSameValue($before?->lockedAt()?->getTimestamp(), $after?->lockedAt()?->getTimestamp());
+        assertSameValue($before?->lastAccessAt()?->getTimestamp(), $after?->lastAccessAt()?->getTimestamp());
+    });
+
     $runner->add('Person update identity is bound to the server-side edit session', function (): void {
         [$controller, $repository] = deliveryController();
         $repository->seed(deliveryPerson(30));
@@ -425,19 +474,27 @@ function deliveryController(?PersonFormOptions $options = null): array
 /** @return array{PersonController, InMemoryPersonApplicationRepository, InMemoryRepresentativeUserRepository} */
 function deliveryControllerWithRepresentativeUser(): array
 {
+    return deliveryControllerWithRepresentative(true);
+}
+
+/** @return array{PersonController, InMemoryPersonApplicationRepository, InMemoryRepresentativeUserRepository} */
+function deliveryControllerWithRepresentative(bool $withUser): array
+{
     $repository = new InMemoryPersonApplicationRepository(deliveryToday());
     $repository->seed(deliveryPerson(60, 'REP-60'));
     $users = new InMemoryRepresentativeUserRepository();
-    $users->seed(new User(
-        new UserId(60),
-        new UserPersonId(60),
-        new LoginIdentifier('rep-60'),
-        new PasswordHash((new NativePasswordHasher())->hash('preserved-password')),
-        UserStatus::Active,
-        2,
-        null,
-        deliveryToday()->modify('-1 day'),
-    ));
+    if ($withUser) {
+        $users->seed(new User(
+            new UserId(60),
+            new UserPersonId(60),
+            new LoginIdentifier('rep-60'),
+            new PasswordHash((new NativePasswordHasher())->hash('preserved-password')),
+            UserStatus::Active,
+            2,
+            null,
+            deliveryToday()->modify('-1 day'),
+        ));
+    }
     $representatives = new InMemoryRepresentativeApplicationRepository();
     $representatives->seed(representativeUserRepresentative(600, 60));
     $transactions = new InMemoryCompositeTransactionRunner([$repository, $users]);

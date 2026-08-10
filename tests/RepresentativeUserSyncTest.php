@@ -19,23 +19,28 @@ use App\Person\Domain\Exception\InvalidPersonState;
 use App\Person\Domain\PersonStatus;
 use App\Person\Domain\ValueObject\Identification;
 use App\Person\Domain\ValueObject\PersonId;
+use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
 use DateTimeImmutable;
 use RuntimeException;
 use Tests\Support\TestRunner;
 
 function registerRepresentativeUserSyncTests(TestRunner $runner): void
 {
-    $runner->add('Person update without User preserves optional Identification behavior', function (): void {
-        [$useCase, $persons, , , $transactions] = representativeSyncFixture(withUser: false);
+    $runner->add('Person without Representative preserves optional identification and email', function (): void {
+        [$useCase, $persons, , , $transactions] = representativeSyncFixture(
+            withRepresentative: false,
+            withUser: false,
+        );
 
         $output = $useCase->handle(
-            representativeSyncInput(documentTypeId: null, documentNumber: null),
+            representativeSyncInput(documentTypeId: null, documentNumber: null, email: null),
             representativeUserToday(),
         );
 
         assertSameValue(null, $output->documentTypeId);
         assertSameValue(null, $output->documentNumber);
         assertSameValue(null, $persons->findById(new PersonId(100))?->identification());
+        assertSameValue(null, $persons->findById(new PersonId(100))?->contactInformation());
         assertSameValue(1, $transactions->beginCount());
         assertSameValue(1, $transactions->commitCount());
     });
@@ -47,11 +52,64 @@ function registerRepresentativeUserSyncTests(TestRunner $runner): void
         );
 
         $useCase->handle(
-            representativeSyncInput(documentTypeId: null, documentNumber: null),
+            representativeSyncInput(documentTypeId: null, documentNumber: null, email: null),
             representativeUserToday(),
         );
 
         assertSameValue(null, $persons->findById(new PersonId(100))?->identification());
+        assertSameValue(null, $persons->findById(new PersonId(100))?->contactInformation());
+        assertSameValue(1, $transactions->commitCount());
+    });
+
+    $runner->add('Representative without User cannot lose personal email and may replace it', function (): void {
+        [$useCase, $persons, , , $transactions] = representativeSyncFixture(withUser: false);
+
+        assertThrows(
+            fn () => $useCase->handle(
+                representativeSyncInput(email: null),
+                representativeUserToday(),
+            ),
+            RepresentativeRequiresContactEmail::class,
+        );
+        assertSameValue('representative@example.test', $persons->findById(
+            new PersonId(100)
+        )?->contactInformation()?->email());
+        assertSameValue(0, $persons->saveCalls());
+        assertSameValue(1, $transactions->rollbackCount());
+
+        $output = $useCase->handle(
+            representativeSyncInput(email: 'new-personal@example.test'),
+            representativeUserToday(),
+        );
+        assertSameValue('new-personal@example.test', $output->email);
+    });
+
+    $runner->add('Representative with User email change preserves complete authentication state', function (): void {
+        [$useCase, $persons, , $users, $transactions] = representativeSyncFixture();
+        $before = $users->findByPersonId(new UserPersonId(100));
+
+        assertThrows(
+            fn () => $useCase->handle(
+                representativeSyncInput(email: ' '),
+                representativeUserToday(),
+            ),
+            RepresentativeRequiresContactEmail::class,
+        );
+        assertSameValue(0, $persons->saveCalls());
+
+        $output = $useCase->handle(
+            representativeSyncInput(email: 'updated@example.test'),
+            representativeUserToday(),
+        );
+        $stored = $users->findByPersonId(new UserPersonId(100));
+        assertSameValue('updated@example.test', $output->email);
+        assertSameValue($before?->id()?->value(), $stored?->id()?->value());
+        assertSameValue($before?->loginIdentifier()->value(), $stored?->loginIdentifier()->value());
+        assertSameValue($before?->passwordHash()->value(), $stored?->passwordHash()->value());
+        assertSameValue($before?->status(), $stored?->status());
+        assertSameValue($before?->failedLoginAttempts(), $stored?->failedLoginAttempts());
+        assertSameValue($before?->lockedAt()?->getTimestamp(), $stored?->lockedAt()?->getTimestamp());
+        assertSameValue($before?->lastAccessAt()?->getTimestamp(), $stored?->lastAccessAt()?->getTimestamp());
         assertSameValue(1, $transactions->commitCount());
     });
 
@@ -223,6 +281,7 @@ function representativeSyncInput(
     ?int $documentTypeId = 10,
     ?string $documentNumber = 'Representative-100',
     ?DateTimeImmutable $birthDate = null,
+    ?string $email = 'representative@example.test',
 ): UpdatePersonInput {
     return new UpdatePersonInput(
         100,
@@ -236,7 +295,7 @@ function representativeSyncInput(
         20,
         null,
         null,
-        null,
+        $email,
         null,
         null,
         PersonStatus::Active,

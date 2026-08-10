@@ -132,6 +132,8 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         foreach (['Person', 'Representative', 'Family', 'name="_csrf_token"', 'name="started_at"'] as $text) {
             deliveryAssertContains($text, $form);
         }
+        deliveryAssertContains('Personal email (required)', $form);
+        deliveryAssertContains('name="email" type="email" value="" required', $form);
         deliveryAssertContains('&lt;Parent&gt;', $form);
         assertSameValue(false, str_contains($form, '<Parent>'));
         foreach (['username', 'password', 'Enrollment', 'Student'] as $forbidden) {
@@ -171,6 +173,12 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             'timestamp' => ['started_at' => '2026-08-09 10:00'],
             'catalog' => ['sex_id' => '999'],
             'email' => ['work_email' => 'not-an-email'],
+            'personal email required' => ['email' => ''],
+            'personal email invalid' => ['email' => 'not-an-email'],
+            'work email is not personal email' => [
+                'email' => '',
+                'work_email' => 'work-only@example.test',
+            ],
             'document pair' => ['document_number' => ''],
         ] as $label => $changes) {
             [$controller, $environment] = familyDeliveryController();

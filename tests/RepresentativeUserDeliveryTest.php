@@ -128,6 +128,24 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
         assertSameValue(false, str_contains($duplicate, 'valid-password'));
     });
 
+    $runner->add('Representative User delivery fails safely when historical Person has no email', function (): void {
+        [$controller, , , $users] = representativeUserDeliveryController(false);
+        representativeUserOpenManage($controller);
+        deliveryRequest('POST', '/representative-users/create', [
+            '_csrf_token' => 'delivery-csrf',
+            'representative_id' => '200',
+            'password' => 'never-stored-secret',
+            'password_confirmation' => 'never-stored-secret',
+            'status' => 'ACTIVE',
+        ]);
+
+        $html = $controller->create();
+        assertSameValue(422, http_response_code());
+        deliveryAssertContains('requires a Person personal email', $html);
+        assertSameValue(false, str_contains($html, 'never-stored-secret'));
+        assertSameValue(0, $users->saveCalls());
+    });
+
     $runner->add('Representative User delivery rejects CSRF tampering and expired trusted identity', function (): void {
         [$controller, , , $users] = representativeUserDeliveryController();
         representativeUserOpenManage($controller);
@@ -241,13 +259,13 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
 }
 
 /** @return array{RepresentativeUserController, InMemoryPersonApplicationRepository, InMemoryRepresentativeApplicationRepository, InMemoryRepresentativeUserRepository, FakeSessionManager} */
-function representativeUserDeliveryController(): array
+function representativeUserDeliveryController(bool $withEmail = true): array
 {
     $persons = new InMemoryPersonApplicationRepository(representativeUserToday());
     $persons->seed(representativeUserPerson(100, new \App\Person\Domain\ValueObject\Identification(
         10,
         'Representative-100',
-    )));
+    ), $withEmail ? 'representative@example.test' : null));
     $representatives = new InMemoryRepresentativeApplicationRepository();
     $representatives->seed(representativeUserRepresentative(200, 100));
     $users = new InMemoryRepresentativeUserRepository();

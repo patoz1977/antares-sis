@@ -25,10 +25,12 @@ use App\IdentityAccess\Domain\ValueObject\UserId;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\Person\Domain\Person;
 use App\Person\Domain\PersonStatus;
+use App\Person\Domain\ValueObject\ContactInformation;
 use App\Person\Domain\ValueObject\Identification;
 use App\Person\Domain\ValueObject\PersonalName;
 use App\Person\Domain\ValueObject\PersonId;
 use App\Representative\Application\Exception\RepresentativeNotFound;
+use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
 use App\Representative\Domain\Representative;
 use App\Representative\Domain\RepresentativeStatus;
 use App\Representative\Domain\ValueObject\PersonId as RepresentativePersonId;
@@ -129,6 +131,19 @@ function registerRepresentativeUserApplicationTests(TestRunner $runner): void
         assertSameValue(0, $shortPasswordUsers->saveCalls());
     });
 
+    $runner->add('CreateRepresentativeUser fails closed for historical Representative without personal email', function (): void {
+        [$useCase, $persons, , $users] = representativeUserCreateFixture(withEmail: false);
+
+        assertThrows(
+            fn () => $useCase->handle(
+                new CreateRepresentativeUserInput(200, 'abcde', UserStatus::Active)
+            ),
+            RepresentativeRequiresContactEmail::class,
+        );
+        assertSameValue(0, $persons->saveCalls());
+        assertSameValue(0, $users->saveCalls());
+    });
+
     $runner->add('CreateRepresentativeUser rejects existing Person User and occupied global login', function (): void {
         [$existingUseCase, , , $existingUsers] = representativeUserCreateFixture();
         $existingUsers->seed(representativeUserUser(10, 100, 'representative-100'));
@@ -221,12 +236,16 @@ function registerRepresentativeUserApplicationTests(TestRunner $runner): void
 }
 
 /** @return array{CreateRepresentativeUser, InMemoryPersonApplicationRepository, InMemoryRepresentativeApplicationRepository, InMemoryRepresentativeUserRepository} */
-function representativeUserCreateFixture(bool $withIdentification = true): array
+function representativeUserCreateFixture(
+    bool $withIdentification = true,
+    bool $withEmail = true,
+): array
 {
     $persons = new InMemoryPersonApplicationRepository(representativeUserToday());
     $persons->seed(representativeUserPerson(
         100,
         $withIdentification ? new Identification(10, 'Representative-100') : null,
+        $withEmail ? 'representative@example.test' : null,
     ));
     $representatives = new InMemoryRepresentativeApplicationRepository();
     $representatives->seed(representativeUserRepresentative(200, 100));
@@ -254,7 +273,11 @@ function representativeUserCreateUseCase(
     );
 }
 
-function representativeUserPerson(int $id, ?Identification $identification): Person
+function representativeUserPerson(
+    int $id,
+    ?Identification $identification,
+    ?string $email = 'representative@example.test',
+): Person
 {
     return new Person(
         new PersonId($id),
@@ -264,7 +287,7 @@ function representativeUserPerson(int $id, ?Identification $identification): Per
         20,
         null,
         null,
-        null,
+        $email === null ? null : new ContactInformation($email, null, null),
         PersonStatus::Active,
         representativeUserToday(),
     );

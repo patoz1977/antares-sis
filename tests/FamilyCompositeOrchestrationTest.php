@@ -29,6 +29,7 @@ use App\Person\Domain\ValueObject\PersonalName;
 use App\Person\Domain\ValueObject\PersonId;
 use App\Representative\Application\CreateRepresentative;
 use App\Representative\Application\Exception\InvalidPersistedRepresentativeResult;
+use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
 use App\Representative\Domain\Exception\InvalidRepresentativeState;
 use App\Representative\Domain\RepresentativeStatus;
 use App\Student\Application\CreateStudent;
@@ -106,6 +107,19 @@ function registerFamilyCompositeOrchestrationTests(TestRunner $runner): void
                     $environment->representativeFlow(),
                     compositeRepresentativeInput(),
                     IdentificationAlreadyUsed::class,
+                    null,
+                ];
+            },
+            'missing personal email with work email present' => static function (
+                CompositeOrchestrationEnvironment $environment,
+            ): array {
+                return [
+                    $environment->representativeFlow(),
+                    compositeRepresentativeInput([
+                        'email' => null,
+                        'workEmail' => 'work-only@example.test',
+                    ]),
+                    RepresentativeRequiresContactEmail::class,
                     null,
                 ];
             },
