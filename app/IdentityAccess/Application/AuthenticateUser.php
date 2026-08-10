@@ -78,6 +78,11 @@ final class AuthenticateUser
             return null;
         }
 
+        $userId = $user->id();
+        if ($userId === null) {
+            throw new InvalidUserState('Authentication requires a persisted User identity.');
+        }
+
         $now = $this->clock->now();
 
         if ($user->isDisabled()) {
@@ -115,6 +120,6 @@ final class AuthenticateUser
         $user->recordSuccessfulAuthentication($now);
         $this->users->save($user);
 
-        return $user->id()->value();
+        return $userId->value();
     }
 }

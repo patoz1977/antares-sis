@@ -28,8 +28,13 @@ final readonly class GetAuthenticatedUser
             return null;
         }
 
+        $persistedUserId = $user->id();
+        if ($persistedUserId === null) {
+            return null;
+        }
+
         return new AuthenticatedUser(
-            $user->id()->value(),
+            $persistedUserId->value(),
             $user->personId()->value(),
             $user->loginIdentifier()->value(),
         );
