@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\IdentityAccess\Application\GetAuthenticatedUser;
+use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
 use App\IdentityAccess\Application\LogoutUser;
 use App\IdentityAccess\Http\AuthenticationController;
 use App\IdentityAccess\Infrastructure\Session\PhpSessionManager;
@@ -11,6 +12,7 @@ use Core\Session\Session;
 
 require __DIR__ . '/../vendor/autoload.php';
 require __DIR__ . '/IdentityAccessTest.php';
+require __DIR__ . '/RepresentativeAccessResolutionTest.php';
 
 function integrationAssert(bool $condition, string $message): void
 {
@@ -43,10 +45,15 @@ integrationAssert($_SESSION === [], 'The real PHP session data was not destroyed
 
 [$authenticate, $repository, $session] = Tests\authenticationFixture();
 $csrf = new SessionCsrfTokenManager($session);
+$getAuthenticatedUser = new GetAuthenticatedUser($session, $repository);
 $controller = new AuthenticationController(
     $authenticate,
     new LogoutUser($session, new Tests\FakeSecurityEvents()),
-    new GetAuthenticatedUser($session, $repository),
+    $getAuthenticatedUser,
+    new GetAuthenticatedRepresentative(
+        $getAuthenticatedUser,
+        new Tests\RepresentativeAccessResolutionTest(null),
+    ),
     $csrf,
     $session,
 );
@@ -70,10 +77,15 @@ integrationAssert($session->authenticatedUserId() === null, 'HTTP logout did not
 
 [$failedAuthenticate, $failedRepository, $failedSession] = Tests\authenticationFixture();
 $failedCsrf = new SessionCsrfTokenManager($failedSession);
+$failedGetAuthenticatedUser = new GetAuthenticatedUser($failedSession, $failedRepository);
 $failedController = new AuthenticationController(
     $failedAuthenticate,
     new LogoutUser($failedSession, new Tests\FakeSecurityEvents()),
-    new GetAuthenticatedUser($failedSession, $failedRepository),
+    $failedGetAuthenticatedUser,
+    new GetAuthenticatedRepresentative(
+        $failedGetAuthenticatedUser,
+        new Tests\RepresentativeAccessResolutionTest(null),
+    ),
     $failedCsrf,
     $failedSession,
 );

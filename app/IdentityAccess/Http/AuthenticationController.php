@@ -8,6 +8,7 @@ use App\Controllers\Controller;
 use App\IdentityAccess\Application\AuthenticateUser;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
+use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
 use App\IdentityAccess\Application\GetAuthenticatedUser;
 use App\IdentityAccess\Application\LogoutUser;
 use Core\Http\Request;
@@ -20,6 +21,7 @@ final class AuthenticationController extends Controller
         private readonly AuthenticateUser $authenticateUser,
         private readonly LogoutUser $logoutUser,
         private readonly GetAuthenticatedUser $getAuthenticatedUser,
+        private readonly GetAuthenticatedRepresentative $getAuthenticatedRepresentative,
         private readonly CsrfTokenManager $csrf,
         private readonly SessionManager $session,
     ) {
@@ -84,6 +86,10 @@ final class AuthenticationController extends Controller
 
     public function dashboard(): string
     {
+        if ($this->getAuthenticatedRepresentative->handle() !== null) {
+            return $this->redirect('/representative');
+        }
+
         $user = $this->getAuthenticatedUser->handle();
 
         return $this->view('dashboard.index', [

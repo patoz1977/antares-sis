@@ -306,7 +306,7 @@ function registerFamilyContextAuthorizationTests(TestRunner $runner): void
         assertSameValue(false, str_contains($familyDomain, 'IdentityAccess'));
     });
 
-    $runner->add('Family context wiring resolves approved cases without Portal delivery', function (): void {
+    $runner->add('Family context wiring remains reusable by Portal delivery', function (): void {
         $fixture = familyContextAuthorizationFixture();
         $container = new Container();
         $container->instance(GetAuthenticatedRepresentative::class, $fixture['getRepresentative']);
@@ -336,12 +336,9 @@ function registerFamilyContextAuthorizationTests(TestRunner $runner): void
             ));
         }
 
-        $routes = (string) file_get_contents(dirname(__DIR__) . '/routes/web.php');
-        foreach (['/representative', '/portal', '/families/select', '/families/change'] as $route) {
-            assertSameValue(false, str_contains($routes, "'" . $route . "'"), $route);
+        foreach ([GetAuthorizedFamilies::class, ResolveFamilyContext::class, SelectAuthorizedFamily::class] as $class) {
+            assertSameValue(false, str_contains(familyContextSource($class), 'RepresentativePortalController'));
         }
-        assertSameValue(false, is_dir(dirname(__DIR__) . '/resources/views/representative'));
-        assertSameValue(false, is_dir(dirname(__DIR__) . '/resources/views/portal'));
     });
 
     $runner->add('Family access result exposes only safe coherent context identity', function (): void {

@@ -7,6 +7,7 @@ namespace Tests;
 use App\IdentityAccess\Application\AuthenticateUser;
 use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
+use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
 use App\IdentityAccess\Application\GetAuthenticatedUser;
 use App\IdentityAccess\Application\LogoutUser;
 use App\IdentityAccess\Application\Orchestration\UpdatePersonWithRepresentativeUserSync;
@@ -488,10 +489,16 @@ function deliveryDashboardController(string $identifier): AuthenticationControll
         new AuthenticationPolicy(5, 900),
     );
 
+    $getAuthenticatedUser = new GetAuthenticatedUser($session, $repository);
+
     return new AuthenticationController(
         $authenticate,
         new LogoutUser($session, $events),
-        new GetAuthenticatedUser($session, $repository),
+        $getAuthenticatedUser,
+        new GetAuthenticatedRepresentative(
+            $getAuthenticatedUser,
+            new RepresentativeAccessResolutionTest(null),
+        ),
         new FakeDeliveryCsrf(),
         $session,
     );
