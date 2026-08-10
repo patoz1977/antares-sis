@@ -2,8 +2,28 @@
 
 declare(strict_types=1);
 
+use App\IdentityAccess\Application\AuthenticateUser;
+use App\IdentityAccess\Application\AuthenticationPolicy;
+use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
+use App\IdentityAccess\Application\Contract\Clock;
+use App\IdentityAccess\Application\Contract\SecurityEventLogger;
+use App\IdentityAccess\Application\Contract\SessionManager;
+use App\IdentityAccess\Application\CreateRepresentativeUser;
+use App\IdentityAccess\Application\Dto\ChangeRepresentativeUserPasswordInput;
+use App\IdentityAccess\Application\Dto\CreateRepresentativeUserInput;
+use App\IdentityAccess\Application\Exception\RepresentativeLoginIdentifierAlreadyUsed;
+use App\IdentityAccess\Application\Exception\RepresentativeUserRequiresIdentification;
+use App\IdentityAccess\Application\Orchestration\UpdatePersonWithRepresentativeUserSync;
+use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
+use App\IdentityAccess\Domain\User;
+use App\IdentityAccess\Domain\UserRepository;
+use App\IdentityAccess\Domain\UserStatus;
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
+use App\IdentityAccess\Domain\ValueObject\PasswordHash;
+use App\IdentityAccess\Domain\ValueObject\PersonId as UserPersonId;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
+use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
+use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\Family\Application\AddStudentToFamily;
 use App\Family\Application\CreateFamily;
 use App\Family\Application\Exception\RelationshipTypeNotFound;
@@ -29,6 +49,8 @@ use App\Person\Domain\ValueObject\ContactInformation;
 use App\Person\Domain\ValueObject\Identification;
 use App\Person\Domain\ValueObject\PersonalName;
 use App\Person\Application\CreatePerson;
+use App\Person\Application\Dto\UpdatePersonInput;
+use App\Person\Application\UpdatePerson;
 use App\Person\Infrastructure\Persistence\PdoPersonRepository;
 use App\Person\Infrastructure\Persistence\PdoPersonFormOptionsProvider;
 use App\Representative\Domain\Representative;
@@ -1483,6 +1505,464 @@ try {
         'Composite Student failure did not restore Person, Student and existing Family state.'
     );
 
+    $representativeUserPerson = $personRepository->save(new Person(
+        null,
+        new PersonalName('E007', null, 'Representative', 'User'),
+        new Identification(1, 'E007-LOGIN-OLD'),
+        new DateTimeImmutable('1984-09-10', new DateTimeZone('UTC')),
+        1,
+        null,
+        null,
+        null,
+        PersonStatus::Active,
+        $personToday,
+    ));
+    $representativeUserPersonId = $representativeUserPerson->id();
+    assertIntegration(
+        $representativeUserPersonId !== null && $representativeUserPersonId->value() > 0,
+        'MariaDB did not generate the E007 Representative Person identity.'
+    );
+    $representativeUserRole = $representativeRepository->save(new Representative(
+        null,
+        new RepresentativePersonId($representativeUserPersonId->value()),
+        null,
+        RepresentativeStatus::Active,
+    ));
+    $representativeUserRoleId = $representativeUserRole->id();
+    assertIntegration(
+        $representativeUserRoleId !== null && $representativeUserRoleId->value() > 0,
+        'MariaDB did not generate the E007 Representative role identity.'
+    );
+
+    $representativeUsers = new PdoUserRepository($managerA);
+    $representativePasswordHasher = new NativePasswordHasher();
+    $representativePasswordPolicy = new RepresentativePasswordPolicy();
+    $createRepresentativeUser = new CreateRepresentativeUser(
+        $representativeRepository,
+        $personRepository,
+        $representativeUsers,
+        $representativePasswordHasher,
+        $representativePasswordPolicy,
+    );
+    $initialRepresentativePassword = 'abcde';
+    $representativeUserOutput = $createRepresentativeUser->handle(
+        new CreateRepresentativeUserInput(
+            $representativeUserRoleId->value(),
+            $initialRepresentativePassword,
+            UserStatus::Active,
+        )
+    );
+    $generatedRepresentativeUserId = $representativeUserOutput->userId;
+    $persistedRepresentativeUser = $representativeUsers->findByPersonId(
+        new UserPersonId($representativeUserPersonId->value())
+    );
+    $representativeUserRow = $identity->prepare(
+        'SELECT u.id, u.person_id, u.login_identifier, u.normalized_login_identifier, '
+        . 'u.password_hash, u.failed_login_attempts, u.locked_at, u.last_access_at, '
+        . 's.code AS status_code, st.code AS status_type_code '
+        . 'FROM users u INNER JOIN statuses s ON s.id = u.status_id '
+        . 'INNER JOIN status_types st ON st.id = s.status_type_id WHERE u.id = :id'
+    );
+    $representativeUserRow->execute([':id' => $generatedRepresentativeUserId]);
+    $representativeUserPhysical = $representativeUserRow->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $generatedRepresentativeUserId > 0
+        && $persistedRepresentativeUser?->id()?->value() === $generatedRepresentativeUserId
+        && $persistedRepresentativeUser?->personId()->value() === $representativeUserPersonId->value()
+        && $persistedRepresentativeUser?->loginIdentifier()->value() === 'e007-login-old'
+        && $representativeUserPhysical !== false
+        && (int) $representativeUserPhysical['person_id'] === $representativeUserPersonId->value()
+        && $representativeUserPhysical['login_identifier'] === 'e007-login-old'
+        && $representativeUserPhysical['normalized_login_identifier'] === 'e007-login-old'
+        && $representativeUserPhysical['password_hash'] !== $initialRepresentativePassword
+        && $representativePasswordHasher->verify(
+            $initialRepresentativePassword,
+            (string) $representativeUserPhysical['password_hash'],
+        )
+        && (int) $representativeUserPhysical['failed_login_attempts'] === 0
+        && $representativeUserPhysical['locked_at'] === null
+        && $representativeUserPhysical['last_access_at'] === null
+        && $representativeUserPhysical['status_type_code'] === 'USER_STATUS'
+        && $representativeUserPhysical['status_code'] === 'ACTIVE',
+        'Representative User provisioning did not use MariaDB identity hashing exact status or complete reload.'
+    );
+
+    $perPersonUserUniqueRejected = false;
+    try {
+        $representativeUsers->save(new User(
+            null,
+            new UserPersonId($representativeUserPersonId->value()),
+            new LoginIdentifier('e007-other-login'),
+            new PasswordHash($representativePasswordHasher->hash('other-password')),
+            UserStatus::Active,
+        ));
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $perPersonUserUniqueRejected = true;
+    }
+    assertIntegration(
+        $perPersonUserUniqueRejected,
+        'MariaDB did not enforce one User per Person.'
+    );
+
+    $normalizedLoginUniqueRejected = false;
+    try {
+        $representativeUsers->save(new User(
+            null,
+            new UserPersonId($secondGeneratedPersonId->value()),
+            new LoginIdentifier('E007-LOGIN-OLD'),
+            new PasswordHash($representativePasswordHasher->hash('other-password')),
+            UserStatus::Active,
+        ));
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $normalizedLoginUniqueRejected = true;
+    }
+    assertIntegration(
+        $normalizedLoginUniqueRejected,
+        'MariaDB did not enforce global normalized Representative login uniqueness.'
+    );
+
+    $authenticationStateInstant = new DateTimeImmutable('2026-08-01 08:09:10', new DateTimeZone('UTC'));
+    $persistedRepresentativeUser->recordSuccessfulAuthentication($authenticationStateInstant);
+    for ($attempt = 1; $attempt <= 5; $attempt++) {
+        $persistedRepresentativeUser->recordFailedLogin(
+            $authenticationStateInstant->modify(sprintf('+%d minutes', $attempt)),
+            5,
+        );
+    }
+    $representativeUsers->save($persistedRepresentativeUser);
+    $beforePasswordChange = $representativeUsers->findById(
+        new \App\IdentityAccess\Domain\ValueObject\UserId($generatedRepresentativeUserId)
+    );
+    $newRepresentativePassword = '12345';
+    $changedPasswordOutput = (new ChangeRepresentativeUserPassword(
+        $representativeRepository,
+        $representativeUsers,
+        $representativePasswordHasher,
+        $representativePasswordPolicy,
+    ))->handle(new ChangeRepresentativeUserPasswordInput(
+        $representativeUserRoleId->value(),
+        $newRepresentativePassword,
+    ));
+    $afterPasswordChange = $representativeUsers->findById(
+        new \App\IdentityAccess\Domain\ValueObject\UserId($generatedRepresentativeUserId)
+    );
+    assertIntegration(
+        $changedPasswordOutput->userId === $generatedRepresentativeUserId
+        && $afterPasswordChange?->personId()->value() === $beforePasswordChange?->personId()->value()
+        && $afterPasswordChange?->loginIdentifier()->value()
+            === $beforePasswordChange?->loginIdentifier()->value()
+        && $afterPasswordChange?->status() === $beforePasswordChange?->status()
+        && $afterPasswordChange?->failedLoginAttempts()
+            === $beforePasswordChange?->failedLoginAttempts()
+        && $afterPasswordChange?->lockedAt()?->getTimestamp()
+            === $beforePasswordChange?->lockedAt()?->getTimestamp()
+        && $afterPasswordChange?->lastAccessAt()?->getTimestamp()
+            === $beforePasswordChange?->lastAccessAt()?->getTimestamp()
+        && $afterPasswordChange !== null
+        && $representativePasswordHasher->verify(
+            $newRepresentativePassword,
+            $afterPasswordChange->passwordHash()->value(),
+        )
+        && !$representativePasswordHasher->verify(
+            $initialRepresentativePassword,
+            $afterPasswordChange->passwordHash()->value(),
+        ),
+        'Administrative password change did not preserve Representative User authentication state.'
+    );
+
+    $updateRepresentativePerson = new UpdatePersonWithRepresentativeUserSync(
+        new UpdatePerson($personRepository),
+        $personRepository,
+        $representativeUsers,
+        $representativeRepository,
+        $transactions,
+    );
+    $beforeDocumentChange = $representativeUsers->findById(
+        new \App\IdentityAccess\Domain\ValueObject\UserId($generatedRepresentativeUserId)
+    );
+    $updatedRepresentativePerson = $updateRepresentativePerson->handle(
+        new UpdatePersonInput(
+            $representativeUserPersonId->value(),
+            'E007',
+            null,
+            'Representative',
+            'User',
+            1,
+            'E007-LOGIN-NEW',
+            new DateTimeImmutable('1984-09-10', new DateTimeZone('UTC')),
+            1,
+            null,
+            null,
+            null,
+            null,
+            null,
+            PersonStatus::Active,
+        ),
+        $personToday,
+    );
+    $afterDocumentChange = $representativeUsers->findById(
+        new \App\IdentityAccess\Domain\ValueObject\UserId($generatedRepresentativeUserId)
+    );
+    assertIntegration(
+        $updatedRepresentativePerson->documentNumber === 'E007-LOGIN-NEW'
+        && $representativeUsers->findByLoginIdentifier(
+            new LoginIdentifier('E007-LOGIN-NEW')
+        )?->id()?->value() === $generatedRepresentativeUserId
+        && $representativeUsers->findByLoginIdentifier(
+            new LoginIdentifier('E007-LOGIN-OLD')
+        ) === null
+        && $afterDocumentChange?->id()?->value() === $beforeDocumentChange?->id()?->value()
+        && $afterDocumentChange?->personId()->value()
+            === $beforeDocumentChange?->personId()->value()
+        && $afterDocumentChange?->passwordHash()->value()
+            === $beforeDocumentChange?->passwordHash()->value()
+        && $afterDocumentChange?->status() === $beforeDocumentChange?->status()
+        && $afterDocumentChange?->failedLoginAttempts()
+            === $beforeDocumentChange?->failedLoginAttempts()
+        && $afterDocumentChange?->lockedAt()?->getTimestamp()
+            === $beforeDocumentChange?->lockedAt()?->getTimestamp()
+        && $afterDocumentChange?->lastAccessAt()?->getTimestamp()
+            === $beforeDocumentChange?->lastAccessAt()?->getTimestamp(),
+        'DocumentNumber and Representative login did not synchronize while preserving User state.'
+    );
+
+    $identificationRemovalRejected = false;
+    try {
+        $updateRepresentativePerson->handle(
+            new UpdatePersonInput(
+                $representativeUserPersonId->value(),
+                'E007',
+                null,
+                'Representative',
+                'User',
+                null,
+                null,
+                new DateTimeImmutable('1984-09-10', new DateTimeZone('UTC')),
+                1,
+                null,
+                null,
+                null,
+                null,
+                null,
+                PersonStatus::Active,
+            ),
+            $personToday,
+        );
+    } catch (RepresentativeUserRequiresIdentification) {
+        $identificationRemovalRejected = true;
+    }
+    assertIntegration(
+        $identificationRemovalRejected
+        && $personRepository->findById($representativeUserPersonId)?->identification()?->documentNumber()
+            === 'E007-LOGIN-NEW'
+        && $representativeUsers->findById(
+            new \App\IdentityAccess\Domain\ValueObject\UserId($generatedRepresentativeUserId)
+        )?->loginIdentifier()->value() === 'e007-login-new',
+        'Representative User allowed removal of Person Identification.'
+    );
+
+    $loginCollisionRejected = false;
+    try {
+        $updateRepresentativePerson->handle(
+            new UpdatePersonInput(
+                $representativeUserPersonId->value(),
+                'E007',
+                null,
+                'Representative',
+                'User',
+                1,
+                'ADMIN',
+                new DateTimeImmutable('1984-09-10', new DateTimeZone('UTC')),
+                1,
+                null,
+                null,
+                null,
+                null,
+                null,
+                PersonStatus::Active,
+            ),
+            $personToday,
+        );
+    } catch (RepresentativeLoginIdentifierAlreadyUsed) {
+        $loginCollisionRejected = true;
+    }
+    assertIntegration(
+        $loginCollisionRejected
+        && $personRepository->findById($representativeUserPersonId)?->identification()?->documentNumber()
+            === 'E007-LOGIN-NEW'
+        && $representativeUsers->findById(
+            new \App\IdentityAccess\Domain\ValueObject\UserId($generatedRepresentativeUserId)
+        )?->loginIdentifier()->value() === 'e007-login-new',
+        'Representative login collision did not leave Person and User unchanged.'
+    );
+
+    $postPersonFailure = new RuntimeException('simulated E007 User save failure');
+    $failingRepresentativeUsers = new class(
+        $representativeUsers,
+        $postPersonFailure,
+    ) implements UserRepository {
+        public function __construct(
+            private readonly UserRepository $delegate,
+            private readonly Throwable $failure,
+        ) {
+        }
+
+        public function findByLoginIdentifier(LoginIdentifier $identifier): ?User
+        {
+            return $this->delegate->findByLoginIdentifier($identifier);
+        }
+
+        public function findByLoginIdentifierForUpdate(LoginIdentifier $identifier): ?User
+        {
+            return $this->delegate->findByLoginIdentifierForUpdate($identifier);
+        }
+
+        public function findById(\App\IdentityAccess\Domain\ValueObject\UserId $id): ?User
+        {
+            return $this->delegate->findById($id);
+        }
+
+        public function findByPersonId(UserPersonId $personId): ?User
+        {
+            return $this->delegate->findByPersonId($personId);
+        }
+
+        public function save(User $user): User
+        {
+            throw $this->failure;
+        }
+    };
+    $failingDocumentUpdate = new UpdatePersonWithRepresentativeUserSync(
+        new UpdatePerson($personRepository),
+        $personRepository,
+        $failingRepresentativeUsers,
+        $representativeRepository,
+        $transactions,
+    );
+    $caughtPostPersonFailure = null;
+    try {
+        $failingDocumentUpdate->handle(
+            new UpdatePersonInput(
+                $representativeUserPersonId->value(),
+                'E007 Partial',
+                null,
+                'Representative',
+                'User',
+                1,
+                'E007-ROLLBACK',
+                new DateTimeImmutable('1984-09-10', new DateTimeZone('UTC')),
+                1,
+                null,
+                null,
+                null,
+                null,
+                null,
+                PersonStatus::Active,
+            ),
+            $personToday,
+        );
+    } catch (Throwable $exception) {
+        $caughtPostPersonFailure = $exception;
+    }
+    assertIntegration(
+        $caughtPostPersonFailure === $postPersonFailure
+        && $personRepository->findById($representativeUserPersonId)?->personalName()->firstName()
+            === 'E007'
+        && $personRepository->findById($representativeUserPersonId)?->identification()?->documentNumber()
+            === 'E007-LOGIN-NEW'
+        && $representativeUsers->findById(
+            new \App\IdentityAccess\Domain\ValueObject\UserId($generatedRepresentativeUserId)
+        )?->loginIdentifier()->value() === 'e007-login-new'
+        && !$connectionA->inTransaction(),
+        'Failure after Person update did not roll back both Representative login states.'
+    );
+
+    $authenticationSession = new class implements SessionManager {
+        public ?int $userId = null;
+        /** @var array<string, mixed> */
+        private array $values = [];
+
+        public function regenerateForUser(int $userId): void
+        {
+            $this->userId = $userId;
+        }
+
+        public function authenticatedUserId(): ?int
+        {
+            return $this->userId;
+        }
+
+        public function put(string $key, mixed $value): void
+        {
+            $this->values[$key] = $value;
+        }
+
+        public function pull(string $key, mixed $default = null): mixed
+        {
+            $value = $this->values[$key] ?? $default;
+            unset($this->values[$key]);
+
+            return $value;
+        }
+
+        public function destroy(): void
+        {
+            $this->userId = null;
+            $this->values = [];
+        }
+    };
+    $authenticationEvents = new class implements SecurityEventLogger {
+        public function record(string $event): void
+        {
+        }
+    };
+    $authenticationClock = new class(
+        new DateTimeImmutable('2026-08-01 08:30:00', new DateTimeZone('UTC'))
+    ) implements Clock {
+        public function __construct(private readonly DateTimeImmutable $now)
+        {
+        }
+
+        public function now(): DateTimeImmutable
+        {
+            return $this->now;
+        }
+    };
+    $authenticateRepresentative = new AuthenticateUser(
+        $representativeUsers,
+        $representativePasswordHasher,
+        $authenticationSession,
+        new PdoTransactionManager($managerA),
+        $authenticationClock,
+        $authenticationEvents,
+        new AuthenticationPolicy(5, 900),
+    );
+    $oldLoginResult = $authenticateRepresentative->handle(
+        'E007-LOGIN-OLD',
+        $newRepresentativePassword,
+    );
+    $newLoginResult = $authenticateRepresentative->handle(
+        'E007-LOGIN-NEW',
+        $newRepresentativePassword,
+    );
+    assertIntegration(
+        !$oldLoginResult->isSuccessful()
+        && $newLoginResult->isSuccessful()
+        && $authenticationSession->userId === $generatedRepresentativeUserId,
+        'Representative authentication did not move exclusively to the synchronized DocumentNumber.'
+    );
+    assertIntegration(
+        $representativePasswordHasher->verify('DisposableAdminPassword', $hash)
+        && $representativeUsers->findByLoginIdentifier(new LoginIdentifier('admin')) !== null,
+        'Existing administrator credential compatibility was not preserved.'
+    );
+
     $managerB = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
     $connectionB = $managerB->connection();
     assertIntegration(
@@ -1555,6 +2035,9 @@ try {
     echo "PASS MySQL Family delivery relationship lookup active options and exact statuses\n";
     echo "PASS MySQL composite Representative Person role Family atomic commit and rollback\n";
     echo "PASS MySQL composite Student Person role membership atomic commit and rollback\n";
+    echo "PASS MySQL Representative User AUTO_INCREMENT provisioning lookup hashing and physical uniqueness\n";
+    echo "PASS MySQL Representative administrative password change preserves authentication state\n";
+    echo "PASS MySQL Representative document login synchronization conflict rollback and authentication\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {
     $cleanupFailures = dropDisposableDatabases($server, $createdDatabases);
