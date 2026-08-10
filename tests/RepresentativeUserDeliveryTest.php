@@ -24,7 +24,11 @@ use Tests\Support\TestRunner;
 function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
 {
     $runner->add('Representative User routes use exact admin middleware and expose only three operations', function (): void {
-        $routes = (string) file_get_contents(dirname(__DIR__) . '/routes/web.php');
+        $routes = str_replace(
+            ["\r\n", "\r"],
+            "\n",
+            (string) file_get_contents(dirname(__DIR__) . '/routes/web.php'),
+        );
         foreach ([
             "get(\n    '/representative-users/manage'",
             "post(\n    '/representative-users/create'",

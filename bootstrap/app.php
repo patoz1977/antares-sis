@@ -25,6 +25,7 @@ use App\IdentityAccess\Application\Contract\SecurityEventLogger;
 use App\IdentityAccess\Application\Contract\SessionManager;
 use App\IdentityAccess\Application\Contract\TransactionManager;
 use App\IdentityAccess\Application\CreateRepresentativeUser;
+use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
 use App\IdentityAccess\Application\GetUserByPersonId;
 use App\IdentityAccess\Application\Orchestration\UpdatePersonWithRepresentativeUserSync;
 use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
@@ -185,6 +186,7 @@ $container->singleton(GetPerson::class, GetPerson::class);
 $container->singleton(UpdatePerson::class, UpdatePerson::class);
 $container->singleton(GetUserByPersonId::class, GetUserByPersonId::class);
 $container->singleton(CreateRepresentativeUser::class, CreateRepresentativeUser::class);
+$container->singleton(GetAuthenticatedRepresentative::class, GetAuthenticatedRepresentative::class);
 $container->singleton(
     ChangeRepresentativeUserPassword::class,
     ChangeRepresentativeUserPassword::class,
