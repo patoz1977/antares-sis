@@ -9,6 +9,8 @@ use App\IdentityAccess\Application\Contract\Clock;
 use App\IdentityAccess\Application\Contract\SecurityEventLogger;
 use App\IdentityAccess\Application\Contract\SessionManager;
 use App\IdentityAccess\Application\CreateRepresentativeUser;
+use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
+use App\IdentityAccess\Application\GetAuthenticatedUser;
 use App\IdentityAccess\Application\Dto\ChangeRepresentativeUserPasswordInput;
 use App\IdentityAccess\Application\Dto\CreateRepresentativeUserInput;
 use App\IdentityAccess\Application\Exception\RepresentativeLoginIdentifierAlreadyUsed;
@@ -1957,6 +1959,78 @@ try {
         && $authenticationSession->userId === $generatedRepresentativeUserId,
         'Representative authentication did not move exclusively to the synchronized DocumentNumber.'
     );
+
+    $representativeAccessUserState = $identity->prepare(
+        'SELECT * FROM users WHERE id = :id'
+    );
+    $representativeAccessUserState->execute([':id' => $generatedRepresentativeUserId]);
+    $representativeAccessUserBefore = $representativeAccessUserState->fetch(PDO::FETCH_ASSOC);
+    $representativeAccessRoleState = $identity->prepare(
+        'SELECT * FROM representatives WHERE id = :id'
+    );
+    $representativeAccessRoleState->execute([':id' => $representativeUserRoleId->value()]);
+    $representativeAccessRoleBefore = $representativeAccessRoleState->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $representativeAccessUserBefore !== false && $representativeAccessRoleBefore !== false,
+        'Representative access read-only snapshot could not load the persisted identities.'
+    );
+
+    $getAuthenticatedRepresentative = new GetAuthenticatedRepresentative(
+        new GetAuthenticatedUser($authenticationSession, $representativeUsers),
+        $representativeRepository,
+    );
+    $authenticatedRepresentative = $getAuthenticatedRepresentative->handle();
+
+    $representativeAccessUserState->execute([':id' => $generatedRepresentativeUserId]);
+    $representativeAccessUserAfter = $representativeAccessUserState->fetch(PDO::FETCH_ASSOC);
+    $representativeAccessRoleState->execute([':id' => $representativeUserRoleId->value()]);
+    $representativeAccessRoleAfter = $representativeAccessRoleState->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $authenticatedRepresentative?->userId === $generatedRepresentativeUserId
+        && $authenticatedRepresentative->personId === $representativeUserPersonId->value()
+        && $authenticatedRepresentative->representativeId === $representativeUserRoleId->value()
+        && $authenticatedRepresentative->loginIdentifier === 'e007-login-new'
+        && $representativeAccessUserAfter === $representativeAccessUserBefore
+        && $representativeAccessRoleAfter === $representativeAccessRoleBefore,
+        'Authenticated Representative resolution did not preserve exact identity or read-only state.'
+    );
+
+    $nonRepresentativeAccessPerson = $personRepository->save(new Person(
+        null,
+        new PersonalName('Access', null, 'Nonrepresentative', null),
+        null,
+        new DateTimeImmutable('2002-02-02', new DateTimeZone('UTC')),
+        1,
+        null,
+        null,
+        null,
+        PersonStatus::Active,
+        $personToday,
+    ));
+    $nonRepresentativeAccessPersonId = $nonRepresentativeAccessPerson->id();
+    assertIntegration(
+        $nonRepresentativeAccessPersonId !== null && $nonRepresentativeAccessPersonId->value() > 0,
+        'MariaDB did not generate the non-Representative Person identity for access resolution.'
+    );
+    $nonRepresentativeAccessUser = $representativeUsers->save(new User(
+        null,
+        new UserPersonId($nonRepresentativeAccessPersonId->value()),
+        new LoginIdentifier('E007-ACCESS-NON-REPRESENTATIVE'),
+        new PasswordHash($representativePasswordHasher->hash('access-resolution-probe')),
+        UserStatus::Active,
+    ));
+    $nonRepresentativeAccessUserId = $nonRepresentativeAccessUser->id();
+    assertIntegration(
+        $nonRepresentativeAccessUserId !== null && $nonRepresentativeAccessUserId->value() > 0,
+        'MariaDB did not generate the non-Representative User identity for access resolution.'
+    );
+    $authenticationSession->userId = $nonRepresentativeAccessUserId->value();
+    assertIntegration(
+        $getAuthenticatedRepresentative->handle() === null,
+        'Authenticated User without Representative unexpectedly received Representative Access.'
+    );
+    echo "PASS MySQL authenticated Representative access resolution read-only identity and fail-closed behavior\n";
+
     assertIntegration(
         $representativePasswordHasher->verify('DisposableAdminPassword', $hash)
         && $representativeUsers->findByLoginIdentifier(new LoginIdentifier('admin')) !== null,
