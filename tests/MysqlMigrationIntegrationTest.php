@@ -41,7 +41,17 @@ use App\Family\Application\Orchestration\Dto\CreateStudentInFamilyInput;
 use App\Family\Domain\Family;
 use App\Family\Domain\FamilyRepository;
 use App\Family\Domain\FamilyStatus;
+use App\Family\Domain\FamilyResourceStatus;
+use App\Family\Domain\ValueObject\Address;
+use App\Family\Domain\ValueObject\AddressLabel;
+use App\Family\Domain\ValueObject\AuthorizedPickupInformation;
 use App\Family\Domain\ValueObject\DisplayName;
+use App\Family\Domain\ValueObject\DocumentTypeId as FamilyDocumentTypeId;
+use App\Family\Domain\ValueObject\EmergencyContactInformation;
+use App\Family\Domain\ValueObject\EmergencyContactPriority;
+use App\Family\Domain\ValueObject\FamilyResourceName;
+use App\Family\Domain\ValueObject\Geolocation;
+use App\Family\Domain\ValueObject\PickupIdentification;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\RelationshipTypeId;
 use App\Family\Domain\ValueObject\RepresentativeId as FamilyRepresentativeReference;
@@ -474,6 +484,24 @@ try {
     assertIntegration(
         $actualTables === $expectedTables,
         schemaInventoryDifferenceMessage($expectedTables, $actualTables)
+    );
+
+    $familyResourceTables = [
+        'authorized_pickup_assignments',
+        'emergency_contact_assignments',
+        'family_addresses',
+        'family_authorized_pickups',
+        'family_emergency_contacts',
+        'representative_address_assignments',
+        'student_address_assignments',
+    ];
+    $familyResourceAutoIncrement = $identity->query(
+        "SELECT table_name FROM information_schema.columns WHERE table_schema = DATABASE() "
+        . "AND column_name = 'id' AND extra = 'auto_increment' ORDER BY table_name"
+    )->fetchAll(PDO::FETCH_COLUMN);
+    assertIntegration(
+        array_values(array_intersect($familyResourceAutoIncrement, $familyResourceTables)) === $familyResourceTables,
+        'MariaDB Family resource tables do not all expose database-managed AUTO_INCREMENT identity.'
     );
 
     $familyAddressColumns = $identity->query(
@@ -1101,6 +1129,174 @@ try {
         mariaDbFamilyPersistenceDiagnostics($familyTimestampRow, $familyTimeZoneRow)
     );
 
+    $persistedFamily->addAddress(
+        new AddressLabel('Casa O\'Brien'),
+        new Address(
+            'Av. José O\'Brien',
+            'N-42',
+            'Calle Secundaria',
+            'Sector Ñ',
+            'Referencia exacta',
+            new Geolocation('-0.1234567', '179.9999999'),
+        ),
+    );
+    $persistedFamily->addEmergencyContact(
+        new FamilyResourceName('María D\'Angelo'),
+        new RelationshipTypeId($generatedRelationshipTypeId),
+        new EmergencyContactInformation('móvil +593', 'teléfono', 'maria@example.test', 'Observación'),
+    );
+    $persistedFamily->addAuthorizedPickup(
+        new FamilyResourceName('José O\'Neil'),
+        new RelationshipTypeId($generatedRelationshipTypeId),
+        new AuthorizedPickupInformation('pickup +593', 'fijo', 'Autorizado'),
+        new PickupIdentification(new FamilyDocumentTypeId(1), 'PICKUP-Ñ-001'),
+    );
+    $persistedFamily = $familyRepository->save($persistedFamily);
+    $familyAddressId = $persistedFamily->addresses()[0]->id();
+    $familyEmergencyContactId = $persistedFamily->emergencyContacts()[0]->id();
+    $familyAuthorizedPickupId = $persistedFamily->authorizedPickups()[0]->id();
+    assertIntegration(
+        $familyAddressId !== null && $familyAddressId->value() > 0
+        && $familyEmergencyContactId !== null && $familyEmergencyContactId->value() > 0
+        && $familyAuthorizedPickupId !== null && $familyAuthorizedPickupId->value() > 0,
+        'MariaDB did not generate positive Family resource identities.'
+    );
+
+    $persistedFamily->assignAddressToRepresentative(
+        new FamilyRepresentativeReference($generatedRepresentativeId->value()),
+        $familyAddressId,
+        new DateTimeImmutable('2026-08-03 10:01:02-05:00'),
+    );
+    $persistedFamily->assignAddressToStudent(
+        new FamilyStudentReference($generatedStudentId->value()),
+        $familyAddressId,
+        new DateTimeImmutable('2026-08-03 15:02:03', new DateTimeZone('UTC')),
+    );
+    $persistedFamily->assignEmergencyContactToStudent(
+        new FamilyStudentReference($generatedStudentId->value()),
+        $familyEmergencyContactId,
+        new EmergencyContactPriority(1),
+        new DateTimeImmutable('2026-08-03 15:03:04', new DateTimeZone('UTC')),
+    );
+    $persistedFamily->assignAuthorizedPickupToStudent(
+        new FamilyStudentReference($generatedStudentId->value()),
+        $familyAuthorizedPickupId,
+        new DateTimeImmutable('2026-08-03 15:04:05', new DateTimeZone('UTC')),
+    );
+    $persistedFamily = $familyRepository->save($persistedFamily);
+    assertIntegration(
+        count($persistedFamily->addresses()) === 1
+        && count($persistedFamily->representativeAddressAssignments()) === 1
+        && count($persistedFamily->studentAddressAssignments()) === 1
+        && count($persistedFamily->emergencyContacts()) === 1
+        && count($persistedFamily->emergencyContactAssignments()) === 1
+        && count($persistedFamily->authorizedPickups()) === 1
+        && count($persistedFamily->authorizedPickupAssignments()) === 1
+        && $persistedFamily->addresses()[0]->address()->geolocation()?->latitude() === '-0.1234567'
+        && $persistedFamily->addresses()[0]->address()->geolocation()?->longitude() === '179.9999999',
+        'MariaDB did not reconstruct the complete Family Resources aggregate.'
+    );
+    $resourceAssignmentIds = [
+        $persistedFamily->representativeAddressAssignments()[0]->id()?->value(),
+        $persistedFamily->studentAddressAssignments()[0]->id()?->value(),
+        $persistedFamily->emergencyContactAssignments()[0]->id()?->value(),
+        $persistedFamily->authorizedPickupAssignments()[0]->id()?->value(),
+    ];
+    assertIntegration(
+        count(array_filter($resourceAssignmentIds, static fn (?int $id): bool => $id !== null && $id > 0)) === 4,
+        'MariaDB did not generate every Family resource assignment identity.'
+    );
+    $resourceUtc = $identity->prepare(
+        'SELECT started_at FROM representative_address_assignments WHERE id = :id'
+    );
+    $resourceUtc->execute([':id' => $resourceAssignmentIds[0]]);
+    assertIntegration(
+        $resourceUtc->fetchColumn() === '2026-08-03 15:01:02',
+        'Family resource assignment did not preserve exact UTC seconds.'
+    );
+
+    $duplicateEmergencyAssignmentRejected = false;
+    try {
+        $duplicateEmergency = $identity->prepare(
+            'INSERT INTO emergency_contact_assignments '
+            . '(family_id, family_emergency_contact_id, student_id, priority, started_at, ended_at) '
+            . 'VALUES (:familyId, :contactId, :studentId, 2, :startedAt, NULL)'
+        );
+        $duplicateEmergency->execute([
+            ':familyId' => $generatedFamilyId->value(),
+            ':contactId' => $familyEmergencyContactId->value(),
+            ':studentId' => $generatedStudentId->value(),
+            ':startedAt' => '2026-08-03 16:00:00',
+        ]);
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $duplicateEmergencyAssignmentRejected = true;
+    }
+    assertIntegration(
+        $duplicateEmergencyAssignmentRejected,
+        'MariaDB did not enforce generated active Family resource assignment uniqueness.'
+    );
+
+    $familyCountBeforeResourceRollback = (int) $identity->query('SELECT COUNT(*) FROM families')->fetchColumn();
+    $resourceRollback = Family::create(
+        new DisplayName('Family Resource Rollback'),
+        FamilyStatus::Active,
+        new FamilyRepresentativeReference($secondRepresentativeId->value()),
+        new RelationshipTypeId($generatedRelationshipTypeId),
+        new DateTimeImmutable('2026-08-03 17:00:00', new DateTimeZone('UTC')),
+    );
+    $resourceRollback->addEmergencyContact(
+        new FamilyResourceName('Invalid relationship'),
+        new RelationshipTypeId(999999999),
+        new EmergencyContactInformation('mobile', null, null, null),
+    );
+    $resourceRollbackRejected = false;
+    try {
+        $familyRepository->save($resourceRollback);
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $resourceRollbackRejected = true;
+    }
+    assertIntegration(
+        $resourceRollbackRejected
+        && (int) $identity->query('SELECT COUNT(*) FROM families')->fetchColumn() === $familyCountBeforeResourceRollback,
+        'Family resource failure did not roll back the owned transaction atomically.'
+    );
+
+    $persistedFamily->endRepresentativeAddressAssignment(
+        new FamilyRepresentativeReference($generatedRepresentativeId->value()),
+        new DateTimeImmutable('2026-08-03 18:00:00', new DateTimeZone('UTC')),
+    );
+    $persistedFamily->endStudentAddressAssignment(
+        new FamilyStudentReference($generatedStudentId->value()),
+        new DateTimeImmutable('2026-08-03 18:00:01', new DateTimeZone('UTC')),
+    );
+    $persistedFamily->endEmergencyContactAssignment(
+        new FamilyStudentReference($generatedStudentId->value()),
+        $familyEmergencyContactId,
+        new DateTimeImmutable('2026-08-03 18:00:02', new DateTimeZone('UTC')),
+    );
+    $persistedFamily->endAuthorizedPickupAssignment(
+        new FamilyStudentReference($generatedStudentId->value()),
+        $familyAuthorizedPickupId,
+        new DateTimeImmutable('2026-08-03 18:00:03', new DateTimeZone('UTC')),
+    );
+    $persistedFamily->deactivateAddress($familyAddressId);
+    $persistedFamily->deactivateEmergencyContact($familyEmergencyContactId);
+    $persistedFamily->deactivateAuthorizedPickup($familyAuthorizedPickupId);
+    $persistedFamily = $familyRepository->save($persistedFamily);
+    assertIntegration(
+        $persistedFamily->addresses()[0]->status() === FamilyResourceStatus::Inactive
+        && $persistedFamily->emergencyContacts()[0]->status() === FamilyResourceStatus::Inactive
+        && $persistedFamily->authorizedPickups()[0]->status() === FamilyResourceStatus::Inactive
+        && !$persistedFamily->studentAddressAssignments()[0]->isActive(),
+        'Family resource status or historical assignment update was not persisted exactly.'
+    );
+
     $secondFamily = $familyRepository->save(Family::create(
         new DisplayName('Disposable Family Two'),
         FamilyStatus::Inactive,
@@ -1115,6 +1311,107 @@ try {
         && !$generatedFamilyId->equals($generatedSecondFamilyId),
         'MariaDB Family AUTO_INCREMENT identities must be positive and distinct.'
     );
+    $secondFamily->addAddress(
+        new AddressLabel('Second Family Address'),
+        new Address('Second street', null, null, null, null, null),
+    );
+    $secondFamily = $familyRepository->save($secondFamily);
+    $secondFamilyAddressId = $secondFamily->addresses()[0]->id();
+    assertIntegration(
+        $secondFamilyAddressId !== null
+        && $secondFamilyAddressId->value() > 0
+        && !$familyAddressId->equals($secondFamilyAddressId),
+        'MariaDB FamilyAddress identities were not positive and distinct.'
+    );
+
+    $crossFamilyResourceRejected = false;
+    try {
+        $crossFamilyAssignment = $identity->prepare(
+            'INSERT INTO representative_address_assignments '
+            . '(family_id, family_address_id, representative_id, started_at, ended_at) '
+            . 'VALUES (:familyId, :addressId, :representativeId, :startedAt, NULL)'
+        );
+        $crossFamilyAssignment->execute([
+            ':familyId' => $generatedSecondFamilyId->value(),
+            ':addressId' => $familyAddressId->value(),
+            ':representativeId' => $generatedRepresentativeId->value(),
+            ':startedAt' => '2026-08-04 10:00:00',
+        ]);
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $crossFamilyResourceRejected = true;
+    }
+    assertIntegration(
+        $crossFamilyResourceRejected,
+        'MariaDB composite Family resource ownership foreign key was not enforced.'
+    );
+
+    $pickupDocumentPairRejected = false;
+    try {
+        $invalidPickup = $identity->prepare(
+            'INSERT INTO family_authorized_pickups '
+            . '(family_id, names, relationship_type_id, mobile_phone, document_type_id, document_number, status_id) '
+            . 'VALUES (:familyId, :names, :relationshipTypeId, :mobilePhone, 1, NULL, :statusId)'
+        );
+        $invalidPickup->execute([
+            ':familyId' => $generatedSecondFamilyId->value(), ':names' => 'Invalid pair',
+            ':relationshipTypeId' => $generatedRelationshipTypeId, ':mobilePhone' => 'mobile',
+            ':statusId' => $generalStatusId,
+        ]);
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $pickupDocumentPairRejected = true;
+    }
+    assertIntegration($pickupDocumentPairRejected, 'MariaDB did not enforce the pickup document pair check.');
+
+    $emergencyPriorityCheckRejected = false;
+    try {
+        $invalidPriority = $identity->prepare(
+            'INSERT INTO emergency_contact_assignments '
+            . '(family_id, family_emergency_contact_id, student_id, priority, started_at, ended_at) '
+            . 'VALUES (:familyId, :contactId, :studentId, 0, :startedAt, :endedAt)'
+        );
+        $invalidPriority->execute([
+            ':familyId' => $generatedFamilyId->value(), ':contactId' => $familyEmergencyContactId->value(),
+            ':studentId' => $generatedStudentId->value(), ':startedAt' => '2026-08-04 11:00:00',
+            ':endedAt' => '2026-08-04 11:00:01',
+        ]);
+    } catch (PDOException $exception) {
+        if (($exception->errorInfo[0] ?? (string) $exception->getCode()) !== '23000') {
+            throw $exception;
+        }
+        $emergencyPriorityCheckRejected = true;
+    }
+    assertIntegration(
+        $emergencyPriorityCheckRejected,
+        'MariaDB did not enforce positive optional emergency assignment priority.'
+    );
+
+    $resourceCountBeforeOuterRollback = (int) $identity->query(
+        'SELECT COUNT(*) FROM family_addresses'
+    )->fetchColumn();
+    $connectionA->beginTransaction();
+    $secondFamily->addAddress(
+        new AddressLabel('Outer transaction rollback'),
+        new Address('Rollback street', null, null, null, null, null),
+    );
+    $outerResourceFamily = $familyRepository->save($secondFamily);
+    assertIntegration(
+        $connectionA->inTransaction() && count($outerResourceFamily->addresses()) === 2,
+        'Family resource persistence did not participate in the outer transaction.'
+    );
+    $connectionA->rollBack();
+    assertIntegration(
+        (int) $identity->query('SELECT COUNT(*) FROM family_addresses')->fetchColumn()
+            === $resourceCountBeforeOuterRollback,
+        'Outer transaction rollback did not remove the Family resource write.'
+    );
+    $secondFamily = $familyRepository->findById($generatedSecondFamilyId);
+    assertIntegration($secondFamily !== null, 'Second Family disappeared after outer rollback validation.');
     $representativeFamilies = $familyRepository->findActiveByRepresentativeId(
         new FamilyRepresentativeReference($generatedRepresentativeId->value())
     );
@@ -2520,6 +2817,7 @@ try {
     echo "PASS MySQL Family atomic AUTO_INCREMENT creation and complete Aggregate reconstruction\n";
     echo "PASS MySQL Family Representative and Student active lookups and historical membership\n";
     echo "PASS MySQL Family physical uniqueness UTC status mapping and transactional rollback\n";
+    echo "PASS MySQL Family Resources complete roundtrip AUTO_INCREMENT UTC constraints and rollback\n";
     echo "PASS MySQL Family delivery relationship lookup active options and exact statuses\n";
     echo "PASS MySQL composite Representative Person role Family atomic commit and rollback\n";
     echo "PASS MySQL Representative personal email invariant and work-email non-substitution\n";
