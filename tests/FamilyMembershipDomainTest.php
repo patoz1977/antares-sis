@@ -532,7 +532,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
         assertSameValue(1, count($family->activeStudents()));
     });
 
-    $runner->add('Family Domain stays isolated and contains only membership baseline concepts', function (): void {
+    $runner->add('Family Domain stays isolated and preserves membership Entity structure', function (): void {
         $domainDirectory = __DIR__ . '/../app/Family/Domain';
         $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($domainDirectory));
         $phpFiles = [];
@@ -565,8 +565,24 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
         );
         sort($studentProperties, SORT_STRING);
 
-        assertSameValue(13, count($phpFiles));
-        assertSameValue(['displayName', 'id', 'representatives', 'status', 'students'], $familyProperties);
+        assertSameValue(37, count($phpFiles));
+        assertSameValue(
+            [
+                'addresses',
+                'authorizedPickupAssignments',
+                'authorizedPickups',
+                'displayName',
+                'emergencyContactAssignments',
+                'emergencyContacts',
+                'id',
+                'representativeAddressAssignments',
+                'representatives',
+                'status',
+                'studentAddressAssignments',
+                'students',
+            ],
+            $familyProperties,
+        );
         assertSameValue(
             ['endedAt', 'id', 'isPrimary', 'relationshipTypeId', 'representativeId', 'startedAt'],
             $representativeProperties,
