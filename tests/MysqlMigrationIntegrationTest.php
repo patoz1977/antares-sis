@@ -475,6 +475,74 @@ try {
         $actualTables === $expectedTables,
         schemaInventoryDifferenceMessage($expectedTables, $actualTables)
     );
+
+    $familyAddressColumns = $identity->query(
+        "SELECT column_name FROM information_schema.columns "
+        . "WHERE table_schema = DATABASE() AND table_name = 'family_addresses' ORDER BY ordinal_position"
+    )->fetchAll(PDO::FETCH_COLUMN);
+    assertIntegration(
+        $familyAddressColumns === [
+            'id', 'family_id', 'label', 'main_street', 'street_number', 'secondary_street',
+            'sector', 'reference', 'latitude', 'longitude', 'status_id', 'created_at', 'updated_at',
+        ],
+        'MariaDB FamilyAddress columns differ from the simplified baseline: '
+        . implode(', ', $familyAddressColumns)
+    );
+
+    $submittedAddressColumns = $identity->query(
+        "SELECT column_name FROM information_schema.columns "
+        . "WHERE table_schema = DATABASE() AND table_name = 'snapshot_addresses' ORDER BY ordinal_position"
+    )->fetchAll(PDO::FETCH_COLUMN);
+    assertIntegration(
+        $submittedAddressColumns === [
+            'id', 'enrollment_submission_snapshot_id', 'label', 'main_street', 'street_number',
+            'secondary_street', 'sector', 'reference', 'latitude', 'longitude', 'created_at',
+        ],
+        'MariaDB SubmittedAddressSnapshot columns differ from the simplified baseline: '
+        . implode(', ', $submittedAddressColumns)
+    );
+
+    $familyAddressForeignKeys = $identity->query(
+        "SELECT constraint_name FROM information_schema.referential_constraints "
+        . "WHERE constraint_schema = DATABASE() AND table_name = 'family_addresses' ORDER BY constraint_name"
+    )->fetchAll(PDO::FETCH_COLUMN);
+    assertIntegration(
+        $familyAddressForeignKeys === ['fk_family_addresses_family', 'fk_family_addresses_status'],
+        'MariaDB FamilyAddress foreign keys differ from the simplified baseline: '
+        . implode(', ', $familyAddressForeignKeys)
+    );
+
+    $familyAddressIndexes = $identity->query(
+        "SELECT DISTINCT index_name FROM information_schema.statistics "
+        . "WHERE table_schema = DATABASE() AND table_name = 'family_addresses' ORDER BY index_name"
+    )->fetchAll(PDO::FETCH_COLUMN);
+    assertIntegration(
+        in_array('uq_family_addresses_id_family', $familyAddressIndexes, true)
+        && in_array('idx_family_addresses_family_status', $familyAddressIndexes, true)
+        && array_intersect([
+            'idx_family_addresses_province',
+            'idx_family_addresses_canton_province',
+            'idx_family_addresses_parish_canton_province',
+        ], $familyAddressIndexes) === [],
+        'MariaDB FamilyAddress indexes do not preserve the simplified baseline: '
+        . implode(', ', $familyAddressIndexes)
+    );
+
+    $familyAddressChecks = $identity->query(
+        "SELECT constraint_name FROM information_schema.table_constraints "
+        . "WHERE constraint_schema = DATABASE() AND table_name = 'family_addresses' "
+        . "AND constraint_type = 'CHECK' ORDER BY constraint_name"
+    )->fetchAll(PDO::FETCH_COLUMN);
+    assertIntegration(
+        $familyAddressChecks === [
+            'chk_family_addresses_coordinates_pair',
+            'chk_family_addresses_latitude',
+            'chk_family_addresses_longitude',
+        ],
+        'MariaDB FamilyAddress coordinate checks differ from the simplified baseline: '
+        . implode(', ', $familyAddressChecks)
+    );
+
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM migrations')->fetchColumn() === 9, 'Not all baseline migrations were recorded.');
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM status_types')->fetchColumn() === 3, 'Status type baseline is incomplete.');
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM statuses')->fetchColumn() === 8, 'Status baseline is incomplete.');

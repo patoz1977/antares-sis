@@ -89,6 +89,47 @@ function registerSchemaBaselineTests(TestRunner $runner): void
         ], baselineTableColumns($source, 'users'), 'User columns differ from the approved baseline.');
     });
 
+    $runner->add('Family address and submitted snapshot use the simplified address baseline', function (): void {
+        $migrationSource = implode("\n", baselineMigrationSources());
+        assertBaselineSame([
+            'id', 'family_id', 'label', 'main_street', 'street_number', 'secondary_street',
+            'sector', 'reference', 'latitude', 'longitude', 'status_id', 'created_at', 'updated_at',
+        ], baselineTableColumns($migrationSource, 'family_addresses'), 'FamilyAddress columns differ from ADR-0021.');
+        assertBaselineSame([
+            'id', 'enrollment_submission_snapshot_id', 'label', 'main_street', 'street_number',
+            'secondary_street', 'sector', 'reference', 'latitude', 'longitude', 'created_at',
+        ], baselineTableColumns($migrationSource, 'snapshot_addresses'), 'SubmittedAddressSnapshot columns differ from ADR-0021.');
+
+        $pattern = '/CREATE TABLE `family_addresses` \((.*?)\n\s*\) ENGINE=/s';
+        if (preg_match($pattern, $migrationSource, $match) !== 1) {
+            throw new RuntimeException('Unable to inspect the FamilyAddress migration declaration.');
+        }
+        $familyAddressDefinition = $match[1];
+
+        preg_match_all('/(?:UNIQUE )?KEY `([^`]+)`/', $familyAddressDefinition, $keys);
+        assertBaselineSame([
+            'uq_family_addresses_id_family',
+            'idx_family_addresses_family_status',
+        ], $keys[1], 'FamilyAddress keys differ from the simplified baseline.');
+
+        preg_match_all('/CONSTRAINT `([^`]+)`/', $familyAddressDefinition, $constraints);
+        assertBaselineSame([
+            'chk_family_addresses_coordinates_pair',
+            'chk_family_addresses_latitude',
+            'chk_family_addresses_longitude',
+            'fk_family_addresses_family',
+            'fk_family_addresses_status',
+        ], $constraints[1], 'FamilyAddress constraints differ from the simplified baseline.');
+
+        foreach (['province_id', 'canton_id', 'parish_id'] as $retiredColumn) {
+            assertBaselineSame(
+                false,
+                str_contains($familyAddressDefinition, $retiredColumn),
+                sprintf('FamilyAddress retains retired geographic schema: %s.', $retiredColumn)
+            );
+        }
+    });
+
     $runner->add('all 36 table columns match DATABASE_DESIGN', function (): void {
         $design = file_get_contents(dirname(__DIR__) . '/.ai/12.DATABASE_DESIGN.md');
         if (!is_string($design)) {
@@ -188,10 +229,10 @@ function registerSchemaBaselineTests(TestRunner $runner): void
             );
         }
 
-        assertBaselineSame(63, substr_count($migrationSource, 'REFERENCES `'), 'Unexpected foreign-key count.');
+        assertBaselineSame(60, substr_count($migrationSource, 'REFERENCES `'), 'Unexpected foreign-key count.');
         assertBaselineSame(3, substr_count($migrationSource, 'ON DELETE CASCADE'), 'Only the three snapshot child FKs may cascade.');
-        assertBaselineSame(60, substr_count($migrationSource, 'ON DELETE RESTRICT'), 'All non-snapshot FKs must restrict deletion.');
-        assertBaselineSame(63, substr_count($migrationSource, 'ON UPDATE RESTRICT'), 'Every FK must restrict key updates.');
+        assertBaselineSame(57, substr_count($migrationSource, 'ON DELETE RESTRICT'), 'All non-snapshot FKs must restrict deletion.');
+        assertBaselineSame(60, substr_count($migrationSource, 'ON UPDATE RESTRICT'), 'Every FK must restrict key updates.');
     });
 
     $runner->add('baseline excludes discarded schema and Person-owned family resources', function (): void {
