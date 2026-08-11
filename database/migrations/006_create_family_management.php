@@ -67,9 +67,6 @@ final class CreateFamilyManagement extends SchemaMigration
                     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                     `family_id` BIGINT UNSIGNED NOT NULL,
                     `label` VARCHAR(100) NOT NULL,
-                    `province_id` BIGINT UNSIGNED NOT NULL,
-                    `canton_id` BIGINT UNSIGNED NOT NULL,
-                    `parish_id` BIGINT UNSIGNED NOT NULL,
                     `main_street` VARCHAR(200) NOT NULL,
                     `street_number` VARCHAR(50) NULL DEFAULT NULL,
                     `secondary_street` VARCHAR(200) NULL DEFAULT NULL,
@@ -83,9 +80,6 @@ final class CreateFamilyManagement extends SchemaMigration
                     PRIMARY KEY (`id`),
                     UNIQUE KEY `uq_family_addresses_id_family` (`id`, `family_id`),
                     KEY `idx_family_addresses_family_status` (`family_id`, `status_id`),
-                    KEY `idx_family_addresses_province` (`province_id`),
-                    KEY `idx_family_addresses_canton_province` (`canton_id`, `province_id`),
-                    KEY `idx_family_addresses_parish_canton_province` (`parish_id`, `canton_id`, `province_id`),
                     CONSTRAINT `chk_family_addresses_coordinates_pair`
                         CHECK ((`latitude` IS NULL) = (`longitude` IS NULL)),
                     CONSTRAINT `chk_family_addresses_latitude`
@@ -94,12 +88,6 @@ final class CreateFamilyManagement extends SchemaMigration
                         CHECK (`longitude` IS NULL OR `longitude` BETWEEN -180 AND 180),
                     CONSTRAINT `fk_family_addresses_family` FOREIGN KEY (`family_id`)
                         REFERENCES `families` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
-                    CONSTRAINT `fk_family_addresses_province` FOREIGN KEY (`province_id`)
-                        REFERENCES `provinces` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
-                    CONSTRAINT `fk_family_addresses_canton` FOREIGN KEY (`canton_id`, `province_id`)
-                        REFERENCES `cantons` (`id`, `province_id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
-                    CONSTRAINT `fk_family_addresses_parish` FOREIGN KEY (`parish_id`, `canton_id`, `province_id`)
-                        REFERENCES `parishes` (`id`, `canton_id`, `province_id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
                     CONSTRAINT `fk_family_addresses_status` FOREIGN KEY (`status_id`)
                         REFERENCES `statuses` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
