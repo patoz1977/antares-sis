@@ -15,6 +15,7 @@ $showSelector = count($families) > 1;
 <?php if ($currentContext !== null): ?>
 <p>Current family: <strong><?= $escape($currentContext->familyDisplayName) ?></strong></p>
 <p>Your authorized family context is ready.</p>
+<p><a href="/representative/resources">Manage family resources</a></p>
 <?php elseif (($requiresSelection ?? false) === true): ?>
 <p>Select a family to continue.</p>
 <?php endif; ?>

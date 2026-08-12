@@ -115,7 +115,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         assertSameValue(21, preg_match_all('/\$router->(?:get|post)\(\'\/families\/resources/', $routes));
         assertSameValue(20, preg_match_all('/\$router->post\(\'\/families\/resources/', $routes));
         assertSameValue(21, substr_count($routes, '[$familyResourceController,'));
-        assertSameValue(false, str_contains($routes, '/representative/resources'));
+        assertSameValue(true, str_contains($routes, '/representative/resources'));
         assertSameValue(false, str_contains($routes, '/families/resources/delete'));
 
         [$representativeGate] = familyAdministrationMiddleware('representative-22');

@@ -8,6 +8,7 @@ use App\IdentityAccess\Http\RepresentativeUserController;
 use App\Family\Http\FamilyAdministrationMiddleware;
 use App\Family\Http\FamilyController;
 use App\Family\Http\FamilyResourceController;
+use App\Family\Http\RepresentativeFamilyResourceController;
 use App\Person\Http\PersonAdministrationMiddleware;
 use App\Person\Http\PersonController;
 use Core\Middleware\AuthenticationMiddleware;
@@ -22,6 +23,9 @@ $representativeUserController = $app->container()->make(RepresentativeUserContro
 $personController = $app->container()->make(PersonController::class);
 $familyController = $app->container()->make(FamilyController::class);
 $familyResourceController = $app->container()->make(FamilyResourceController::class);
+$representativeFamilyResourceController = $app->container()->make(
+    RepresentativeFamilyResourceController::class,
+);
 $personMiddleware = [
     AuthenticationMiddleware::class,
     PersonAdministrationMiddleware::class,
@@ -48,6 +52,111 @@ $router->get(
 $router->post(
     '/representative/family',
     [$representativePortalController, 'selectFamily'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/resources',
+    [$representativeFamilyResourceController, 'index'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/addresses/create',
+    [$representativeFamilyResourceController, 'createAddress'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/addresses/update',
+    [$representativeFamilyResourceController, 'updateAddress'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/addresses/activate',
+    [$representativeFamilyResourceController, 'activateAddress'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/addresses/deactivate',
+    [$representativeFamilyResourceController, 'deactivateAddress'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/address',
+    [$representativeFamilyResourceController, 'assignRepresentativeAddress'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/address/end',
+    [$representativeFamilyResourceController, 'endRepresentativeAddress'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/students/address',
+    [$representativeFamilyResourceController, 'assignStudentAddress'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/students/address/end',
+    [$representativeFamilyResourceController, 'endStudentAddress'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/emergency-contacts/create',
+    [$representativeFamilyResourceController, 'createEmergencyContact'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/emergency-contacts/update',
+    [$representativeFamilyResourceController, 'updateEmergencyContact'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/emergency-contacts/activate',
+    [$representativeFamilyResourceController, 'activateEmergencyContact'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/emergency-contacts/deactivate',
+    [$representativeFamilyResourceController, 'deactivateEmergencyContact'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/emergency-contacts/assign',
+    [$representativeFamilyResourceController, 'assignEmergencyContact'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/emergency-contacts/end',
+    [$representativeFamilyResourceController, 'endEmergencyContact'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/authorized-pickups/create',
+    [$representativeFamilyResourceController, 'createAuthorizedPickup'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/authorized-pickups/update',
+    [$representativeFamilyResourceController, 'updateAuthorizedPickup'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/authorized-pickups/activate',
+    [$representativeFamilyResourceController, 'activateAuthorizedPickup'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/authorized-pickups/deactivate',
+    [$representativeFamilyResourceController, 'deactivateAuthorizedPickup'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/authorized-pickups/assign',
+    [$representativeFamilyResourceController, 'assignAuthorizedPickup'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/resources/authorized-pickups/end',
+    [$representativeFamilyResourceController, 'endAuthorizedPickup'],
     AuthenticationMiddleware::class,
 );
 $router->get('/persons', [$personController, 'index'], $personMiddleware);
