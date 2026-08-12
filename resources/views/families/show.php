@@ -58,4 +58,5 @@ $timestamp = static fn (DateTimeImmutable $value): string => $value->format(Date
 <?php endif; ?>
 
 <p><a href="/families/students/create?family_id=<?= $escape($family->id) ?>">Add Student</a></p>
+<p><a href="/families/resources?family_id=<?= $escape($family->id) ?>">Manage Family resources</a></p>
 <p><a href="/families">Back to Families</a></p>
