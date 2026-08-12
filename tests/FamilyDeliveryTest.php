@@ -68,7 +68,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         assertSameValue(200, http_response_code());
     });
 
-    $runner->add('Family navigation exposes only the six approved routes in middleware order', function (): void {
+    $runner->add('Family navigation preserves six baseline routes and protected Resource routes', function (): void {
         $routes = (string) file_get_contents(dirname(__DIR__) . '/routes/web.php');
         foreach ([
             "get('/families'",
@@ -80,7 +80,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         ] as $route) {
             assertSameValue(true, str_contains($routes, $route));
         }
-        assertSameValue(6, substr_count($routes, '], $familyMiddleware);'));
+        assertSameValue(27, substr_count($routes, '], $familyMiddleware);'));
         assertSameValue(false, str_contains($routes, '/families/delete'));
         assertSameValue(false, method_exists(FamilyController::class, 'delete'));
 
@@ -415,7 +415,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         assertSameValue(false, str_contains($views, 'RepresentativeStudent'));
         assertSameValue(false, str_contains($views, 'name="username"'));
         assertSameValue(false, str_contains($views, 'name="password"'));
-        assertSameValue(2, substr_count($views, 'name="_csrf_token"'));
+        assertSameValue(19, substr_count($views, 'name="_csrf_token"'));
     });
 }
 

@@ -45,16 +45,43 @@ use App\IdentityAccess\Infrastructure\Session\PhpSessionManager;
 use App\IdentityAccess\Infrastructure\Session\SessionCsrfTokenManager;
 use App\IdentityAccess\Infrastructure\Time\SystemClock;
 use App\Family\Application\AddStudentToFamily;
+use App\Family\Application\ActivateFamilyAddress;
+use App\Family\Application\ActivateFamilyAuthorizedPickup;
+use App\Family\Application\ActivateFamilyEmergencyContact;
+use App\Family\Application\AssignAuthorizedPickup;
+use App\Family\Application\AssignEmergencyContact;
+use App\Family\Application\AssignRepresentativeAddress;
+use App\Family\Application\AssignStudentAddress;
 use App\Family\Application\CreateFamily;
+use App\Family\Application\CreateFamilyAddress;
+use App\Family\Application\CreateFamilyAuthorizedPickup;
+use App\Family\Application\CreateFamilyEmergencyContact;
+use App\Family\Application\DeactivateFamilyAddress;
+use App\Family\Application\DeactivateFamilyAuthorizedPickup;
+use App\Family\Application\DeactivateFamilyEmergencyContact;
+use App\Family\Application\DocumentTypeLookup;
+use App\Family\Application\EndAuthorizedPickupAssignment;
+use App\Family\Application\EndEmergencyContactAssignment;
+use App\Family\Application\EndRepresentativeAddressAssignment;
+use App\Family\Application\EndStudentAddressAssignment;
 use App\Family\Application\GetFamily;
+use App\Family\Application\GetFamilyMembership;
+use App\Family\Application\GetFamilyResources;
 use App\Family\Application\Orchestration\CreateRepresentativeFamily;
 use App\Family\Application\Orchestration\CreateStudentInFamily;
 use App\Family\Application\RelationshipTypeLookup;
+use App\Family\Application\UpdateFamilyAddress;
+use App\Family\Application\UpdateFamilyAuthorizedPickup;
+use App\Family\Application\UpdateFamilyEmergencyContact;
 use App\Family\Domain\FamilyRepository;
 use App\Family\Http\FamilyAdministrationMiddleware;
 use App\Family\Http\FamilyController;
 use App\Family\Http\FamilyFormOptionsProvider;
+use App\Family\Http\FamilyResourceController;
+use App\Family\Http\FamilyResourceFormOptionsProvider;
+use App\Family\Infrastructure\Persistence\PdoDocumentTypeLookup;
 use App\Family\Infrastructure\Persistence\PdoFamilyFormOptionsProvider;
+use App\Family\Infrastructure\Persistence\PdoFamilyResourceFormOptionsProvider;
 use App\Family\Infrastructure\Persistence\PdoFamilyRepository;
 use App\Family\Infrastructure\Persistence\PdoRelationshipTypeLookup;
 use App\Person\Application\CreatePerson;
@@ -216,16 +243,53 @@ $container->singleton(RepresentativeRepository::class, PdoRepresentativeReposito
 $container->singleton(StudentRepository::class, PdoStudentRepository::class);
 $container->singleton(FamilyRepository::class, PdoFamilyRepository::class);
 $container->singleton(RelationshipTypeLookup::class, PdoRelationshipTypeLookup::class);
+$container->singleton(DocumentTypeLookup::class, PdoDocumentTypeLookup::class);
 $container->singleton(FamilyFormOptionsProvider::class, PdoFamilyFormOptionsProvider::class);
+$container->singleton(
+    FamilyResourceFormOptionsProvider::class,
+    PdoFamilyResourceFormOptionsProvider::class,
+);
 $container->singleton(CreateRepresentative::class, CreateRepresentative::class);
 $container->singleton(GetRepresentative::class, GetRepresentative::class);
 $container->singleton(CreateStudent::class, CreateStudent::class);
 $container->singleton(CreateFamily::class, CreateFamily::class);
 $container->singleton(AddStudentToFamily::class, AddStudentToFamily::class);
 $container->singleton(GetFamily::class, GetFamily::class);
+$container->singleton(GetFamilyMembership::class, GetFamilyMembership::class);
+$container->singleton(GetFamilyResources::class, GetFamilyResources::class);
+$container->singleton(CreateFamilyAddress::class, CreateFamilyAddress::class);
+$container->singleton(UpdateFamilyAddress::class, UpdateFamilyAddress::class);
+$container->singleton(ActivateFamilyAddress::class, ActivateFamilyAddress::class);
+$container->singleton(DeactivateFamilyAddress::class, DeactivateFamilyAddress::class);
+$container->singleton(AssignRepresentativeAddress::class, AssignRepresentativeAddress::class);
+$container->singleton(
+    EndRepresentativeAddressAssignment::class,
+    EndRepresentativeAddressAssignment::class,
+);
+$container->singleton(AssignStudentAddress::class, AssignStudentAddress::class);
+$container->singleton(EndStudentAddressAssignment::class, EndStudentAddressAssignment::class);
+$container->singleton(CreateFamilyEmergencyContact::class, CreateFamilyEmergencyContact::class);
+$container->singleton(UpdateFamilyEmergencyContact::class, UpdateFamilyEmergencyContact::class);
+$container->singleton(ActivateFamilyEmergencyContact::class, ActivateFamilyEmergencyContact::class);
+$container->singleton(
+    DeactivateFamilyEmergencyContact::class,
+    DeactivateFamilyEmergencyContact::class,
+);
+$container->singleton(AssignEmergencyContact::class, AssignEmergencyContact::class);
+$container->singleton(EndEmergencyContactAssignment::class, EndEmergencyContactAssignment::class);
+$container->singleton(CreateFamilyAuthorizedPickup::class, CreateFamilyAuthorizedPickup::class);
+$container->singleton(UpdateFamilyAuthorizedPickup::class, UpdateFamilyAuthorizedPickup::class);
+$container->singleton(ActivateFamilyAuthorizedPickup::class, ActivateFamilyAuthorizedPickup::class);
+$container->singleton(
+    DeactivateFamilyAuthorizedPickup::class,
+    DeactivateFamilyAuthorizedPickup::class,
+);
+$container->singleton(AssignAuthorizedPickup::class, AssignAuthorizedPickup::class);
+$container->singleton(EndAuthorizedPickupAssignment::class, EndAuthorizedPickupAssignment::class);
 $container->singleton(CreateRepresentativeFamily::class, CreateRepresentativeFamily::class);
 $container->singleton(CreateStudentInFamily::class, CreateStudentInFamily::class);
 $container->singleton(FamilyController::class, FamilyController::class);
+$container->singleton(FamilyResourceController::class, FamilyResourceController::class);
 $container->singleton(FamilyAdministrationMiddleware::class, FamilyAdministrationMiddleware::class);
 $container->singleton(RepresentativeUserController::class, RepresentativeUserController::class);
 

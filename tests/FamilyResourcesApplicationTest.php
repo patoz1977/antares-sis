@@ -348,7 +348,7 @@ function registerFamilyResourcesApplicationTests(TestRunner $runner): void
         );
     });
 
-    $runner->add('Family Resources Application remains explicit isolated and safely unwired', function (): void {
+    $runner->add('Family Resources Application remains explicit isolated and delivery-wired', function (): void {
         $directory = dirname(__DIR__) . '/app/Family/Application';
         $files = array_merge(
             glob($directory . '/*FamilyAddress.php') ?: [],
@@ -386,8 +386,8 @@ function registerFamilyResourcesApplicationTests(TestRunner $runner): void
         assertSameValue(1, count((new ReflectionClass(DocumentTypeLookup::class))->getMethods()));
         assertSameValue(1, count((new ReflectionClass(\App\Family\Application\RelationshipTypeLookup::class))->getMethods()));
         $bootstrap = (string) file_get_contents(dirname(__DIR__) . '/bootstrap/app.php');
-        assertSameValue(false, str_contains($bootstrap, 'DocumentTypeLookup'));
-        assertSameValue(false, str_contains($bootstrap, 'GetFamilyResources'));
+        assertSameValue(true, str_contains($bootstrap, 'DocumentTypeLookup'));
+        assertSameValue(true, str_contains($bootstrap, 'GetFamilyResources'));
     });
 }
 
