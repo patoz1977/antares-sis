@@ -33,7 +33,10 @@ use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\Family\Application\AddStudentToFamily;
 use App\Family\Application\CreateFamily;
+use App\Family\Application\CreateFamilyAddress;
+use App\Family\Application\Dto\CreateFamilyAddressInput;
 use App\Family\Application\GetFamily;
+use App\Family\Application\GetFamilyResources;
 use App\Family\Application\Orchestration\CreateRepresentativeFamily;
 use App\Family\Application\Orchestration\CreateStudentInFamily;
 use App\Family\Application\Orchestration\Dto\CreateRepresentativeFamilyInput;
@@ -57,7 +60,9 @@ use App\Family\Domain\ValueObject\RelationshipTypeId;
 use App\Family\Domain\ValueObject\RepresentativeId as FamilyRepresentativeReference;
 use App\Family\Domain\ValueObject\StudentId as FamilyStudentReference;
 use App\Family\Infrastructure\Persistence\PdoFamilyRepository;
+use App\Family\Infrastructure\Persistence\PdoDocumentTypeLookup;
 use App\Family\Infrastructure\Persistence\PdoFamilyFormOptionsProvider;
+use App\Family\Infrastructure\Persistence\PdoFamilyResourceFormOptionsProvider;
 use App\Family\Infrastructure\Persistence\PdoRelationshipTypeLookup;
 use App\Person\Domain\Person;
 use App\Person\Domain\PersonStatus;
@@ -578,6 +583,10 @@ try {
     $identity->exec(
         "INSERT INTO document_types (id, code, name, is_active) "
         . "VALUES (1, 'TEST', 'Disposable test value', TRUE)"
+    );
+    $identity->exec(
+        "INSERT INTO document_types (id, code, name, is_active) "
+        . "VALUES (2, 'INACTIVE_TEST', 'Inactive disposable test value', FALSE)"
     );
     $identity->exec(
         "INSERT INTO sexes (id, code, name, is_active) "
@@ -1597,6 +1606,50 @@ try {
         ) === ['DISPOSABLE_TEST_RELATIONSHIP']
         && $familyFormOptions->statuses === [FamilyStatus::Active, FamilyStatus::Inactive],
         'Productive Family form options did not expose only active relationships and exact statuses.'
+    );
+    $documentTypes = new PdoDocumentTypeLookup($managerA);
+    assertIntegration(
+        $documentTypes->exists(1)
+        && !$documentTypes->exists(2)
+        && !$documentTypes->exists(0)
+        && !$documentTypes->exists(999999999),
+        'Productive DocumentTypeLookup did not enforce positive active catalog identity.'
+    );
+    $familyResourceOptions = (new PdoFamilyResourceFormOptionsProvider($managerA))->get();
+    assertIntegration(
+        array_map(
+            static fn ($option): string => $option->code,
+            $familyResourceOptions->relationshipTypes,
+        ) === ['DISPOSABLE_TEST_RELATIONSHIP']
+        && array_map(
+            static fn ($option): string => $option->code,
+            $familyResourceOptions->documentTypes,
+        ) === ['TEST'],
+        'Productive Family Resource form options did not expose only active ordered catalogs.'
+    );
+    $deliveryAddress = (new CreateFamilyAddress($familyRepository))->handle(
+        new CreateFamilyAddressInput(
+            $generatedFamilyId->value(),
+            'Delivery Address',
+            'Delivery street',
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+        )
+    );
+    $deliveryResources = (new GetFamilyResources($familyRepository))->handle($generatedFamilyId->value());
+    assertIntegration(
+        $deliveryAddress->id > 0
+        && count(array_filter(
+            $deliveryResources->addresses,
+            static fn ($address): bool => $address->id === $deliveryAddress->id
+                && $address->label === 'Delivery Address'
+                && $address->status === 'ACTIVE',
+        )) === 1,
+        'Family Resource Application did not create and reconstruct the delivery Address physically.'
     );
     $transactions = new PdoTransactionRunner($managerA);
     $createPerson = new CreatePerson($personRepository);
@@ -2818,7 +2871,7 @@ try {
     echo "PASS MySQL Family Representative and Student active lookups and historical membership\n";
     echo "PASS MySQL Family physical uniqueness UTC status mapping and transactional rollback\n";
     echo "PASS MySQL Family Resources complete roundtrip AUTO_INCREMENT UTC constraints and rollback\n";
-    echo "PASS MySQL Family delivery relationship lookup active options and exact statuses\n";
+    echo "PASS MySQL Family delivery active catalogs and Application persistence\n";
     echo "PASS MySQL composite Representative Person role Family atomic commit and rollback\n";
     echo "PASS MySQL Representative personal email invariant and work-email non-substitution\n";
     echo "PASS MySQL composite Student Person role membership atomic commit and rollback\n";
