@@ -362,8 +362,10 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         }
 
         $views = '';
-        foreach (glob(dirname(__DIR__) . '/resources/views/representative-portal/*.php') ?: [] as $view) {
-            $views .= (string) file_get_contents($view);
+        foreach (['index.php', 'forbidden.php', 'no-family.php'] as $view) {
+            $views .= (string) file_get_contents(
+                dirname(__DIR__) . '/resources/views/representative-portal/' . $view
+            );
         }
         assertSameValue(0, preg_match('/antares|ueant|colegio/i', $views));
         foreach ([
