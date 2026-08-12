@@ -79,6 +79,7 @@ use App\Family\Http\FamilyController;
 use App\Family\Http\FamilyFormOptionsProvider;
 use App\Family\Http\FamilyResourceController;
 use App\Family\Http\FamilyResourceFormOptionsProvider;
+use App\Family\Http\RepresentativeFamilyResourceController;
 use App\Family\Infrastructure\Persistence\PdoDocumentTypeLookup;
 use App\Family\Infrastructure\Persistence\PdoFamilyFormOptionsProvider;
 use App\Family\Infrastructure\Persistence\PdoFamilyResourceFormOptionsProvider;
@@ -98,6 +99,7 @@ use App\Representative\Application\GetRepresentative;
 use App\Representative\Domain\RepresentativeRepository;
 use App\Representative\Infrastructure\Persistence\PdoRepresentativeRepository;
 use App\Student\Application\CreateStudent;
+use App\Student\Application\GetStudent;
 use App\Student\Domain\StudentRepository;
 use App\Student\Infrastructure\Persistence\PdoStudentRepository;
 
@@ -252,6 +254,7 @@ $container->singleton(
 $container->singleton(CreateRepresentative::class, CreateRepresentative::class);
 $container->singleton(GetRepresentative::class, GetRepresentative::class);
 $container->singleton(CreateStudent::class, CreateStudent::class);
+$container->singleton(GetStudent::class, GetStudent::class);
 $container->singleton(CreateFamily::class, CreateFamily::class);
 $container->singleton(AddStudentToFamily::class, AddStudentToFamily::class);
 $container->singleton(GetFamily::class, GetFamily::class);
@@ -290,6 +293,10 @@ $container->singleton(CreateRepresentativeFamily::class, CreateRepresentativeFam
 $container->singleton(CreateStudentInFamily::class, CreateStudentInFamily::class);
 $container->singleton(FamilyController::class, FamilyController::class);
 $container->singleton(FamilyResourceController::class, FamilyResourceController::class);
+$container->singleton(
+    RepresentativeFamilyResourceController::class,
+    RepresentativeFamilyResourceController::class,
+);
 $container->singleton(FamilyAdministrationMiddleware::class, FamilyAdministrationMiddleware::class);
 $container->singleton(RepresentativeUserController::class, RepresentativeUserController::class);
 
