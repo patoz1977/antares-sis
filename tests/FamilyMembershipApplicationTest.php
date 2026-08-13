@@ -976,6 +976,10 @@ function familyApplicationSource(): string
                 $file->getPathname(),
                 DIRECTORY_SEPARATOR . 'Orchestration' . DIRECTORY_SEPARATOR,
             )
+            && !str_contains(
+                $file->getPathname(),
+                DIRECTORY_SEPARATOR . 'RepresentativeResources' . DIRECTORY_SEPARATOR,
+            )
         ) {
             $files[] = $file->getPathname();
         }

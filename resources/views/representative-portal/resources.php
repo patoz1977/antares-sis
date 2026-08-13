@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Family\Http\RepresentativeFamilyStudentOption;
+use App\Family\Application\RepresentativeResources\Dto\RepresentativeFamilyStudentOption;
 
 $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 $value = static fn (string $key, mixed $fallback = ''): mixed =>

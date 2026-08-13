@@ -70,6 +70,11 @@ use App\Family\Application\GetFamilyResources;
 use App\Family\Application\Orchestration\CreateRepresentativeFamily;
 use App\Family\Application\Orchestration\CreateStudentInFamily;
 use App\Family\Application\RelationshipTypeLookup;
+use App\Family\Application\RepresentativeResources\GetRepresentativeFamilyResources;
+use App\Family\Application\RepresentativeResources\RepresentativeFamilyAddressService;
+use App\Family\Application\RepresentativeResources\RepresentativeFamilyAuthorizedPickupService;
+use App\Family\Application\RepresentativeResources\RepresentativeFamilyEmergencyContactService;
+use App\Family\Application\RepresentativeResources\RepresentativeFamilyResourceAuthorization;
 use App\Family\Application\UpdateFamilyAddress;
 use App\Family\Application\UpdateFamilyAuthorizedPickup;
 use App\Family\Application\UpdateFamilyEmergencyContact;
@@ -289,6 +294,20 @@ $container->singleton(
 );
 $container->singleton(AssignAuthorizedPickup::class, AssignAuthorizedPickup::class);
 $container->singleton(EndAuthorizedPickupAssignment::class, EndAuthorizedPickupAssignment::class);
+$container->singleton(
+    RepresentativeFamilyResourceAuthorization::class,
+    RepresentativeFamilyResourceAuthorization::class,
+);
+$container->singleton(GetRepresentativeFamilyResources::class, GetRepresentativeFamilyResources::class);
+$container->singleton(RepresentativeFamilyAddressService::class, RepresentativeFamilyAddressService::class);
+$container->singleton(
+    RepresentativeFamilyEmergencyContactService::class,
+    RepresentativeFamilyEmergencyContactService::class,
+);
+$container->singleton(
+    RepresentativeFamilyAuthorizedPickupService::class,
+    RepresentativeFamilyAuthorizedPickupService::class,
+);
 $container->singleton(CreateRepresentativeFamily::class, CreateRepresentativeFamily::class);
 $container->singleton(CreateStudentInFamily::class, CreateStudentInFamily::class);
 $container->singleton(FamilyController::class, FamilyController::class);

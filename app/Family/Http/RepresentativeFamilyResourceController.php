@@ -5,64 +5,26 @@ declare(strict_types=1);
 namespace App\Family\Http;
 
 use App\Controllers\Controller;
-use App\Family\Application\ActivateFamilyAddress;
-use App\Family\Application\ActivateFamilyAuthorizedPickup;
-use App\Family\Application\ActivateFamilyEmergencyContact;
-use App\Family\Application\AssignAuthorizedPickup;
-use App\Family\Application\AssignEmergencyContact;
-use App\Family\Application\AssignRepresentativeAddress;
-use App\Family\Application\AssignStudentAddress;
-use App\Family\Application\CreateFamilyAddress;
-use App\Family\Application\CreateFamilyAuthorizedPickup;
-use App\Family\Application\CreateFamilyEmergencyContact;
-use App\Family\Application\DeactivateFamilyAddress;
-use App\Family\Application\DeactivateFamilyAuthorizedPickup;
-use App\Family\Application\DeactivateFamilyEmergencyContact;
-use App\Family\Application\Dto\ActivateFamilyAddressInput;
-use App\Family\Application\Dto\ActivateFamilyAuthorizedPickupInput;
-use App\Family\Application\Dto\ActivateFamilyEmergencyContactInput;
-use App\Family\Application\Dto\AssignAuthorizedPickupInput;
-use App\Family\Application\Dto\AssignEmergencyContactInput;
-use App\Family\Application\Dto\AssignRepresentativeAddressInput;
-use App\Family\Application\Dto\AssignStudentAddressInput;
-use App\Family\Application\Dto\CreateFamilyAddressInput;
-use App\Family\Application\Dto\CreateFamilyAuthorizedPickupInput;
-use App\Family\Application\Dto\CreateFamilyEmergencyContactInput;
-use App\Family\Application\Dto\DeactivateFamilyAddressInput;
-use App\Family\Application\Dto\DeactivateFamilyAuthorizedPickupInput;
-use App\Family\Application\Dto\DeactivateFamilyEmergencyContactInput;
-use App\Family\Application\Dto\EndAuthorizedPickupAssignmentInput;
-use App\Family\Application\Dto\EndEmergencyContactAssignmentInput;
-use App\Family\Application\Dto\EndRepresentativeAddressAssignmentInput;
-use App\Family\Application\Dto\EndStudentAddressAssignmentInput;
-use App\Family\Application\Dto\FamilyOutput;
-use App\Family\Application\Dto\FamilyResourcesOutput;
-use App\Family\Application\Dto\UpdateFamilyAddressInput;
-use App\Family\Application\Dto\UpdateFamilyAuthorizedPickupInput;
-use App\Family\Application\Dto\UpdateFamilyEmergencyContactInput;
-use App\Family\Application\EndAuthorizedPickupAssignment;
-use App\Family\Application\EndEmergencyContactAssignment;
-use App\Family\Application\EndRepresentativeAddressAssignment;
-use App\Family\Application\EndStudentAddressAssignment;
 use App\Family\Application\Exception\DocumentTypeNotFound;
 use App\Family\Application\Exception\FamilyNotFound;
 use App\Family\Application\Exception\InvalidPersistedFamilyResult;
 use App\Family\Application\Exception\RelationshipTypeNotFound;
-use App\Family\Application\GetFamilyMembership;
-use App\Family\Application\GetFamilyResources;
-use App\Family\Application\UpdateFamilyAddress;
-use App\Family\Application\UpdateFamilyAuthorizedPickup;
-use App\Family\Application\UpdateFamilyEmergencyContact;
+use App\Family\Application\RepresentativeResources\Dto\RepresentativeFamilyResourcesOutput;
+use App\Family\Application\RepresentativeResources\Exception\RepresentativeFamilyAddressModificationNotAllowed;
+use App\Family\Application\RepresentativeResources\Exception\RepresentativeFamilyContextChanged;
+use App\Family\Application\RepresentativeResources\Exception\RepresentativeFamilyContextUnavailable;
+use App\Family\Application\RepresentativeResources\Exception\RepresentativeFamilyResourceUnavailable;
+use App\Family\Application\RepresentativeResources\Exception\RepresentativeFamilySelectionRequired;
+use App\Family\Application\RepresentativeResources\Exception\RepresentativeFamilyStudentUnavailable;
+use App\Family\Application\RepresentativeResources\GetRepresentativeFamilyResources;
+use App\Family\Application\RepresentativeResources\RepresentativeFamilyAddressService;
+use App\Family\Application\RepresentativeResources\RepresentativeFamilyAuthorizedPickupService;
+use App\Family\Application\RepresentativeResources\RepresentativeFamilyEmergencyContactService;
 use App\Family\Domain\Exception\InvalidFamilyState;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
-use App\IdentityAccess\Application\FamilyContext;
-use App\IdentityAccess\Application\RepresentativeFamilyAccess;
-use App\IdentityAccess\Application\ResolveFamilyContext;
 use App\Person\Application\Exception\PersonNotFound;
-use App\Person\Application\GetPerson;
 use App\Student\Application\Exception\StudentNotFound;
-use App\Student\Application\GetStudent;
 use Core\Http\Request;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -73,31 +35,10 @@ final class RepresentativeFamilyResourceController extends Controller
     private const FLASH_ERROR_KEY = '_flash_representative_family_resources_error';
 
     public function __construct(
-        private readonly ResolveFamilyContext $resolveFamilyContext,
-        private readonly GetFamilyResources $getFamilyResources,
-        private readonly GetFamilyMembership $getFamilyMembership,
-        private readonly GetStudent $getStudent,
-        private readonly GetPerson $getPerson,
-        private readonly CreateFamilyAddress $createAddress,
-        private readonly UpdateFamilyAddress $updateAddress,
-        private readonly ActivateFamilyAddress $activateAddress,
-        private readonly DeactivateFamilyAddress $deactivateAddress,
-        private readonly AssignRepresentativeAddress $assignRepresentativeAddress,
-        private readonly EndRepresentativeAddressAssignment $endRepresentativeAddress,
-        private readonly AssignStudentAddress $assignStudentAddress,
-        private readonly EndStudentAddressAssignment $endStudentAddress,
-        private readonly CreateFamilyEmergencyContact $createEmergencyContact,
-        private readonly UpdateFamilyEmergencyContact $updateEmergencyContact,
-        private readonly ActivateFamilyEmergencyContact $activateEmergencyContact,
-        private readonly DeactivateFamilyEmergencyContact $deactivateEmergencyContact,
-        private readonly AssignEmergencyContact $assignEmergencyContact,
-        private readonly EndEmergencyContactAssignment $endEmergencyContact,
-        private readonly CreateFamilyAuthorizedPickup $createAuthorizedPickup,
-        private readonly UpdateFamilyAuthorizedPickup $updateAuthorizedPickup,
-        private readonly ActivateFamilyAuthorizedPickup $activateAuthorizedPickup,
-        private readonly DeactivateFamilyAuthorizedPickup $deactivateAuthorizedPickup,
-        private readonly AssignAuthorizedPickup $assignAuthorizedPickup,
-        private readonly EndAuthorizedPickupAssignment $endAuthorizedPickup,
+        private readonly GetRepresentativeFamilyResources $getResources,
+        private readonly RepresentativeFamilyAddressService $addresses,
+        private readonly RepresentativeFamilyEmergencyContactService $emergencyContacts,
+        private readonly RepresentativeFamilyAuthorizedPickupService $authorizedPickups,
         private readonly CsrfTokenManager $csrf,
         private readonly SessionManager $session,
         private readonly FamilyResourceFormOptionsProvider $optionsProvider,
@@ -106,25 +47,19 @@ final class RepresentativeFamilyResourceController extends Controller
 
     public function index(): string
     {
-        [$access, $response] = $this->access(false);
-        if (!$access instanceof RepresentativeFamilyAccess) {
-            return $response;
-        }
-
         try {
-            [$resources, $family, $options, $students] = $this->loadContext($access->context);
-        } catch (FamilyNotFound|StudentNotFound|PersonNotFound) {
+            $resources = $this->getResources->handle();
+        } catch (RepresentativeFamilySelectionRequired) {
+            return $this->redirect('/representative', 302);
+        } catch (RepresentativeFamilyContextUnavailable|FamilyNotFound|StudentNotFound|PersonNotFound) {
             return $this->forbidden();
         } catch (InvalidPersistedFamilyResult) {
             return $this->contextError('The operation could not be confirmed.', 422);
         }
 
         return $this->resourceView(
-            $access,
             $resources,
-            $family,
-            $options,
-            $students,
+            $this->optionsProvider->get(),
             [],
             [],
             $this->flash(self::FLASH_SUCCESS_KEY),
@@ -135,11 +70,8 @@ final class RepresentativeFamilyResourceController extends Controller
     public function createAddress(): string
     {
         return $this->execute(
-            fn (array $values, FamilyResourcesOutput $resources): array =>
-                $this->addressInput($values, $resources, null, false),
-            fn (FamilyContext $context, array $data): mixed => $this->createAddress->handle(
-                new CreateFamilyAddressInput($context->familyId, ...$data)
-            ),
+            fn (array $values): array => $this->addressInput($values, false),
+            fn (int $familyId, array $data): mixed => $this->addresses->create($familyId, ...$data),
             'Address created successfully.',
         );
     }
@@ -147,11 +79,8 @@ final class RepresentativeFamilyResourceController extends Controller
     public function updateAddress(): string
     {
         return $this->execute(
-            fn (array $values, FamilyResourcesOutput $resources, FamilyOutput $family, FamilyContext $context): array =>
-                $this->addressInput($values, $resources, $context, true),
-            fn (FamilyContext $context, array $data): mixed => $this->updateAddress->handle(
-                new UpdateFamilyAddressInput($context->familyId, ...$data)
-            ),
+            fn (array $values): array => $this->addressInput($values, true),
+            fn (int $familyId, array $data): mixed => $this->addresses->update($familyId, ...$data),
             'Address updated successfully.',
         );
     }
@@ -160,10 +89,7 @@ final class RepresentativeFamilyResourceController extends Controller
     {
         return $this->resourceStatus(
             'family_address_id',
-            'addresses',
-            fn (FamilyContext $context, int $id): mixed => $this->activateAddress->handle(
-                new ActivateFamilyAddressInput($context->familyId, $id)
-            ),
+            fn (int $familyId, int $id): mixed => $this->addresses->activate($familyId, $id),
             'Address activated successfully.',
         );
     }
@@ -172,41 +98,27 @@ final class RepresentativeFamilyResourceController extends Controller
     {
         return $this->resourceStatus(
             'family_address_id',
-            'addresses',
-            fn (FamilyContext $context, int $id): mixed => $this->deactivateAddress->handle(
-                new DeactivateFamilyAddressInput($context->familyId, $id)
-            ),
+            fn (int $familyId, int $id): mixed => $this->addresses->deactivate($familyId, $id),
             'Address deactivated successfully.',
-            fn (int $id, FamilyResourcesOutput $resources, FamilyContext $context): ?string =>
-                $this->isAddressUsedByAnotherRepresentative($id, $resources, $context)
-                    ? 'This address cannot be changed from your account.'
-                    : null,
         );
     }
 
     public function assignRepresentativeAddress(): string
     {
         return $this->execute(
-            function (
-                array $values,
-                FamilyResourcesOutput $resources,
-                FamilyOutput $family,
-                FamilyContext $context,
-            ): array {
+            function (array $values): array {
                 $errors = [];
-                $addressId = $this->requiredActiveResourceId(
+                $addressId = $this->requiredPositiveInteger(
                     $values,
                     'family_address_id',
-                    $resources->addresses,
+                    'Selected resource is not available for this Family.',
                     $errors,
                 );
                 $startedAt = $this->requiredTimestamp($values, 'started_at', $errors);
 
-                return [$errors, [$context->representativeId, $addressId, $startedAt]];
+                return [$errors, [$addressId, $startedAt]];
             },
-            fn (FamilyContext $context, array $data): mixed => $this->assignRepresentativeAddress->handle(
-                new AssignRepresentativeAddressInput($context->familyId, ...$data)
-            ),
+            fn (int $familyId, array $data): mixed => $this->addresses->assignSelf($familyId, ...$data),
             'Your Address assignment was created successfully.',
         );
     }
@@ -214,15 +126,8 @@ final class RepresentativeFamilyResourceController extends Controller
     public function endRepresentativeAddress(): string
     {
         return $this->endAssignment(
-            'representativeAddressAssignments',
-            static fn (object $assignment, FamilyContext $context, array $students): bool =>
-                $assignment->representativeId === $context->representativeId,
-            fn (FamilyContext $context, object $assignment, DateTimeImmutable $endedAt): mixed =>
-                $this->endRepresentativeAddress->handle(new EndRepresentativeAddressAssignmentInput(
-                    $context->familyId,
-                    $context->representativeId,
-                    $endedAt,
-                )),
+            fn (int $familyId, int $assignmentId, DateTimeImmutable $endedAt): mixed =>
+                $this->addresses->endSelf($familyId, $assignmentId, $endedAt),
             'Your Address assignment was ended successfully.',
         );
     }
@@ -230,28 +135,25 @@ final class RepresentativeFamilyResourceController extends Controller
     public function assignStudentAddress(): string
     {
         return $this->execute(
-            function (
-                array $values,
-                FamilyResourcesOutput $resources,
-                FamilyOutput $family,
-                FamilyContext $context,
-                array $students,
-            ): array {
+            function (array $values): array {
                 $errors = [];
-                $studentId = $this->requiredStudentId($values, $students, $errors);
-                $addressId = $this->requiredActiveResourceId(
+                $studentId = $this->requiredPositiveInteger(
+                    $values,
+                    'student_id',
+                    'Selected resource is not available for this Family.',
+                    $errors,
+                );
+                $addressId = $this->requiredPositiveInteger(
                     $values,
                     'family_address_id',
-                    $resources->addresses,
+                    'Selected resource is not available for this Family.',
                     $errors,
                 );
                 $startedAt = $this->requiredTimestamp($values, 'started_at', $errors);
 
                 return [$errors, [$studentId, $addressId, $startedAt]];
             },
-            fn (FamilyContext $context, array $data): mixed => $this->assignStudentAddress->handle(
-                new AssignStudentAddressInput($context->familyId, ...$data)
-            ),
+            fn (int $familyId, array $data): mixed => $this->addresses->assignStudent($familyId, ...$data),
             'Student Address assignment was created successfully.',
         );
     }
@@ -259,15 +161,8 @@ final class RepresentativeFamilyResourceController extends Controller
     public function endStudentAddress(): string
     {
         return $this->endAssignment(
-            'studentAddressAssignments',
-            fn (object $assignment, FamilyContext $context, array $students): bool =>
-                $this->hasStudent($students, $assignment->studentId),
-            fn (FamilyContext $context, object $assignment, DateTimeImmutable $endedAt): mixed =>
-                $this->endStudentAddress->handle(new EndStudentAddressAssignmentInput(
-                    $context->familyId,
-                    $assignment->studentId,
-                    $endedAt,
-                )),
+            fn (int $familyId, int $assignmentId, DateTimeImmutable $endedAt): mixed =>
+                $this->addresses->endStudent($familyId, $assignmentId, $endedAt),
             'Student Address assignment was ended successfully.',
         );
     }
@@ -275,17 +170,9 @@ final class RepresentativeFamilyResourceController extends Controller
     public function createEmergencyContact(): string
     {
         return $this->execute(
-            fn (
-                array $values,
-                FamilyResourcesOutput $resources,
-                FamilyOutput $family,
-                FamilyContext $context,
-                array $students,
-                FamilyResourceFormOptions $options,
-            ): array => $this->emergencyContactInput($values, $resources, $options, false),
-            fn (FamilyContext $context, array $data): mixed => $this->createEmergencyContact->handle(
-                new CreateFamilyEmergencyContactInput($context->familyId, ...$data)
-            ),
+            fn (array $values, FamilyResourceFormOptions $options): array =>
+                $this->emergencyContactInput($values, $options, false),
+            fn (int $familyId, array $data): mixed => $this->emergencyContacts->create($familyId, ...$data),
             'Emergency Contact created successfully.',
         );
     }
@@ -293,17 +180,9 @@ final class RepresentativeFamilyResourceController extends Controller
     public function updateEmergencyContact(): string
     {
         return $this->execute(
-            fn (
-                array $values,
-                FamilyResourcesOutput $resources,
-                FamilyOutput $family,
-                FamilyContext $context,
-                array $students,
-                FamilyResourceFormOptions $options,
-            ): array => $this->emergencyContactInput($values, $resources, $options, true),
-            fn (FamilyContext $context, array $data): mixed => $this->updateEmergencyContact->handle(
-                new UpdateFamilyEmergencyContactInput($context->familyId, ...$data)
-            ),
+            fn (array $values, FamilyResourceFormOptions $options): array =>
+                $this->emergencyContactInput($values, $options, true),
+            fn (int $familyId, array $data): mixed => $this->emergencyContacts->update($familyId, ...$data),
             'Emergency Contact updated successfully.',
         );
     }
@@ -312,10 +191,7 @@ final class RepresentativeFamilyResourceController extends Controller
     {
         return $this->resourceStatus(
             'family_emergency_contact_id',
-            'emergencyContacts',
-            fn (FamilyContext $context, int $id): mixed => $this->activateEmergencyContact->handle(
-                new ActivateFamilyEmergencyContactInput($context->familyId, $id)
-            ),
+            fn (int $familyId, int $id): mixed => $this->emergencyContacts->activate($familyId, $id),
             'Emergency Contact activated successfully.',
         );
     }
@@ -324,10 +200,7 @@ final class RepresentativeFamilyResourceController extends Controller
     {
         return $this->resourceStatus(
             'family_emergency_contact_id',
-            'emergencyContacts',
-            fn (FamilyContext $context, int $id): mixed => $this->deactivateEmergencyContact->handle(
-                new DeactivateFamilyEmergencyContactInput($context->familyId, $id)
-            ),
+            fn (int $familyId, int $id): mixed => $this->emergencyContacts->deactivate($familyId, $id),
             'Emergency Contact deactivated successfully.',
         );
     }
@@ -335,29 +208,26 @@ final class RepresentativeFamilyResourceController extends Controller
     public function assignEmergencyContact(): string
     {
         return $this->execute(
-            function (
-                array $values,
-                FamilyResourcesOutput $resources,
-                FamilyOutput $family,
-                FamilyContext $context,
-                array $students,
-            ): array {
+            function (array $values): array {
                 $errors = [];
-                $contactId = $this->requiredActiveResourceId(
+                $contactId = $this->requiredPositiveInteger(
                     $values,
                     'family_emergency_contact_id',
-                    $resources->emergencyContacts,
+                    'Selected resource is not available for this Family.',
                     $errors,
                 );
-                $studentId = $this->requiredStudentId($values, $students, $errors);
+                $studentId = $this->requiredPositiveInteger(
+                    $values,
+                    'student_id',
+                    'Selected resource is not available for this Family.',
+                    $errors,
+                );
                 $priority = $this->optionalPositiveInteger($values['priority'] ?? '', 'priority', $errors);
                 $startedAt = $this->requiredTimestamp($values, 'started_at', $errors);
 
                 return [$errors, [$contactId, $studentId, $priority, $startedAt]];
             },
-            fn (FamilyContext $context, array $data): mixed => $this->assignEmergencyContact->handle(
-                new AssignEmergencyContactInput($context->familyId, ...$data)
-            ),
+            fn (int $familyId, array $data): mixed => $this->emergencyContacts->assign($familyId, ...$data),
             'Emergency Contact assignment was created successfully.',
         );
     }
@@ -365,16 +235,8 @@ final class RepresentativeFamilyResourceController extends Controller
     public function endEmergencyContact(): string
     {
         return $this->endAssignment(
-            'emergencyContactAssignments',
-            fn (object $assignment, FamilyContext $context, array $students): bool =>
-                $this->hasStudent($students, $assignment->studentId),
-            fn (FamilyContext $context, object $assignment, DateTimeImmutable $endedAt): mixed =>
-                $this->endEmergencyContact->handle(new EndEmergencyContactAssignmentInput(
-                    $context->familyId,
-                    $assignment->familyEmergencyContactId,
-                    $assignment->studentId,
-                    $endedAt,
-                )),
+            fn (int $familyId, int $assignmentId, DateTimeImmutable $endedAt): mixed =>
+                $this->emergencyContacts->end($familyId, $assignmentId, $endedAt),
             'Emergency Contact assignment was ended successfully.',
         );
     }
@@ -382,17 +244,9 @@ final class RepresentativeFamilyResourceController extends Controller
     public function createAuthorizedPickup(): string
     {
         return $this->execute(
-            fn (
-                array $values,
-                FamilyResourcesOutput $resources,
-                FamilyOutput $family,
-                FamilyContext $context,
-                array $students,
-                FamilyResourceFormOptions $options,
-            ): array => $this->authorizedPickupInput($values, $resources, $options, false),
-            fn (FamilyContext $context, array $data): mixed => $this->createAuthorizedPickup->handle(
-                new CreateFamilyAuthorizedPickupInput($context->familyId, ...$data)
-            ),
+            fn (array $values, FamilyResourceFormOptions $options): array =>
+                $this->authorizedPickupInput($values, $options, false),
+            fn (int $familyId, array $data): mixed => $this->authorizedPickups->create($familyId, ...$data),
             'Authorized Pickup created successfully.',
         );
     }
@@ -400,17 +254,9 @@ final class RepresentativeFamilyResourceController extends Controller
     public function updateAuthorizedPickup(): string
     {
         return $this->execute(
-            fn (
-                array $values,
-                FamilyResourcesOutput $resources,
-                FamilyOutput $family,
-                FamilyContext $context,
-                array $students,
-                FamilyResourceFormOptions $options,
-            ): array => $this->authorizedPickupInput($values, $resources, $options, true),
-            fn (FamilyContext $context, array $data): mixed => $this->updateAuthorizedPickup->handle(
-                new UpdateFamilyAuthorizedPickupInput($context->familyId, ...$data)
-            ),
+            fn (array $values, FamilyResourceFormOptions $options): array =>
+                $this->authorizedPickupInput($values, $options, true),
+            fn (int $familyId, array $data): mixed => $this->authorizedPickups->update($familyId, ...$data),
             'Authorized Pickup updated successfully.',
         );
     }
@@ -419,10 +265,7 @@ final class RepresentativeFamilyResourceController extends Controller
     {
         return $this->resourceStatus(
             'family_authorized_pickup_id',
-            'authorizedPickups',
-            fn (FamilyContext $context, int $id): mixed => $this->activateAuthorizedPickup->handle(
-                new ActivateFamilyAuthorizedPickupInput($context->familyId, $id)
-            ),
+            fn (int $familyId, int $id): mixed => $this->authorizedPickups->activate($familyId, $id),
             'Authorized Pickup activated successfully.',
         );
     }
@@ -431,10 +274,7 @@ final class RepresentativeFamilyResourceController extends Controller
     {
         return $this->resourceStatus(
             'family_authorized_pickup_id',
-            'authorizedPickups',
-            fn (FamilyContext $context, int $id): mixed => $this->deactivateAuthorizedPickup->handle(
-                new DeactivateFamilyAuthorizedPickupInput($context->familyId, $id)
-            ),
+            fn (int $familyId, int $id): mixed => $this->authorizedPickups->deactivate($familyId, $id),
             'Authorized Pickup deactivated successfully.',
         );
     }
@@ -442,28 +282,25 @@ final class RepresentativeFamilyResourceController extends Controller
     public function assignAuthorizedPickup(): string
     {
         return $this->execute(
-            function (
-                array $values,
-                FamilyResourcesOutput $resources,
-                FamilyOutput $family,
-                FamilyContext $context,
-                array $students,
-            ): array {
+            function (array $values): array {
                 $errors = [];
-                $pickupId = $this->requiredActiveResourceId(
+                $pickupId = $this->requiredPositiveInteger(
                     $values,
                     'family_authorized_pickup_id',
-                    $resources->authorizedPickups,
+                    'Selected resource is not available for this Family.',
                     $errors,
                 );
-                $studentId = $this->requiredStudentId($values, $students, $errors);
+                $studentId = $this->requiredPositiveInteger(
+                    $values,
+                    'student_id',
+                    'Selected resource is not available for this Family.',
+                    $errors,
+                );
                 $startedAt = $this->requiredTimestamp($values, 'started_at', $errors);
 
                 return [$errors, [$pickupId, $studentId, $startedAt]];
             },
-            fn (FamilyContext $context, array $data): mixed => $this->assignAuthorizedPickup->handle(
-                new AssignAuthorizedPickupInput($context->familyId, ...$data)
-            ),
+            fn (int $familyId, array $data): mixed => $this->authorizedPickups->assign($familyId, ...$data),
             'Authorized Pickup assignment was created successfully.',
         );
     }
@@ -471,39 +308,21 @@ final class RepresentativeFamilyResourceController extends Controller
     public function endAuthorizedPickup(): string
     {
         return $this->endAssignment(
-            'authorizedPickupAssignments',
-            fn (object $assignment, FamilyContext $context, array $students): bool =>
-                $this->hasStudent($students, $assignment->studentId),
-            fn (FamilyContext $context, object $assignment, DateTimeImmutable $endedAt): mixed =>
-                $this->endAuthorizedPickup->handle(new EndAuthorizedPickupAssignmentInput(
-                    $context->familyId,
-                    $assignment->familyAuthorizedPickupId,
-                    $assignment->studentId,
-                    $endedAt,
-                )),
+            fn (int $familyId, int $assignmentId, DateTimeImmutable $endedAt): mixed =>
+                $this->authorizedPickups->end($familyId, $assignmentId, $endedAt),
             'Authorized Pickup assignment was ended successfully.',
         );
     }
 
     /**
-     * @param callable(array<string, string>, FamilyResourcesOutput, FamilyOutput, FamilyContext,
-     *     list<RepresentativeFamilyStudentOption>, FamilyResourceFormOptions): array{list<string>, array<int, mixed>} $validate
-     * @param callable(FamilyContext, array<int, mixed>): mixed $handle
+     * @param callable(array<string, string>, FamilyResourceFormOptions): array{list<string>, array<int, mixed>} $validate
+     * @param callable(int, array<int, mixed>): mixed $handle
      */
     private function execute(callable $validate, callable $handle, string $success): string
     {
-        [$access, $response] = $this->access(true);
-        if (!$access instanceof RepresentativeFamilyAccess) {
-            return $response;
-        }
-        $context = $access->context;
-
         $input = (new Request())->input();
         $scalarErrors = [];
         $values = $this->safeValues($input, $scalarErrors);
-        if ($this->positiveInteger($values['family_id'] ?? null) !== $context->familyId) {
-            return $this->forbidden();
-        }
 
         if (!$this->csrf->isValid($this->scalar($input, '_csrf_token'))) {
             $this->session->put(self::FLASH_ERROR_KEY, 'Your form expired. Please try again.');
@@ -511,46 +330,34 @@ final class RepresentativeFamilyResourceController extends Controller
             return $this->redirect('/representative/resources', 303);
         }
 
-        try {
-            [$resources, $family, $options, $students] = $this->loadContext($context);
-        } catch (FamilyNotFound|StudentNotFound|PersonNotFound) {
-            return $this->forbidden();
-        } catch (InvalidPersistedFamilyResult) {
-            return $this->contextError('The operation could not be confirmed.', 422);
+        $familyId = $this->positiveInteger($values['family_id'] ?? null);
+        if ($familyId === null) {
+            $scalarErrors[] = 'Selected resource is not available for this Family.';
+        }
+        $options = $this->optionsProvider->get();
+        [$errors, $data] = $validate($values, $options);
+        $errors = array_merge($scalarErrors, $errors);
+        if ($errors !== []) {
+            return $this->renderFailure($values, $errors);
         }
 
         try {
-            [$errors, $data] = $validate($values, $resources, $family, $context, $students, $options);
-            $errors = array_merge($scalarErrors, $errors);
-            if ($errors !== []) {
-                return $this->resourceView(
-                    $access,
-                    $resources,
-                    $family,
-                    $options,
-                    $students,
-                    $values,
-                    $errors,
-                    null,
-                    null,
-                    422,
-                );
-            }
-            $handle($context, $data);
-        } catch (FamilyNotFound|StudentNotFound|PersonNotFound) {
+            $handle($familyId, $data);
+        } catch (RepresentativeFamilySelectionRequired) {
+            return $this->redirect('/representative', 303);
+        } catch (RepresentativeFamilyContextUnavailable|RepresentativeFamilyContextChanged
+            |FamilyNotFound|StudentNotFound|PersonNotFound) {
             return $this->forbidden();
+        } catch (RepresentativeFamilyAddressModificationNotAllowed) {
+            return $this->renderFailure($values, ['This address cannot be changed from your account.']);
+        } catch (RepresentativeFamilyResourceUnavailable|RepresentativeFamilyStudentUnavailable|InvalidFamilyState) {
+            return $this->renderFailure($values, ['Selected resource is not available for this Family.']);
         } catch (RelationshipTypeNotFound) {
-            return $this->renderFailure($access, $values, ['Select an active relationship type.']);
+            return $this->renderFailure($values, ['Select an active relationship type.']);
         } catch (DocumentTypeNotFound) {
-            return $this->renderFailure($access, $values, ['Select an active document type.']);
+            return $this->renderFailure($values, ['Select an active document type.']);
         } catch (InvalidPersistedFamilyResult) {
-            return $this->renderFailure($access, $values, ['The operation could not be confirmed.']);
-        } catch (InvalidFamilyState) {
-            return $this->renderFailure(
-                $access,
-                $values,
-                ['Selected resource is not available for this Family.'],
-            );
+            return $this->renderFailure($values, ['The operation could not be confirmed.']);
         }
 
         $this->session->put(self::FLASH_SUCCESS_KEY, $success);
@@ -558,98 +365,59 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->redirect('/representative/resources', 303);
     }
 
-    /**
-     * @param callable(FamilyContext, int): mixed $handle
-     * @param null|callable(int, FamilyResourcesOutput, FamilyContext): ?string $authorize
-     */
-    private function resourceStatus(
-        string $field,
-        string $collection,
-        callable $handle,
-        string $success,
-        ?callable $authorize = null,
-    ): string {
+    /** @param callable(int, int): mixed $handle */
+    private function resourceStatus(string $field, callable $handle, string $success): string
+    {
         return $this->execute(
-            function (
-                array $values,
-                FamilyResourcesOutput $resources,
-                FamilyOutput $family,
-                FamilyContext $context,
-            ) use ($field, $collection, $authorize): array {
+            function (array $values) use ($field): array {
                 $errors = [];
-                $id = $this->requiredResourceId($values, $field, $resources->{$collection}, $errors);
-                if ($id !== null && $authorize !== null) {
-                    $authorizationError = $authorize($id, $resources, $context);
-                    if ($authorizationError !== null) {
-                        $errors[] = $authorizationError;
-                    }
-                }
+                $id = $this->requiredPositiveInteger(
+                    $values,
+                    $field,
+                    'Selected resource is not available for this Family.',
+                    $errors,
+                );
 
                 return [$errors, [$id]];
             },
-            fn (FamilyContext $context, array $data): mixed => $handle($context, $data[0]),
+            fn (int $familyId, array $data): mixed => $handle($familyId, $data[0]),
             $success,
         );
     }
 
-    /**
-     * @param callable(object, FamilyContext, list<RepresentativeFamilyStudentOption>): bool $authorize
-     * @param callable(FamilyContext, object, DateTimeImmutable): mixed $handle
-     */
-    private function endAssignment(
-        string $collection,
-        callable $authorize,
-        callable $handle,
-        string $success,
-    ): string {
+    /** @param callable(int, int, DateTimeImmutable): mixed $handle */
+    private function endAssignment(callable $handle, string $success): string
+    {
         return $this->execute(
-            function (
-                array $values,
-                FamilyResourcesOutput $resources,
-                FamilyOutput $family,
-                FamilyContext $context,
-                array $students,
-            ) use ($collection, $authorize): array {
+            function (array $values): array {
                 $errors = [];
-                $assignmentId = $this->positiveInteger($values['assignment_id'] ?? null);
-                $assignment = $assignmentId === null
-                    ? null
-                    : $this->findById($resources->{$collection}, $assignmentId, true);
-                if ($assignment === null || !$authorize($assignment, $context, $students)) {
-                    $errors[] = 'Selected resource is not available for this Family.';
-                }
+                $assignmentId = $this->requiredPositiveInteger(
+                    $values,
+                    'assignment_id',
+                    'Selected resource is not available for this Family.',
+                    $errors,
+                );
                 $endedAt = $this->requiredTimestamp($values, 'ended_at', $errors);
 
-                return [$errors, [$assignment, $endedAt]];
+                return [$errors, [$assignmentId, $endedAt]];
             },
-            fn (FamilyContext $context, array $data): mixed => $handle($context, $data[0], $data[1]),
+            fn (int $familyId, array $data): mixed => $handle($familyId, $data[0], $data[1]),
             $success,
         );
     }
 
     /** @return array{list<string>, array<int, mixed>} */
-    private function addressInput(
-        array $values,
-        FamilyResourcesOutput $resources,
-        ?FamilyContext $context,
-        bool $updating,
-    ): array {
+    private function addressInput(array $values, bool $updating): array
+    {
         $errors = [];
         $data = [];
         if ($updating) {
-            $addressId = $this->requiredResourceId(
+            $data[] = $this->requiredPositiveInteger(
                 $values,
                 'family_address_id',
-                $resources->addresses,
+                'Selected resource is not available for this Family.',
                 $errors,
             );
-            $data[] = $addressId;
-            if ($addressId !== null
-                && $context !== null
-                && $this->isAddressUsedByAnotherRepresentative($addressId, $resources, $context)
-            ) {
-                $errors[] = 'This address cannot be changed from your account.';
-            }
         }
         $label = $values['label'] ?? '';
         $mainStreet = $values['main_street'] ?? '';
@@ -686,17 +454,16 @@ final class RepresentativeFamilyResourceController extends Controller
     /** @return array{list<string>, array<int, mixed>} */
     private function emergencyContactInput(
         array $values,
-        FamilyResourcesOutput $resources,
         FamilyResourceFormOptions $options,
         bool $updating,
     ): array {
         $errors = [];
         $data = [];
         if ($updating) {
-            $data[] = $this->requiredResourceId(
+            $data[] = $this->requiredPositiveInteger(
                 $values,
                 'family_emergency_contact_id',
-                $resources->emergencyContacts,
+                'Selected resource is not available for this Family.',
                 $errors,
             );
         }
@@ -730,17 +497,16 @@ final class RepresentativeFamilyResourceController extends Controller
     /** @return array{list<string>, array<int, mixed>} */
     private function authorizedPickupInput(
         array $values,
-        FamilyResourcesOutput $resources,
         FamilyResourceFormOptions $options,
         bool $updating,
     ): array {
         $errors = [];
         $data = [];
         if ($updating) {
-            $data[] = $this->requiredResourceId(
+            $data[] = $this->requiredPositiveInteger(
                 $values,
                 'family_authorized_pickup_id',
-                $resources->authorizedPickups,
+                'Selected resource is not available for this Family.',
                 $errors,
             );
         }
@@ -780,52 +546,21 @@ final class RepresentativeFamilyResourceController extends Controller
         ])];
     }
 
-    /**
-     * @return array{FamilyResourcesOutput, FamilyOutput, FamilyResourceFormOptions,
-     *     list<RepresentativeFamilyStudentOption>}
-     */
-    private function loadContext(FamilyContext $context): array
-    {
-        $resources = $this->getFamilyResources->handle($context->familyId);
-        $family = $this->getFamilyMembership->handle($context->familyId);
-        $students = [];
-        foreach ($family->students as $membership) {
-            if (!$membership->isActive) {
-                continue;
-            }
-            $student = $this->getStudent->handle($membership->studentId);
-            $person = $this->getPerson->handle($student->personId);
-            $displayName = trim(implode(' ', array_filter([
-                $person->firstName,
-                $person->middleName,
-                $person->firstSurname,
-                $person->secondSurname,
-            ], static fn (?string $part): bool => $part !== null && $part !== '')));
-            if ($displayName === '') {
-                throw new PersonNotFound('Authorized Student Person was not found.');
-            }
-            $students[] = new RepresentativeFamilyStudentOption($student->id, $displayName);
-        }
-
-        return [$resources, $family, $this->optionsProvider->get(), $students];
-    }
-
-    private function renderFailure(RepresentativeFamilyAccess $access, array $values, array $errors): string
+    private function renderFailure(array $values, array $errors): string
     {
         try {
-            [$resources, $family, $options, $students] = $this->loadContext($access->context);
-        } catch (FamilyNotFound|StudentNotFound|PersonNotFound) {
+            $resources = $this->getResources->handle();
+        } catch (RepresentativeFamilySelectionRequired) {
+            return $this->redirect('/representative', 303);
+        } catch (RepresentativeFamilyContextUnavailable|FamilyNotFound|StudentNotFound|PersonNotFound) {
             return $this->forbidden();
         } catch (InvalidPersistedFamilyResult) {
             return $this->contextError('The operation could not be confirmed.', 422);
         }
 
         return $this->resourceView(
-            $access,
             $resources,
-            $family,
-            $options,
-            $students,
+            $this->optionsProvider->get(),
             $values,
             $errors,
             null,
@@ -834,16 +569,10 @@ final class RepresentativeFamilyResourceController extends Controller
         );
     }
 
-    /**
-     * @param list<RepresentativeFamilyStudentOption> $students
-     * @param list<string> $errors
-     */
+    /** @param list<string> $errors */
     private function resourceView(
-        RepresentativeFamilyAccess $access,
-        FamilyResourcesOutput $resources,
-        FamilyOutput $family,
+        RepresentativeFamilyResourcesOutput $resources,
         FamilyResourceFormOptions $options,
-        array $students,
         array $values,
         array $errors,
         ?string $successMessage,
@@ -851,36 +580,18 @@ final class RepresentativeFamilyResourceController extends Controller
         int $status = 200,
     ): string {
         http_response_code($status);
-        $studentIds = array_fill_keys(
-            array_map(static fn (RepresentativeFamilyStudentOption $student): int => $student->studentId, $students),
-            true,
-        );
 
         return $this->view('representative-portal.resources', [
             'title' => 'Family resources',
-            'context' => $access->context,
-            'canChangeFamily' => count($access->authorizedFamilies) > 1,
+            'context' => $resources,
+            'canChangeFamily' => $resources->canChangeFamily,
             'resources' => $resources,
-            'family' => $family,
             'options' => $options,
-            'students' => $students,
-            'ownRepresentativeAddressAssignments' => array_values(array_filter(
-                $resources->representativeAddressAssignments,
-                fn (object $assignment): bool =>
-                    $assignment->representativeId === $access->context->representativeId,
-            )),
-            'studentAddressAssignments' => array_values(array_filter(
-                $resources->studentAddressAssignments,
-                static fn (object $assignment): bool => isset($studentIds[$assignment->studentId]),
-            )),
-            'emergencyContactAssignments' => array_values(array_filter(
-                $resources->emergencyContactAssignments,
-                static fn (object $assignment): bool => isset($studentIds[$assignment->studentId]),
-            )),
-            'authorizedPickupAssignments' => array_values(array_filter(
-                $resources->authorizedPickupAssignments,
-                static fn (object $assignment): bool => isset($studentIds[$assignment->studentId]),
-            )),
+            'students' => $resources->students,
+            'ownRepresentativeAddressAssignments' => $resources->ownRepresentativeAddressAssignments,
+            'studentAddressAssignments' => $resources->studentAddressAssignments,
+            'emergencyContactAssignments' => $resources->emergencyContactAssignments,
+            'authorizedPickupAssignments' => $resources->authorizedPickupAssignments,
             'csrfToken' => $this->csrf->token(),
             'values' => $values,
             'errors' => $errors,
@@ -889,88 +600,18 @@ final class RepresentativeFamilyResourceController extends Controller
         ]);
     }
 
-    /** @return array{?RepresentativeFamilyAccess, string} */
-    private function access(bool $post): array
-    {
-        $access = $this->resolveFamilyContext->handle();
-        if ($access === null) {
-            return [null, $this->forbidden()];
-        }
-        if ($access->authorizedFamilies === []) {
-            return [null, $this->forbidden('No family context is currently available.')];
-        }
-        if ($access->context === null || $access->requiresSelection) {
-            return [null, $this->redirect('/representative', $post ? 303 : 302)];
-        }
-
-        return [$access, ''];
-    }
-
-    private function isAddressUsedByAnotherRepresentative(
-        int $addressId,
-        FamilyResourcesOutput $resources,
-        FamilyContext $context,
-    ): bool {
-        foreach ($resources->representativeAddressAssignments as $assignment) {
-            if ($assignment->isActive
-                && $assignment->familyAddressId === $addressId
-                && $assignment->representativeId !== $context->representativeId
-            ) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function requiredResourceId(array $values, string $field, array $resources, array &$errors): ?int
-    {
+    private function requiredPositiveInteger(
+        array $values,
+        string $field,
+        string $message,
+        array &$errors,
+    ): ?int {
         $id = $this->positiveInteger($values[$field] ?? null);
-        if ($id === null || $this->findById($resources, $id) === null) {
-            $errors[] = 'Selected resource is not available for this Family.';
-
-            return null;
+        if ($id === null) {
+            $errors[] = $message;
         }
 
         return $id;
-    }
-
-    private function requiredActiveResourceId(array $values, string $field, array $resources, array &$errors): ?int
-    {
-        $id = $this->positiveInteger($values[$field] ?? null);
-        $resource = $id === null ? null : $this->findById($resources, $id);
-        if ($resource === null || $resource->status !== 'ACTIVE') {
-            $errors[] = 'Selected resource is not available for this Family.';
-
-            return null;
-        }
-
-        return $id;
-    }
-
-    /** @param list<RepresentativeFamilyStudentOption> $students */
-    private function requiredStudentId(array $values, array $students, array &$errors): ?int
-    {
-        $studentId = $this->positiveInteger($values['student_id'] ?? null);
-        if ($studentId === null || !$this->hasStudent($students, $studentId)) {
-            $errors[] = 'Selected resource is not available for this Family.';
-
-            return null;
-        }
-
-        return $studentId;
-    }
-
-    /** @param list<RepresentativeFamilyStudentOption> $students */
-    private function hasStudent(array $students, int $studentId): bool
-    {
-        foreach ($students as $student) {
-            if ($student->studentId === $studentId) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function requiredTimestamp(array $values, string $field, array &$errors): ?DateTimeImmutable
@@ -1001,17 +642,6 @@ final class RepresentativeFamilyResourceController extends Controller
         }
 
         return $id;
-    }
-
-    private function findById(array $items, int $id, bool $activeOnly = false): ?object
-    {
-        foreach ($items as $item) {
-            if ($item->id === $id && (!$activeOnly || $item->isActive)) {
-                return $item;
-            }
-        }
-
-        return null;
     }
 
     /** @return array<string, string> */
