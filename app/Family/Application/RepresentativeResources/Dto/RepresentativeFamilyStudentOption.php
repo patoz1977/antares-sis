@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Family\Http;
+namespace App\Family\Application\RepresentativeResources\Dto;
 
 final readonly class RepresentativeFamilyStudentOption
 {
