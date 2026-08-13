@@ -23,6 +23,11 @@ use App\Family\Application\EndRepresentativeAddressAssignment;
 use App\Family\Application\EndStudentAddressAssignment;
 use App\Family\Application\GetFamilyMembership;
 use App\Family\Application\GetFamilyResources;
+use App\Family\Application\RepresentativeResources\GetRepresentativeFamilyResources;
+use App\Family\Application\RepresentativeResources\RepresentativeFamilyAddressService;
+use App\Family\Application\RepresentativeResources\RepresentativeFamilyAuthorizedPickupService;
+use App\Family\Application\RepresentativeResources\RepresentativeFamilyEmergencyContactService;
+use App\Family\Application\RepresentativeResources\RepresentativeFamilyResourceAuthorization;
 use App\Family\Application\UpdateFamilyAddress;
 use App\Family\Application\UpdateFamilyAuthorizedPickup;
 use App\Family\Application\UpdateFamilyEmergencyContact;
@@ -82,7 +87,12 @@ use Tests\Support\TestRunner;
 function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner): void
 {
     $runner->add('Representative Family Resources exposes exact authenticated routes without admin middleware', function (): void {
-        $routes = (string) file_get_contents(dirname(__DIR__) . '/routes/web.php');
+        $routes = representativeFamilyResourcesNormalizeLines(
+            (string) file_get_contents(dirname(__DIR__) . '/routes/web.php')
+        );
+        foreach ([$routes, str_replace("\n", "\r\n", $routes)] as $lineEndingVariant) {
+            assertSameValue($routes, representativeFamilyResourcesNormalizeLines($lineEndingVariant));
+        }
         $approved = [
             "get(\n    '/representative/resources'",
             "'/representative/resources/addresses/create'",
@@ -107,7 +117,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
             "'/representative/resources/authorized-pickups/end'",
         ];
         foreach ($approved as $route) {
-            deliveryAssertContains($route, str_replace("\r\n", "\n", $routes));
+            deliveryAssertContains($route, $routes);
         }
         assertSameValue(21, substr_count($routes, "'/representative/resources"));
         assertSameValue(21, substr_count($routes, '[$representativeFamilyResourceController,'));
@@ -457,7 +467,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
             assertSameValue('', representativeFamilyResourcesPost($fixture['controller'], $method, $input));
             assertSameValue(303, http_response_code());
             assertSameValue($before, $fixture['families']->saveCalls());
-            assertSameValue(500, $fixture['session']->get('representative_family_context_id'));
+            assertSameValue(null, $fixture['session']->get('representative_family_context_id'));
             foreach (['person_id', 'representative_id', 'student_id', 'resource_id', 'assignment_id'] as $key) {
                 assertSameValue(null, $fixture['session']->get($key));
             }
@@ -534,13 +544,15 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
             dirname(__DIR__) . '/app/Family/Http/RepresentativeFamilyResourceController.php'
         );
         foreach (['PDO', 'SELECT ', 'INSERT ', 'UPDATE ', 'DELETE ', 'FamilyRepository', 'PdoFamilyRepository',
-            'TransactionRunner', 'FamilyAdministrationMiddleware', 'PersonAdministrationMiddleware'] as $forbidden) {
+            'TransactionRunner', 'FamilyAdministrationMiddleware', 'PersonAdministrationMiddleware',
+            'ResolveFamilyContext', 'GetFamilyResources', 'GetFamilyMembership', 'GetStudent', 'GetPerson',
+            'isAddressUsedByAnotherRepresentative', 'hasStudent(', 'array_filter('] as $forbidden) {
             assertSameValue(false, str_contains($controller, $forbidden), $forbidden);
         }
-        foreach (['ResolveFamilyContext', 'GetFamilyResources', 'GetFamilyMembership', 'GetStudent', 'GetPerson'] as $required) {
+        foreach (['GetRepresentativeFamilyResources', 'RepresentativeFamilyAddressService',
+            'RepresentativeFamilyEmergencyContactService', 'RepresentativeFamilyAuthorizedPickupService'] as $required) {
             deliveryAssertContains($required, $controller);
         }
-        assertSameValue(1, substr_count($controller, '$this->resolveFamilyContext->handle()'));
         assertSameValue(false, str_contains($controller, 'catch (Throwable'));
         assertSameValue(false, str_contains($controller, 'catch (RuntimeException'));
 
@@ -600,12 +612,16 @@ function representativeFamilyResourcesFixture(
     };
     $relationships = new FakeRelationshipTypeLookup([201]);
     $documents = new FakeFamilyResourceDocumentTypeLookup([9]);
-    $controller = new RepresentativeFamilyResourceController(
+    $authorization = new RepresentativeFamilyResourceAuthorization(
         $identity['resolve'],
         new GetFamilyResources($families),
         new GetFamilyMembership($families),
         new GetStudent($students),
         new GetPerson($persons),
+    );
+    $getResources = new GetRepresentativeFamilyResources($authorization);
+    $addressService = new RepresentativeFamilyAddressService(
+        $authorization,
         new CreateFamilyAddress($families),
         new UpdateFamilyAddress($families),
         new ActivateFamilyAddress($families),
@@ -614,18 +630,30 @@ function representativeFamilyResourcesFixture(
         new EndRepresentativeAddressAssignment($families),
         new AssignStudentAddress($families),
         new EndStudentAddressAssignment($families),
+    );
+    $emergencyService = new RepresentativeFamilyEmergencyContactService(
+        $authorization,
         new CreateFamilyEmergencyContact($families, $relationships),
         new UpdateFamilyEmergencyContact($families, $relationships),
         new ActivateFamilyEmergencyContact($families),
         new DeactivateFamilyEmergencyContact($families),
         new AssignEmergencyContact($families),
         new EndEmergencyContactAssignment($families),
+    );
+    $pickupService = new RepresentativeFamilyAuthorizedPickupService(
+        $authorization,
         new CreateFamilyAuthorizedPickup($families, $relationships, $documents),
         new UpdateFamilyAuthorizedPickup($families, $relationships, $documents),
         new ActivateFamilyAuthorizedPickup($families),
         new DeactivateFamilyAuthorizedPickup($families),
         new AssignAuthorizedPickup($families),
         new EndAuthorizedPickupAssignment($families),
+    );
+    $controller = new RepresentativeFamilyResourceController(
+        $getResources,
+        $addressService,
+        $emergencyService,
+        $pickupService,
         new FakeDeliveryCsrf(),
         $identity['session'],
         $provider,
@@ -640,6 +668,10 @@ function representativeFamilyResourcesFixture(
         ),
         'persons' => $persons,
         'students' => $students,
+        'getResources' => $getResources,
+        'addressService' => $addressService,
+        'emergencyService' => $emergencyService,
+        'pickupService' => $pickupService,
     ]);
 }
 
@@ -887,4 +919,9 @@ function representativeFamilyResourcesIdentityPost(string $field, int $id, int $
 function representativeFamilyResourcesTime(string $value): DateTimeImmutable
 {
     return new DateTimeImmutable($value, new DateTimeZone('UTC'));
+}
+
+function representativeFamilyResourcesNormalizeLines(string $contents): string
+{
+    return str_replace("\r\n", "\n", $contents);
 }
