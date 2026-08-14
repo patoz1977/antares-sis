@@ -404,7 +404,6 @@ function registerInstitutionalAcknowledgementsPersistenceTests(TestRunner $runne
         }
         assertSameValue(true, str_contains($requirementSource, '->prepare('));
         assertSameValue(true, str_contains($completionSource, '->prepare('));
-        assertSameValue(false, is_dir(__DIR__ . '/../app/InstitutionalDocuments/Application'));
         assertSameValue(false, is_dir(__DIR__ . '/../app/InstitutionalDocuments/Http'));
     });
 }
