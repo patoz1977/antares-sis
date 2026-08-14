@@ -106,6 +106,20 @@ function assertIntegration(bool $condition, string $message): void
     }
 }
 
+/** @param array<string, int|string|null> $parameters */
+function assertMariaDbStatementRejected(PDO $connection, string $sql, array $parameters, string $message): void
+{
+    $rejected = false;
+    try {
+        $statement = $connection->prepare($sql);
+        $statement->execute($parameters);
+    } catch (PDOException) {
+        $rejected = true;
+    }
+
+    assertIntegration($rejected, $message);
+}
+
 function diagnosticValue(mixed $value): string
 {
     if (is_string($value)) {
@@ -288,13 +302,14 @@ function dropDisposableDatabases(PDO $server, array $databases): array
 function expectedBaselineTables(): array
 {
     $tables = [
-        'academic_periods', 'authorized_pickup_assignments', 'cantons', 'document_requirements',
+        'academic_periods', 'acknowledgement_requirements', 'authorized_pickup_assignments', 'cantons',
         'document_types', 'education_levels', 'emergency_contact_assignments',
-        'enrollment_document_acceptances', 'enrollment_submission_snapshots', 'enrollments',
+        'enrollment_submission_snapshots', 'enrollments',
         'families', 'family_addresses', 'family_authorized_pickups', 'family_emergency_contacts',
-        'family_representatives', 'family_students', 'grades', 'institutional_document_versions',
-        'institutional_documents', 'marital_statuses', 'migrations', 'parishes', 'persons', 'provinces',
+        'family_representatives', 'family_students', 'grades', 'marital_statuses', 'migrations',
+        'parishes', 'persons', 'provinces',
         'relationship_types', 'representative_address_assignments', 'representatives', 'sections',
+        'representative_acknowledgement_completions', 'representative_acknowledgements',
         'sexes', 'snapshot_addresses', 'snapshot_authorized_pickups', 'snapshot_emergency_contacts',
         'statuses', 'status_types', 'student_address_assignments', 'students', 'users',
     ];
@@ -576,6 +591,107 @@ try {
         . implode(', ', $familyAddressChecks)
     );
 
+    $acknowledgementColumns = [];
+    foreach ([
+        'acknowledgement_requirements',
+        'representative_acknowledgement_completions',
+        'representative_acknowledgements',
+    ] as $acknowledgementTable) {
+        $statement = $identity->prepare(
+            'SELECT column_name, column_type, is_nullable, extra FROM information_schema.columns '
+            . 'WHERE table_schema = DATABASE() AND table_name = :table ORDER BY ordinal_position'
+        );
+        $statement->execute([':table' => $acknowledgementTable]);
+        $acknowledgementColumns[$acknowledgementTable] = $statement->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    assertIntegration(
+        array_column($acknowledgementColumns['acknowledgement_requirements'], 'column_name') === [
+            'id', 'academic_period_id', 'title', 'url', 'official_reference',
+            'status_id', 'created_at', 'updated_at',
+        ],
+        'MariaDB AcknowledgementRequirement columns differ from ADR-0022.'
+    );
+    assertIntegration(
+        array_column($acknowledgementColumns['representative_acknowledgement_completions'], 'column_name') === [
+            'id', 'representative_id', 'academic_period_id', 'completed_at',
+        ],
+        'MariaDB RepresentativeAcknowledgementCompletion columns differ from ADR-0022.'
+    );
+    assertIntegration(
+        array_column($acknowledgementColumns['representative_acknowledgements'], 'column_name') === [
+            'id', 'representative_acknowledgement_completion_id',
+            'acknowledgement_requirement_id', 'academic_period_id',
+        ],
+        'MariaDB RepresentativeAcknowledgement columns differ from ADR-0022.'
+    );
+
+    $requirementColumnMetadata = [];
+    foreach ($acknowledgementColumns['acknowledgement_requirements'] as $column) {
+        $requirementColumnMetadata[$column['column_name']] = $column;
+    }
+    assertIntegration(
+        $requirementColumnMetadata['title']['column_type'] === 'varchar(200)'
+        && $requirementColumnMetadata['title']['is_nullable'] === 'NO'
+        && $requirementColumnMetadata['url']['column_type'] === 'varchar(500)'
+        && $requirementColumnMetadata['url']['is_nullable'] === 'NO'
+        && $requirementColumnMetadata['official_reference']['column_type'] === 'varchar(255)'
+        && $requirementColumnMetadata['official_reference']['is_nullable'] === 'YES',
+        'MariaDB acknowledgement text lengths or nullability differ from ADR-0022.'
+    );
+
+    $acknowledgementAutoIncrement = $identity->query(
+        "SELECT table_name FROM information_schema.columns WHERE table_schema = DATABASE() "
+        . "AND table_name IN ('acknowledgement_requirements', "
+        . "'representative_acknowledgement_completions', 'representative_acknowledgements') "
+        . "AND column_name = 'id' AND extra = 'auto_increment' ORDER BY table_name"
+    )->fetchAll(PDO::FETCH_COLUMN);
+    $expectedAcknowledgementAutoIncrement = [
+        'acknowledgement_requirements',
+        'representative_acknowledgement_completions',
+        'representative_acknowledgements',
+    ];
+    sort($acknowledgementAutoIncrement, SORT_STRING);
+    sort($expectedAcknowledgementAutoIncrement, SORT_STRING);
+    assertIntegration(
+        $acknowledgementAutoIncrement === $expectedAcknowledgementAutoIncrement,
+        'MariaDB Institutional Acknowledgements identities are not all AUTO_INCREMENT.'
+    );
+
+    $acknowledgementForeignKeys = $identity->query(
+        "SELECT constraint_name FROM information_schema.referential_constraints "
+        . "WHERE constraint_schema = DATABASE() AND table_name IN ("
+        . "'acknowledgement_requirements', 'representative_acknowledgement_completions', "
+        . "'representative_acknowledgements') ORDER BY constraint_name"
+    )->fetchAll(PDO::FETCH_COLUMN);
+    $expectedAcknowledgementForeignKeys = [
+        'fk_ack_completions_period',
+        'fk_ack_completions_representative',
+        'fk_ack_requirements_period',
+        'fk_ack_requirements_status',
+        'fk_acknowledgements_completion_period',
+        'fk_acknowledgements_requirement_period',
+    ];
+    sort($acknowledgementForeignKeys, SORT_STRING);
+    sort($expectedAcknowledgementForeignKeys, SORT_STRING);
+    assertIntegration(
+        $acknowledgementForeignKeys === $expectedAcknowledgementForeignKeys,
+        'MariaDB Institutional Acknowledgements foreign keys differ from ADR-0022: '
+        . implode(', ', $acknowledgementForeignKeys)
+    );
+
+    foreach ([
+        'institutional_documents',
+        'institutional_document_versions',
+        'document_requirements',
+        'enrollment_document_acceptances',
+    ] as $retiredTable) {
+        assertIntegration(
+            !in_array($retiredTable, $actualTables, true),
+            sprintf('Retired MariaDB document/version acceptance table remains: %s.', $retiredTable)
+        );
+    }
+
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM migrations')->fetchColumn() === 9, 'Not all baseline migrations were recorded.');
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM status_types')->fetchColumn() === 3, 'Status type baseline is incomplete.');
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM statuses')->fetchColumn() === 8, 'Status baseline is incomplete.');
@@ -616,6 +732,306 @@ try {
         "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
         . "WHERE st.code = 'USER_STATUS' AND s.code = 'DISABLED'"
     )->fetchColumn();
+
+    $identity->beginTransaction();
+    try {
+        $insertPeriod = $identity->prepare(
+            'INSERT INTO academic_periods (code, name, starts_on, ends_on, status_id) '
+            . 'VALUES (:code, :name, :startsOn, :endsOn, :statusId)'
+        );
+        $insertPeriod->execute([
+            ':code' => 'E009_ACK_PERIOD',
+            ':name' => 'E009 acknowledgement period',
+            ':startsOn' => '2026-08-01',
+            ':endsOn' => '2027-07-31',
+            ':statusId' => $generalStatusId,
+        ]);
+        $acknowledgementPeriodId = (int) $identity->lastInsertId();
+        $insertPeriod->execute([
+            ':code' => 'E009_ACK_SECOND_PERIOD',
+            ':name' => 'E009 second acknowledgement period',
+            ':startsOn' => '2027-08-01',
+            ':endsOn' => '2028-07-31',
+            ':statusId' => $generalStatusId,
+        ]);
+        $secondAcknowledgementPeriodId = (int) $identity->lastInsertId();
+        $insertPeriod->execute([
+            ':code' => 'E009_ACK_ZERO_PERIOD',
+            ':name' => 'E009 zero requirement period',
+            ':startsOn' => '2028-08-01',
+            ':endsOn' => '2029-07-31',
+            ':statusId' => $generalStatusId,
+        ]);
+        $zeroRequirementPeriodId = (int) $identity->lastInsertId();
+
+        assertIntegration(
+            $acknowledgementPeriodId > 0
+            && $secondAcknowledgementPeriodId > 0
+            && $zeroRequirementPeriodId > 0
+            && count(array_unique([
+                $acknowledgementPeriodId,
+                $secondAcknowledgementPeriodId,
+                $zeroRequirementPeriodId,
+            ])) === 3,
+            'MariaDB did not generate distinct positive AcademicPeriod identities for E009.'
+        );
+
+        $zeroRequirementStatement = $identity->prepare(
+            'SELECT (SELECT COUNT(*) FROM acknowledgement_requirements '
+            . 'WHERE academic_period_id = :requirementPeriodId) '
+            . '+ (SELECT COUNT(*) FROM representative_acknowledgement_completions '
+            . 'WHERE academic_period_id = :completionPeriodId)'
+        );
+        $zeroRequirementStatement->execute([
+            ':requirementPeriodId' => $zeroRequirementPeriodId,
+            ':completionPeriodId' => $zeroRequirementPeriodId,
+        ]);
+        assertIntegration(
+            (int) $zeroRequirementStatement->fetchColumn() === 0,
+            'MariaDB did not permit an AcademicPeriod with zero requirements and no artificial Completion.'
+        );
+
+        $insertPerson = $identity->prepare(
+            'INSERT INTO persons '
+            . '(first_name, first_surname, birth_date, sex_id, email, status_id) '
+            . 'VALUES (:firstName, :firstSurname, :birthDate, :sexId, :email, :statusId)'
+        );
+        $insertPerson->execute([
+            ':firstName' => 'E009',
+            ':firstSurname' => 'Representative',
+            ':birthDate' => '1980-01-01',
+            ':sexId' => 1,
+            ':email' => 'e009-representative@example.test',
+            ':statusId' => $generalStatusId,
+        ]);
+        $acknowledgementPersonId = (int) $identity->lastInsertId();
+        $insertRepresentative = $identity->prepare(
+            'INSERT INTO representatives (person_id, status_id) VALUES (:personId, :statusId)'
+        );
+        $insertRepresentative->execute([
+            ':personId' => $acknowledgementPersonId,
+            ':statusId' => $generalStatusId,
+        ]);
+        $acknowledgementRepresentativeId = (int) $identity->lastInsertId();
+        assertIntegration(
+            $acknowledgementPersonId > 0 && $acknowledgementRepresentativeId > 0,
+            'MariaDB did not generate the E009 Representative prerequisite identities.'
+        );
+
+        $insertRequirement = $identity->prepare(
+            'INSERT INTO acknowledgement_requirements '
+            . '(academic_period_id, title, url, official_reference, status_id) '
+            . 'VALUES (:periodId, :title, :url, :officialReference, :statusId)'
+        );
+        $insertRequirement->execute([
+            ':periodId' => $acknowledgementPeriodId,
+            ':title' => 'External institutional content A',
+            ':url' => 'https://example.test/institutional-content/a',
+            ':officialReference' => 'REF-E009-A',
+            ':statusId' => $generalStatusId,
+        ]);
+        $requirementAId = (int) $identity->lastInsertId();
+        $insertRequirement->execute([
+            ':periodId' => $acknowledgementPeriodId,
+            ':title' => 'External institutional content B',
+            ':url' => 'https://example.test/institutional-content/b',
+            ':officialReference' => null,
+            ':statusId' => $generalStatusId,
+        ]);
+        $requirementBId = (int) $identity->lastInsertId();
+        $insertRequirement->execute([
+            ':periodId' => $secondAcknowledgementPeriodId,
+            ':title' => 'External institutional content C',
+            ':url' => 'https://example.test/institutional-content/c',
+            ':officialReference' => null,
+            ':statusId' => $generalStatusId,
+        ]);
+        $secondPeriodRequirementId = (int) $identity->lastInsertId();
+        assertIntegration(
+            $requirementAId > 0
+            && $requirementBId > 0
+            && $secondPeriodRequirementId > 0
+            && count(array_unique([$requirementAId, $requirementBId, $secondPeriodRequirementId])) === 3,
+            'MariaDB did not generate distinct positive AcknowledgementRequirement identities.'
+        );
+
+        $requirementStatus = $identity->prepare(
+            'SELECT st.code AS status_type_code, s.code AS status_code '
+            . 'FROM acknowledgement_requirements ar '
+            . 'INNER JOIN statuses s ON s.id = ar.status_id '
+            . 'INNER JOIN status_types st ON st.id = s.status_type_id WHERE ar.id = :id'
+        );
+        $requirementStatus->execute([':id' => $requirementAId]);
+        assertIntegration(
+            $requirementStatus->fetch(PDO::FETCH_ASSOC) === [
+                'status_type_code' => 'GENERAL_STATUS',
+                'status_code' => 'ACTIVE',
+            ],
+            'MariaDB AcknowledgementRequirement did not resolve exact GENERAL_STATUS ACTIVE.'
+        );
+
+        assertMariaDbStatementRejected(
+            $identity,
+            'INSERT INTO acknowledgement_requirements '
+            . '(academic_period_id, title, url, official_reference, status_id) '
+            . 'VALUES (:periodId, :title, :url, NULL, :statusId)',
+            [
+                ':periodId' => $acknowledgementPeriodId,
+                ':title' => '   ',
+                ':url' => 'https://example.test/invalid-title',
+                ':statusId' => $generalStatusId,
+            ],
+            'MariaDB accepted a blank AcknowledgementRequirement title.'
+        );
+        assertMariaDbStatementRejected(
+            $identity,
+            'INSERT INTO acknowledgement_requirements '
+            . '(academic_period_id, title, url, official_reference, status_id) '
+            . 'VALUES (:periodId, :title, :url, NULL, :statusId)',
+            [
+                ':periodId' => $acknowledgementPeriodId,
+                ':title' => 'Invalid blank URL',
+                ':url' => '   ',
+                ':statusId' => $generalStatusId,
+            ],
+            'MariaDB accepted a blank AcknowledgementRequirement URL.'
+        );
+        assertMariaDbStatementRejected(
+            $identity,
+            'INSERT INTO acknowledgement_requirements '
+            . '(academic_period_id, title, url, official_reference, status_id) '
+            . 'VALUES (:periodId, :title, :url, :officialReference, :statusId)',
+            [
+                ':periodId' => $acknowledgementPeriodId,
+                ':title' => 'Invalid blank official reference',
+                ':url' => 'https://example.test/invalid-reference',
+                ':officialReference' => '   ',
+                ':statusId' => $generalStatusId,
+            ],
+            'MariaDB accepted a blank non-null OfficialReference.'
+        );
+        assertMariaDbStatementRejected(
+            $identity,
+            'INSERT INTO acknowledgement_requirements '
+            . '(academic_period_id, title, url, official_reference, status_id) '
+            . 'VALUES (:periodId, :title, :url, NULL, :statusId)',
+            [
+                ':periodId' => $acknowledgementPeriodId,
+                ':title' => 'Invalid missing status',
+                ':url' => 'https://example.test/invalid-status',
+                ':statusId' => 999999999,
+            ],
+            'MariaDB accepted a missing AcknowledgementRequirement status.'
+        );
+
+        $insertCompletion = $identity->prepare(
+            'INSERT INTO representative_acknowledgement_completions '
+            . '(representative_id, academic_period_id, completed_at) '
+            . 'VALUES (:representativeId, :periodId, :completedAt)'
+        );
+        $insertCompletion->execute([
+            ':representativeId' => $acknowledgementRepresentativeId,
+            ':periodId' => $acknowledgementPeriodId,
+            ':completedAt' => '2026-08-13 14:15:16',
+        ]);
+        $completionId = (int) $identity->lastInsertId();
+        $insertCompletion->execute([
+            ':representativeId' => $acknowledgementRepresentativeId,
+            ':periodId' => $secondAcknowledgementPeriodId,
+            ':completedAt' => '2027-08-13 14:15:16',
+        ]);
+        $secondCompletionId = (int) $identity->lastInsertId();
+        assertIntegration(
+            $completionId > 0 && $secondCompletionId > 0 && $completionId !== $secondCompletionId,
+            'MariaDB did not generate distinct positive Completion identities.'
+        );
+
+        assertMariaDbStatementRejected(
+            $identity,
+            'INSERT INTO representative_acknowledgement_completions '
+            . '(representative_id, academic_period_id, completed_at) '
+            . 'VALUES (:representativeId, :periodId, :completedAt)',
+            [
+                ':representativeId' => $acknowledgementRepresentativeId,
+                ':periodId' => $acknowledgementPeriodId,
+                ':completedAt' => '2026-08-13 14:15:17',
+            ],
+            'MariaDB accepted a duplicate Completion for Representative + AcademicPeriod.'
+        );
+
+        $insertAcknowledgement = $identity->prepare(
+            'INSERT INTO representative_acknowledgements '
+            . '(representative_acknowledgement_completion_id, acknowledgement_requirement_id, academic_period_id) '
+            . 'VALUES (:completionId, :requirementId, :periodId)'
+        );
+        $insertAcknowledgement->execute([
+            ':completionId' => $completionId,
+            ':requirementId' => $requirementAId,
+            ':periodId' => $acknowledgementPeriodId,
+        ]);
+        $acknowledgementAId = (int) $identity->lastInsertId();
+        $insertAcknowledgement->execute([
+            ':completionId' => $completionId,
+            ':requirementId' => $requirementBId,
+            ':periodId' => $acknowledgementPeriodId,
+        ]);
+        $acknowledgementBId = (int) $identity->lastInsertId();
+        assertIntegration(
+            $acknowledgementAId > 0
+            && $acknowledgementBId > 0
+            && $acknowledgementAId !== $acknowledgementBId,
+            'MariaDB did not generate distinct positive RepresentativeAcknowledgement identities.'
+        );
+
+        assertMariaDbStatementRejected(
+            $identity,
+            'INSERT INTO representative_acknowledgements '
+            . '(representative_acknowledgement_completion_id, acknowledgement_requirement_id, academic_period_id) '
+            . 'VALUES (:completionId, :requirementId, :periodId)',
+            [
+                ':completionId' => $completionId,
+                ':requirementId' => $requirementAId,
+                ':periodId' => $acknowledgementPeriodId,
+            ],
+            'MariaDB accepted the same Requirement twice within one Completion.'
+        );
+        assertMariaDbStatementRejected(
+            $identity,
+            'INSERT INTO representative_acknowledgements '
+            . '(representative_acknowledgement_completion_id, acknowledgement_requirement_id, academic_period_id) '
+            . 'VALUES (:completionId, :requirementId, :periodId)',
+            [
+                ':completionId' => $secondCompletionId,
+                ':requirementId' => $requirementAId,
+                ':periodId' => $secondAcknowledgementPeriodId,
+            ],
+            'MariaDB accepted a Requirement from another AcademicPeriod into a Completion.'
+        );
+
+        $completedAt = $identity->prepare(
+            'SELECT completed_at FROM representative_acknowledgement_completions WHERE id = :id'
+        );
+        $completedAt->execute([':id' => $completionId]);
+        assertIntegration(
+            $completedAt->fetchColumn() === '2026-08-13 14:15:16',
+            'MariaDB did not preserve RepresentativeAcknowledgementCompletion UTC seconds.'
+        );
+    } finally {
+        $identity->rollBack();
+    }
+
+    assertIntegration(
+        (int) $identity->query(
+            "SELECT COUNT(*) FROM academic_periods WHERE code LIKE 'E009_ACK_%'"
+        )->fetchColumn() === 0
+        && (int) $identity->query(
+            "SELECT COUNT(*) FROM persons WHERE email = 'e009-representative@example.test'"
+        )->fetchColumn() === 0
+        && (int) $identity->query('SELECT COUNT(*) FROM acknowledgement_requirements')->fetchColumn() === 0
+        && (int) $identity->query('SELECT COUNT(*) FROM representative_acknowledgement_completions')->fetchColumn() === 0
+        && (int) $identity->query('SELECT COUNT(*) FROM representative_acknowledgements')->fetchColumn() === 0,
+        'MariaDB Institutional Acknowledgements rollback left physical rows behind.'
+    );
 
     $personFormOptions = (new PdoPersonFormOptionsProvider($managerA))->get();
     assertIntegration(
@@ -2855,7 +3271,8 @@ try {
     }
     assertIntegration($lockBlocked, 'Concurrent User load was not protected by a row lock.');
 
-    echo "PASS MySQL clean migration creates the exact 36-table domain baseline plus migrations metadata\n";
+    echo "PASS MySQL clean migration creates the exact 35-table domain baseline plus migrations metadata\n";
+    echo "PASS MySQL Institutional Acknowledgements AUTO_INCREMENT UTC constraints ownership and rollback\n";
     echo "PASS MySQL approved status seed baseline\n";
     echo "PASS MySQL AdminSeeder preserves existing credentials and status\n";
     echo "PASS MySQL UTC repository locked_at persistence\n";
