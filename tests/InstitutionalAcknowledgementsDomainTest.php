@@ -422,11 +422,11 @@ function registerInstitutionalAcknowledgementsDomainTests(TestRunner $runner): v
         }
 
         sort($files, SORT_STRING);
-        assertSameValue(13, count($files));
-        foreach (['App\\Representative', 'App\\Family', 'App\\Student', 'App\\Enrollment', 'PDO', 'Repository', 'Service', 'Controller', 'Http'] as $forbidden) {
+        assertSameValue(15, count($files));
+        foreach (['App\\Representative', 'App\\Family', 'App\\Student', 'App\\Enrollment', 'PDO', 'Service', 'Controller', 'Http'] as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden));
         }
-        foreach (['Application', 'Infrastructure', 'Persistence', 'Delivery'] as $forbiddenDirectory) {
+        foreach (['Application', 'Delivery', 'Http'] as $forbiddenDirectory) {
             assertSameValue(false, is_dir(__DIR__ . '/../app/InstitutionalDocuments/' . $forbiddenDirectory));
         }
     });

@@ -40,6 +40,7 @@ require __DIR__ . '/FamilyResourcesDeliveryTest.php';
 require __DIR__ . '/RepresentativeFamilyResourcesDeliveryTest.php';
 require __DIR__ . '/RepresentativeFamilyResourcesApplicationTest.php';
 require __DIR__ . '/InstitutionalAcknowledgementsDomainTest.php';
+require __DIR__ . '/InstitutionalAcknowledgementsPersistenceTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
@@ -74,6 +75,7 @@ require __DIR__ . '/SchemaBaselineTest.php';
 \Tests\registerRepresentativeFamilyResourcesApplicationTests($runner);
 \Tests\registerRepresentativeFamilyResourcesDeliveryTests($runner);
 \Tests\registerInstitutionalAcknowledgementsDomainTests($runner);
+\Tests\registerInstitutionalAcknowledgementsPersistenceTests($runner);
 \Tests\registerSchemaBaselineTests($runner);
 
 ob_start();
