@@ -74,30 +74,12 @@ final class CreateEnrollment extends SchemaMigration
                     CONSTRAINT `fk_enrollments_billing_document_type` FOREIGN KEY (`billing_identification_type_id`) REFERENCES `document_types` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 SQL,
-            <<<'SQL'
-                CREATE TABLE `enrollment_document_acceptances` (
-                    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-                    `enrollment_id` BIGINT UNSIGNED NOT NULL,
-                    `institutional_document_version_id` BIGINT UNSIGNED NOT NULL,
-                    `accepted_by_representative_id` BIGINT UNSIGNED NOT NULL,
-                    `accepted_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    PRIMARY KEY (`id`),
-                    UNIQUE KEY `uq_enrollment_acceptances_version` (`enrollment_id`, `institutional_document_version_id`),
-                    KEY `idx_acceptances_representative_date` (`accepted_by_representative_id`, `accepted_at`),
-                    KEY `idx_acceptances_version` (`institutional_document_version_id`),
-                    CONSTRAINT `fk_acceptances_enrollment` FOREIGN KEY (`enrollment_id`) REFERENCES `enrollments` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
-                    CONSTRAINT `fk_acceptances_document_version` FOREIGN KEY (`institutional_document_version_id`) REFERENCES `institutional_document_versions` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
-                    CONSTRAINT `fk_acceptances_representative` FOREIGN KEY (`accepted_by_representative_id`) REFERENCES `representatives` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                SQL,
         ]);
     }
 
     public function down(PDO $connection): void
     {
-        $this->dropTables($connection, ['enrollment_document_acceptances', 'enrollments']);
+        $this->dropTables($connection, ['enrollments']);
     }
 
     public function version(): string
