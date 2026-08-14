@@ -31,6 +31,15 @@ use App\IdentityAccess\Domain\ValueObject\PersonId as UserPersonId;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
 use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
+use App\InstitutionalDocuments\Domain\AcknowledgementRequirementStatus;
+use App\InstitutionalDocuments\Domain\RepresentativeAcknowledgementCompletion;
+use App\InstitutionalDocuments\Domain\ValueObject\AcademicPeriodId as AcknowledgementAcademicPeriodId;
+use App\InstitutionalDocuments\Domain\ValueObject\AcknowledgementOfficialReference;
+use App\InstitutionalDocuments\Domain\ValueObject\AcknowledgementRequirementTitle;
+use App\InstitutionalDocuments\Domain\ValueObject\AcknowledgementRequirementUrl;
+use App\InstitutionalDocuments\Domain\ValueObject\RepresentativeId as AcknowledgementRepresentativeId;
+use App\InstitutionalDocuments\Infrastructure\Persistence\PdoAcknowledgementRequirementRepository;
+use App\InstitutionalDocuments\Infrastructure\Persistence\PdoRepresentativeAcknowledgementCompletionRepository;
 use App\Family\Application\AddStudentToFamily;
 use App\Family\Application\CreateFamily;
 use App\Family\Application\CreateFamilyAddress;
@@ -1031,6 +1040,326 @@ try {
         && (int) $identity->query('SELECT COUNT(*) FROM representative_acknowledgement_completions')->fetchColumn() === 0
         && (int) $identity->query('SELECT COUNT(*) FROM representative_acknowledgements')->fetchColumn() === 0,
         'MariaDB Institutional Acknowledgements rollback left physical rows behind.'
+    );
+
+    $requirementRepository = new PdoAcknowledgementRequirementRepository($managerA);
+    $completionRepository = new PdoRepresentativeAcknowledgementCompletionRepository($managerA);
+    $insertPersistencePeriod = $connectionA->prepare(
+        'INSERT INTO academic_periods (code, name, starts_on, ends_on, status_id) '
+        . 'VALUES (:code, :name, :startsOn, :endsOn, :statusId)'
+    );
+    $insertPersistencePeriod->execute([
+        ':code' => 'E009_PERSIST_PERIOD',
+        ':name' => 'E009 persistence period',
+        ':startsOn' => '2029-08-01',
+        ':endsOn' => '2030-07-31',
+        ':statusId' => $generalStatusId,
+    ]);
+    $persistencePeriodId = (int) $connectionA->lastInsertId();
+    $insertPersistencePeriod->execute([
+        ':code' => 'E009_PERSIST_OTHER',
+        ':name' => 'E009 persistence other period',
+        ':startsOn' => '2030-08-01',
+        ':endsOn' => '2031-07-31',
+        ':statusId' => $generalStatusId,
+    ]);
+    $persistenceOtherPeriodId = (int) $connectionA->lastInsertId();
+    $insertPersistencePeriod->execute([
+        ':code' => 'E009_PERSIST_ROLLBACK',
+        ':name' => 'E009 persistence rollback period',
+        ':startsOn' => '2031-08-01',
+        ':endsOn' => '2032-07-31',
+        ':statusId' => $generalStatusId,
+    ]);
+    $persistenceRollbackPeriodId = (int) $connectionA->lastInsertId();
+
+    $insertPersistencePerson = $connectionA->prepare(
+        'INSERT INTO persons (first_name, first_surname, birth_date, sex_id, email, status_id) '
+        . 'VALUES (:firstName, :firstSurname, :birthDate, :sexId, :email, :statusId)'
+    );
+    $insertPersistenceRepresentative = $connectionA->prepare(
+        'INSERT INTO representatives (person_id, status_id) VALUES (:personId, :statusId)'
+    );
+    $persistenceRepresentativeIds = [];
+    foreach (['primary', 'rollback'] as $suffixName) {
+        $insertPersistencePerson->execute([
+            ':firstName' => 'E009',
+            ':firstSurname' => 'Persistence ' . $suffixName,
+            ':birthDate' => '1980-01-01',
+            ':sexId' => 1,
+            ':email' => 'e009-persistence-' . $suffixName . '@example.test',
+            ':statusId' => $generalStatusId,
+        ]);
+        $personId = (int) $connectionA->lastInsertId();
+        $insertPersistenceRepresentative->execute([
+            ':personId' => $personId,
+            ':statusId' => $generalStatusId,
+        ]);
+        $persistenceRepresentativeIds[$suffixName] = (int) $connectionA->lastInsertId();
+    }
+
+    assertIntegration(
+        $persistencePeriodId > 0
+        && $persistenceOtherPeriodId > 0
+        && $persistenceRollbackPeriodId > 0
+        && $persistenceRepresentativeIds['primary'] > 0
+        && $persistenceRepresentativeIds['rollback'] > 0,
+        'MariaDB did not create E009 Persistence prerequisite identities.'
+    );
+
+    $requirementA = $requirementRepository->save(
+        \App\InstitutionalDocuments\Domain\AcknowledgementRequirement::create(
+            new AcknowledgementAcademicPeriodId($persistencePeriodId),
+            new AcknowledgementRequirementTitle('Política institucional ñ'),
+            new AcknowledgementRequirementUrl('https://example.test/e009/policy-a'),
+            new AcknowledgementOfficialReference('RES-E009-Ñ'),
+            AcknowledgementRequirementStatus::Active,
+        )
+    );
+    $requirementB = $requirementRepository->save(
+        \App\InstitutionalDocuments\Domain\AcknowledgementRequirement::create(
+            new AcknowledgementAcademicPeriodId($persistencePeriodId),
+            new AcknowledgementRequirementTitle('Institutional content B'),
+            new AcknowledgementRequirementUrl('relative/content-b'),
+            null,
+            AcknowledgementRequirementStatus::Active,
+        )
+    );
+    $inactiveRequirement = $requirementRepository->save(
+        \App\InstitutionalDocuments\Domain\AcknowledgementRequirement::create(
+            new AcknowledgementAcademicPeriodId($persistencePeriodId),
+            new AcknowledgementRequirementTitle('Inactive institutional content'),
+            new AcknowledgementRequirementUrl('relative/inactive'),
+            null,
+            AcknowledgementRequirementStatus::Inactive,
+        )
+    );
+
+    assertIntegration(
+        ($requirementA->id()?->value() ?? 0) > 0
+        && ($requirementB->id()?->value() ?? 0) > 0
+        && ($inactiveRequirement->id()?->value() ?? 0) > 0
+        && count(array_unique([
+            $requirementA->id()?->value(),
+            $requirementB->id()?->value(),
+            $inactiveRequirement->id()?->value(),
+        ])) === 3,
+        'MariaDB E009 repositories did not return distinct generated Requirement identities.'
+    );
+    assertIntegration(
+        $requirementA->title()->value() === 'Política institucional ñ'
+        && $requirementA->officialReference()?->value() === 'RES-E009-Ñ'
+        && $requirementB->officialReference() === null
+        && $requirementA->isActive()
+        && !$inactiveRequirement->isActive(),
+        'MariaDB E009 Requirement repository did not roundtrip UTF-8 nullability and GENERAL_STATUS.'
+    );
+
+    $periodRequirements = $requirementRepository->findByAcademicPeriodId(
+        new AcknowledgementAcademicPeriodId($persistencePeriodId)
+    );
+    $periodRequirementIds = array_map(
+        static fn ($requirement): ?int => $requirement->id()?->value(),
+        $periodRequirements,
+    );
+    $sortedPeriodRequirementIds = $periodRequirementIds;
+    sort($sortedPeriodRequirementIds, SORT_NUMERIC);
+    assertIntegration(
+        count($periodRequirements) === 3
+        && $periodRequirementIds === $sortedPeriodRequirementIds,
+        'MariaDB E009 Requirement list is incomplete or not ordered by identity.'
+    );
+    assertIntegration(
+        !$requirementRepository->hasAcknowledgements($requirementA->id()),
+        'MariaDB E009 Requirement reported history before a Completion existed.'
+    );
+
+    $requirementA->update(
+        new AcknowledgementRequirementTitle('Updated política institucional ñ'),
+        new AcknowledgementRequirementUrl('https://example.test/e009/policy-a-updated'),
+        new AcknowledgementOfficialReference('RES-E009-UPDATED'),
+        false,
+    );
+    $updatedRequirementA = $requirementRepository->save($requirementA);
+    assertIntegration(
+        $updatedRequirementA->id()?->equals($requirementA->id()) === true
+        && $updatedRequirementA->academicPeriodId()->value() === $persistencePeriodId
+        && $updatedRequirementA->title()->value() === 'Updated política institucional ñ'
+        && $updatedRequirementA->url()->value() === 'https://example.test/e009/policy-a-updated'
+        && $updatedRequirementA->officialReference()?->value() === 'RES-E009-UPDATED',
+        'MariaDB E009 Requirement repository did not update exact mutable state.'
+    );
+
+    $completedAt = new DateTimeImmutable('2030-02-03 10:11:12.987654-05:00');
+    $newCompletion = RepresentativeAcknowledgementCompletion::complete(
+        new AcknowledgementRepresentativeId($persistenceRepresentativeIds['primary']),
+        new AcknowledgementAcademicPeriodId($persistencePeriodId),
+        $completedAt,
+        [$requirementB, $updatedRequirementA],
+    );
+    $persistedCompletion = $completionRepository->save($newCompletion);
+    $persistedChildren = $persistedCompletion->acknowledgements();
+    assertIntegration(
+        ($persistedCompletion->id()?->value() ?? 0) > 0
+        && count($persistedChildren) === 2
+        && ($persistedChildren[0]->id()?->value() ?? 0) > 0
+        && ($persistedChildren[1]->id()?->value() ?? 0) > 0
+        && !$persistedChildren[0]->id()?->equals($persistedChildren[1]->id()),
+        'MariaDB E009 Completion repository did not generate root and child identities.'
+    );
+    assertIntegration(
+        $persistedCompletion->completedAt()->format('Y-m-d H:i:sP') === '2030-02-03 15:11:12+00:00',
+        'MariaDB E009 Completion repository did not preserve exact UTC seconds.'
+    );
+    assertIntegration(
+        $requirementRepository->hasAcknowledgements($updatedRequirementA->id())
+        && $requirementRepository->hasAcknowledgements($requirementB->id()),
+        'MariaDB E009 Requirement history lookup did not detect persisted children.'
+    );
+
+    $updatedRequirementA->deactivate();
+    $updatedRequirementA->update(
+        $updatedRequirementA->title(),
+        new AcknowledgementRequirementUrl('https://example.test/e009/policy-a-current'),
+        $updatedRequirementA->officialReference(),
+        true,
+    );
+    $requirementRepository->save($updatedRequirementA);
+    $historicalCompletion = $completionRepository->findByRepresentativeAndAcademicPeriod(
+        new AcknowledgementRepresentativeId($persistenceRepresentativeIds['primary']),
+        new AcknowledgementAcademicPeriodId($persistencePeriodId),
+    );
+    assertIntegration(
+        $historicalCompletion !== null
+        && $historicalCompletion->id()?->equals($persistedCompletion->id()) === true
+        && count($historicalCompletion->acknowledgements()) === 2,
+        'MariaDB E009 historical Completion depended on current Requirement status.'
+    );
+
+    $persistedSaveRejected = false;
+    try {
+        $completionRepository->save($persistedCompletion);
+    } catch (RuntimeException) {
+        $persistedSaveRejected = true;
+    }
+    assertIntegration($persistedSaveRejected, 'MariaDB E009 Persistence accepted a mutable save of existing Completion.');
+
+    $duplicateCompletionRejected = false;
+    try {
+        $completionRepository->save(RepresentativeAcknowledgementCompletion::complete(
+            new AcknowledgementRepresentativeId($persistenceRepresentativeIds['primary']),
+            new AcknowledgementAcademicPeriodId($persistencePeriodId),
+            new DateTimeImmutable('2030-02-04 15:11:12+00:00'),
+            [$requirementB],
+        ));
+    } catch (PDOException) {
+        $duplicateCompletionRejected = true;
+    }
+    assertIntegration(
+        $duplicateCompletionRejected && !$connectionA->inTransaction(),
+        'MariaDB E009 Completion UNIQUE failure was not rejected and rolled back by the Repository.'
+    );
+
+    $otherPeriodRequirement = $requirementRepository->save(
+        \App\InstitutionalDocuments\Domain\AcknowledgementRequirement::create(
+            new AcknowledgementAcademicPeriodId($persistenceOtherPeriodId),
+            new AcknowledgementRequirementTitle('Other-period requirement'),
+            new AcknowledgementRequirementUrl('other-period/url'),
+            null,
+            AcknowledgementRequirementStatus::Active,
+        )
+    );
+    assertMariaDbStatementRejected(
+        $connectionA,
+        'INSERT INTO representative_acknowledgements '
+        . '(representative_acknowledgement_completion_id, acknowledgement_requirement_id, academic_period_id) '
+        . 'VALUES (:completionId, :requirementId, :academicPeriodId)',
+        [
+            ':completionId' => $persistedCompletion->id()?->value(),
+            ':requirementId' => $otherPeriodRequirement->id()?->value(),
+            ':academicPeriodId' => $persistencePeriodId,
+        ],
+        'MariaDB E009 Persistence allowed cross-period child ownership.'
+    );
+
+    $rollbackRequirements = [];
+    foreach (['Rollback A', 'Rollback B'] as $rollbackTitle) {
+        $rollbackRequirements[] = $requirementRepository->save(
+            \App\InstitutionalDocuments\Domain\AcknowledgementRequirement::create(
+                new AcknowledgementAcademicPeriodId($persistenceRollbackPeriodId),
+                new AcknowledgementRequirementTitle($rollbackTitle),
+                new AcknowledgementRequirementUrl('rollback/' . strtolower(str_replace(' ', '-', $rollbackTitle))),
+                null,
+                AcknowledgementRequirementStatus::Active,
+            )
+        );
+    }
+    $rollbackCompletion = RepresentativeAcknowledgementCompletion::complete(
+        new AcknowledgementRepresentativeId($persistenceRepresentativeIds['rollback']),
+        new AcknowledgementAcademicPeriodId($persistenceRollbackPeriodId),
+        new DateTimeImmutable('2032-02-03 15:11:12+00:00'),
+        $rollbackRequirements,
+    );
+    $deleteRollbackRequirement = $connectionA->prepare(
+        'DELETE FROM acknowledgement_requirements WHERE id = :id'
+    );
+    $deleteRollbackRequirement->execute([':id' => $rollbackRequirements[1]->id()?->value()]);
+    $childFailureRejected = false;
+    try {
+        $completionRepository->save($rollbackCompletion);
+    } catch (PDOException) {
+        $childFailureRejected = true;
+    }
+    $rolledBackRoot = $connectionA->prepare(
+        'SELECT COUNT(*) FROM representative_acknowledgement_completions '
+        . 'WHERE representative_id = :representativeId AND academic_period_id = :academicPeriodId'
+    );
+    $rolledBackRoot->execute([
+        ':representativeId' => $persistenceRepresentativeIds['rollback'],
+        ':academicPeriodId' => $persistenceRollbackPeriodId,
+    ]);
+    assertIntegration(
+        $childFailureRejected
+        && !$connectionA->inTransaction()
+        && (int) $rolledBackRoot->fetchColumn() === 0,
+        'MariaDB E009 owned Completion transaction did not roll back root and children.'
+    );
+
+    $connectionA->beginTransaction();
+    try {
+        $outerRequirement = $requirementRepository->save(
+            \App\InstitutionalDocuments\Domain\AcknowledgementRequirement::create(
+                new AcknowledgementAcademicPeriodId($persistenceOtherPeriodId),
+                new AcknowledgementRequirementTitle('Outer transaction requirement'),
+                new AcknowledgementRequirementUrl('outer/transaction'),
+                null,
+                AcknowledgementRequirementStatus::Active,
+            )
+        );
+        assertIntegration(
+            $connectionA->inTransaction(),
+            'MariaDB E009 Requirement Repository closed the caller transaction.'
+        );
+        $outerCompletion = $completionRepository->save(RepresentativeAcknowledgementCompletion::complete(
+            new AcknowledgementRepresentativeId($persistenceRepresentativeIds['rollback']),
+            new AcknowledgementAcademicPeriodId($persistenceOtherPeriodId),
+            new DateTimeImmutable('2031-02-03 15:11:12+00:00'),
+            [$outerRequirement, $otherPeriodRequirement],
+        ));
+        assertIntegration(
+            $connectionA->inTransaction()
+            && ($outerCompletion->id()?->value() ?? 0) > 0,
+            'MariaDB E009 Completion Repository did not participate in the caller transaction.'
+        );
+    } finally {
+        $connectionA->rollBack();
+    }
+    assertIntegration(
+        $completionRepository->findByRepresentativeAndAcademicPeriod(
+            new AcknowledgementRepresentativeId($persistenceRepresentativeIds['rollback']),
+            new AcknowledgementAcademicPeriodId($persistenceOtherPeriodId),
+        ) === null,
+        'MariaDB E009 caller rollback left an externally coordinated Completion.'
     );
 
     $personFormOptions = (new PdoPersonFormOptionsProvider($managerA))->get();
@@ -3273,6 +3602,7 @@ try {
 
     echo "PASS MySQL clean migration creates the exact 35-table domain baseline plus migrations metadata\n";
     echo "PASS MySQL Institutional Acknowledgements AUTO_INCREMENT UTC constraints ownership and rollback\n";
+    echo "PASS MySQL Institutional Acknowledgements repository roundtrip AUTO_INCREMENT UTC transactions and history\n";
     echo "PASS MySQL approved status seed baseline\n";
     echo "PASS MySQL AdminSeeder preserves existing credentials and status\n";
     echo "PASS MySQL UTC repository locked_at persistence\n";
