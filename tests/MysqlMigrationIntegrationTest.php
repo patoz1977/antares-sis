@@ -646,12 +646,15 @@ try {
         . "'representative_acknowledgement_completions', 'representative_acknowledgements') "
         . "AND column_name = 'id' AND extra = 'auto_increment' ORDER BY table_name"
     )->fetchAll(PDO::FETCH_COLUMN);
+    $expectedAcknowledgementAutoIncrement = [
+        'acknowledgement_requirements',
+        'representative_acknowledgement_completions',
+        'representative_acknowledgements',
+    ];
+    sort($acknowledgementAutoIncrement, SORT_STRING);
+    sort($expectedAcknowledgementAutoIncrement, SORT_STRING);
     assertIntegration(
-        $acknowledgementAutoIncrement === [
-            'acknowledgement_requirements',
-            'representative_acknowledgement_completions',
-            'representative_acknowledgements',
-        ],
+        $acknowledgementAutoIncrement === $expectedAcknowledgementAutoIncrement,
         'MariaDB Institutional Acknowledgements identities are not all AUTO_INCREMENT.'
     );
 
@@ -661,15 +664,18 @@ try {
         . "'acknowledgement_requirements', 'representative_acknowledgement_completions', "
         . "'representative_acknowledgements') ORDER BY constraint_name"
     )->fetchAll(PDO::FETCH_COLUMN);
+    $expectedAcknowledgementForeignKeys = [
+        'fk_ack_completions_period',
+        'fk_ack_completions_representative',
+        'fk_ack_requirements_period',
+        'fk_ack_requirements_status',
+        'fk_acknowledgements_completion_period',
+        'fk_acknowledgements_requirement_period',
+    ];
+    sort($acknowledgementForeignKeys, SORT_STRING);
+    sort($expectedAcknowledgementForeignKeys, SORT_STRING);
     assertIntegration(
-        $acknowledgementForeignKeys === [
-            'fk_ack_completions_period',
-            'fk_ack_completions_representative',
-            'fk_ack_requirements_period',
-            'fk_ack_requirements_status',
-            'fk_acknowledgements_completion_period',
-            'fk_acknowledgements_requirement_period',
-        ],
+        $acknowledgementForeignKeys === $expectedAcknowledgementForeignKeys,
         'MariaDB Institutional Acknowledgements foreign keys differ from ADR-0022: '
         . implode(', ', $acknowledgementForeignKeys)
     );
@@ -771,11 +777,15 @@ try {
         );
 
         $zeroRequirementStatement = $identity->prepare(
-            'SELECT (SELECT COUNT(*) FROM acknowledgement_requirements WHERE academic_period_id = :periodId) '
+            'SELECT (SELECT COUNT(*) FROM acknowledgement_requirements '
+            . 'WHERE academic_period_id = :requirementPeriodId) '
             . '+ (SELECT COUNT(*) FROM representative_acknowledgement_completions '
-            . 'WHERE academic_period_id = :periodId)'
+            . 'WHERE academic_period_id = :completionPeriodId)'
         );
-        $zeroRequirementStatement->execute([':periodId' => $zeroRequirementPeriodId]);
+        $zeroRequirementStatement->execute([
+            ':requirementPeriodId' => $zeroRequirementPeriodId,
+            ':completionPeriodId' => $zeroRequirementPeriodId,
+        ]);
         assertIntegration(
             (int) $zeroRequirementStatement->fetchColumn() === 0,
             'MariaDB did not permit an AcademicPeriod with zero requirements and no artificial Completion.'
