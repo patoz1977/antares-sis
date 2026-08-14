@@ -15,15 +15,15 @@ use Tests\Support\TestRunner;
 
 function registerSchemaBaselineTests(TestRunner $runner): void
 {
-    $runner->add('migration baseline declares the exact 36-table domain inventory', function (): void {
+    $runner->add('migration baseline declares the exact 35-table domain inventory', function (): void {
         $expected = [
-            'academic_periods', 'authorized_pickup_assignments', 'cantons', 'document_requirements',
+            'academic_periods', 'acknowledgement_requirements', 'authorized_pickup_assignments', 'cantons',
             'document_types', 'education_levels', 'emergency_contact_assignments',
-            'enrollment_document_acceptances', 'enrollment_submission_snapshots', 'enrollments',
+            'enrollment_submission_snapshots', 'enrollments',
             'families', 'family_addresses', 'family_authorized_pickups', 'family_emergency_contacts',
-            'family_representatives', 'family_students', 'grades', 'institutional_document_versions',
-            'institutional_documents', 'marital_statuses', 'parishes', 'persons', 'provinces',
+            'family_representatives', 'family_students', 'grades', 'marital_statuses', 'parishes', 'persons', 'provinces',
             'relationship_types', 'representative_address_assignments', 'representatives', 'sections',
+            'representative_acknowledgement_completions', 'representative_acknowledgements',
             'sexes', 'snapshot_addresses', 'snapshot_authorized_pickups', 'snapshot_emergency_contacts',
             'statuses', 'status_types', 'student_address_assignments', 'students', 'users',
         ];
@@ -55,6 +55,11 @@ function registerSchemaBaselineTests(TestRunner $runner): void
             '004_create_academic_core', '005_create_identity_and_roles', '006_create_family_management',
             '007_create_institutional_documents', '008_create_enrollment', '009_create_submission_snapshots',
         ], $versions, 'Migration runner did not load the expected ordered sequence.');
+        assertBaselineSame(
+            [],
+            glob(dirname(__DIR__) . '/database/migrations/010_*.php') ?: [],
+            'Migration 010 is forbidden while ADR-0018 authorizes the corrected clean baseline.'
+        );
     });
 
     $runner->add('MariaDB connections use the approved schema character set and collation', function (): void {
@@ -130,14 +135,70 @@ function registerSchemaBaselineTests(TestRunner $runner): void
         }
     });
 
-    $runner->add('all 36 table columns match DATABASE_DESIGN', function (): void {
+    $runner->add('Institutional Acknowledgements replace versioned Enrollment acceptance schema', function (): void {
+        $migrationSource = implode("\n", baselineMigrationSources());
+
+        assertBaselineSame([
+            'id', 'academic_period_id', 'title', 'url', 'official_reference',
+            'status_id', 'created_at', 'updated_at',
+        ], baselineTableColumns($migrationSource, 'acknowledgement_requirements'), 'AcknowledgementRequirement columns differ from ADR-0022.');
+        assertBaselineSame([
+            'id', 'representative_id', 'academic_period_id', 'completed_at',
+        ], baselineTableColumns($migrationSource, 'representative_acknowledgement_completions'), 'Completion columns differ from ADR-0022.');
+        assertBaselineSame([
+            'id', 'representative_acknowledgement_completion_id',
+            'acknowledgement_requirement_id', 'academic_period_id',
+        ], baselineTableColumns($migrationSource, 'representative_acknowledgements'), 'Acknowledgement columns differ from ADR-0022.');
+
+        foreach ([
+            'institutional_documents',
+            'institutional_document_versions',
+            'document_requirements',
+            'enrollment_document_acceptances',
+        ] as $retiredTable) {
+            assertBaselineSame(
+                false,
+                in_array($retiredTable, baselineDeclaredTables($migrationSource), true),
+                sprintf('Retired document/version acceptance table remains: %s.', $retiredTable)
+            );
+        }
+
+        foreach (['file_reference', 'published_at', 'is_required', 'accepted_at'] as $retiredColumn) {
+            assertBaselineSame(
+                false,
+                str_contains($migrationSource, '`' . $retiredColumn . '`'),
+                sprintf('Retired document/version acceptance column remains: %s.', $retiredColumn)
+            );
+        }
+
+        $acknowledgementDefinition = baselineTableDefinition($migrationSource, 'representative_acknowledgements');
+        assertBaselineSame(false, str_contains($acknowledgementDefinition, '`enrollment_id`'), 'Acknowledgements must not depend on Enrollment.');
+        assertBaselineSame(false, str_contains($acknowledgementDefinition, '`representative_id`'), 'RepresentativeId is derived from Completion and must not be duplicated.');
+
+        foreach ([
+            'uq_ack_requirements_id_period',
+            'uq_ack_completions_representative_period',
+            'uq_ack_completions_id_period',
+            'uq_representative_acknowledgements_completion_requirement',
+            'fk_acknowledgements_completion_period',
+            'fk_acknowledgements_requirement_period',
+        ] as $requiredConstraint) {
+            assertBaselineSame(
+                true,
+                str_contains($migrationSource, '`' . $requiredConstraint . '`'),
+                sprintf('Institutional Acknowledgements constraint is missing: %s.', $requiredConstraint)
+            );
+        }
+    });
+
+    $runner->add('all 35 table columns match DATABASE_DESIGN', function (): void {
         $design = file_get_contents(dirname(__DIR__) . '/.ai/12.DATABASE_DESIGN.md');
         if (!is_string($design)) {
             throw new RuntimeException('Unable to read DATABASE_DESIGN.');
         }
 
         preg_match_all('/^## 4\.\d+ `([^`]+)`\R(.*?)(?=^## 4\.|^# 5\.)/ms', $design, $sections, PREG_SET_ORDER);
-        assertBaselineSame(36, count($sections), 'DATABASE_DESIGN must describe exactly 36 physical tables.');
+        assertBaselineSame(35, count($sections), 'DATABASE_DESIGN must describe exactly 35 physical tables.');
 
         $migrationSource = implode("\n", baselineMigrationSources());
         foreach ($sections as $section) {
@@ -229,10 +290,10 @@ function registerSchemaBaselineTests(TestRunner $runner): void
             );
         }
 
-        assertBaselineSame(60, substr_count($migrationSource, 'REFERENCES `'), 'Unexpected foreign-key count.');
+        assertBaselineSame(58, substr_count($migrationSource, 'REFERENCES `'), 'Unexpected foreign-key count.');
         assertBaselineSame(3, substr_count($migrationSource, 'ON DELETE CASCADE'), 'Only the three snapshot child FKs may cascade.');
-        assertBaselineSame(57, substr_count($migrationSource, 'ON DELETE RESTRICT'), 'All non-snapshot FKs must restrict deletion.');
-        assertBaselineSame(60, substr_count($migrationSource, 'ON UPDATE RESTRICT'), 'Every FK must restrict key updates.');
+        assertBaselineSame(55, substr_count($migrationSource, 'ON DELETE RESTRICT'), 'All non-snapshot FKs must restrict deletion.');
+        assertBaselineSame(58, substr_count($migrationSource, 'ON UPDATE RESTRICT'), 'Every FK must restrict key updates.');
     });
 
     $runner->add('baseline excludes discarded schema and Person-owned family resources', function (): void {
@@ -335,6 +396,16 @@ function baselineDeclaredTables(string $source): array
         array_values(array_filter($literalTables[1], static fn (string $table): bool => !str_contains($table, '%'))),
         $generatedTables[1]
     );
+}
+
+function baselineTableDefinition(string $source, string $table): string
+{
+    $pattern = '/CREATE TABLE `' . preg_quote($table, '/') . '` \((.*?)\n\s*\) ENGINE=/s';
+    if (preg_match($pattern, $source, $match) !== 1) {
+        throw new RuntimeException(sprintf('Table declaration not found: %s.', $table));
+    }
+
+    return $match[1];
 }
 
 function baselineColumnDeclaration(string $source, string $table, string $column): string
