@@ -12,6 +12,7 @@ final readonly class InstitutionalAcknowledgementAcademicPeriodOption
         public string $name,
         public string $startsOn,
         public string $endsOn,
+        public string $status,
     ) {
     }
 }

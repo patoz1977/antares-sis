@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace App\InstitutionalDocuments\Http;
 
+use App\AcademicCore\Application\ActivateAcademicPeriod;
+use App\AcademicCore\Application\DeactivateAcademicPeriod;
+use App\AcademicCore\Application\Exception\AcademicPeriodNotFound;
+use App\AcademicCore\Application\Exception\InvalidPersistedAcademicPeriodResult;
+use App\AcademicCore\Domain\Exception\AcademicPeriodOperationalStateConflict;
 use App\Controllers\Controller;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
@@ -18,6 +23,7 @@ use App\InstitutionalDocuments\Application\GetAcknowledgementRequirements;
 use App\InstitutionalDocuments\Application\UpdateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Domain\Exception\InvalidInstitutionalAcknowledgementState;
 use Core\Http\Request;
+use RuntimeException;
 
 final class InstitutionalAcknowledgementController extends Controller
 {
@@ -34,6 +40,8 @@ final class InstitutionalAcknowledgementController extends Controller
         private readonly CsrfTokenManager $csrf,
         private readonly SessionManager $session,
         private readonly InstitutionalAcknowledgementAcademicPeriodOptionsProvider $periods,
+        private readonly ActivateAcademicPeriod $activateAcademicPeriod,
+        private readonly DeactivateAcademicPeriod $deactivateAcademicPeriod,
     ) {
     }
 
@@ -123,6 +131,22 @@ final class InstitutionalAcknowledgementController extends Controller
             $this->deactivateRequirement->handle($id, $periodId), 'Requirement deactivated successfully.');
     }
 
+    public function activateAcademicPeriod(): string
+    {
+        return $this->changeAcademicPeriodStatus(
+            fn (int $id): mixed => $this->activateAcademicPeriod->handle($id),
+            'Academic Period activated successfully.',
+        );
+    }
+
+    public function deactivateAcademicPeriod(): string
+    {
+        return $this->changeAcademicPeriodStatus(
+            fn (int $id): mixed => $this->deactivateAcademicPeriod->handle($id),
+            'Academic Period deactivated successfully.',
+        );
+    }
+
     /** @param callable(int, array<string, string>): void $operation */
     private function mutate(callable $operation, string $success): string
     {
@@ -168,6 +192,36 @@ final class InstitutionalAcknowledgementController extends Controller
             }
             $operation($requirementId, $periodId);
         }, $success);
+    }
+
+    /** @param callable(int): mixed $operation */
+    private function changeAcademicPeriodStatus(callable $operation, string $success): string
+    {
+        $input = (new Request())->input();
+        if (!$this->csrf->isValid($this->scalar($input, '_csrf_token'))) {
+            return $this->plainError('The request could not be verified.', 419);
+        }
+
+        $periodId = $this->positiveInteger($input['academic_period_id'] ?? null);
+        if ($periodId === null) {
+            return $this->plainError('Select a valid Academic Period.', 422);
+        }
+
+        try {
+            $operation($periodId);
+        } catch (AcademicPeriodNotFound) {
+            return $this->plainError('Academic Period was not found.', 404);
+        } catch (AcademicPeriodOperationalStateConflict) {
+            return $this->plainError('Academic Period operational state is inconsistent.', 409);
+        } catch (InvalidPersistedAcademicPeriodResult) {
+            return $this->plainError('The Academic Period operation could not be confirmed.', 409);
+        } catch (RuntimeException) {
+            return $this->plainError('The Academic Period operation is unavailable.', 409);
+        }
+
+        $this->session->put(self::FLASH_SUCCESS_KEY, $success);
+
+        return $this->redirect($periodId);
     }
 
     private function trustedPeriod(array $input): ?InstitutionalAcknowledgementAcademicPeriodOption

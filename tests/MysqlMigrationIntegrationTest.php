@@ -2,6 +2,14 @@
 
 declare(strict_types=1);
 
+use App\AcademicCore\Application\ActivateAcademicPeriod;
+use App\AcademicCore\Application\DeactivateAcademicPeriod;
+use App\AcademicCore\Application\GetActiveAcademicPeriod;
+use App\AcademicCore\Domain\AcademicPeriod;
+use App\AcademicCore\Domain\AcademicPeriodRepository;
+use App\AcademicCore\Domain\Exception\AcademicPeriodOperationalStateConflict;
+use App\AcademicCore\Domain\ValueObject\AcademicPeriodId as CoreAcademicPeriodId;
+use App\AcademicCore\Infrastructure\Persistence\PdoAcademicPeriodRepository;
 use App\IdentityAccess\Application\AuthenticateUser;
 use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
@@ -484,6 +492,12 @@ try {
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false]
     );
     $identity->exec("SET time_zone = '+00:00'");
+    $mariaDbVersion = (string) $identity->query('SELECT VERSION()')->fetchColumn();
+    assertIntegration(
+        str_contains(strtolower($mariaDbVersion), 'mariadb')
+        && preg_match('/^10\.4\./', $mariaDbVersion) === 1,
+        'Physical baseline requires MariaDB 10.4; observed version: ' . $mariaDbVersion
+    );
     assertIntegration(
         $identity->query('SELECT @@session.time_zone')->fetchColumn() === '+00:00',
         'MariaDB harness inspection session did not establish the UTC SQL convention.'
@@ -522,6 +536,14 @@ try {
     assertIntegration(
         $actualTables === $expectedTables,
         schemaInventoryDifferenceMessage($expectedTables, $actualTables)
+    );
+    $physicalForeignKeyCount = (int) $identity->query(
+        'SELECT COUNT(*) FROM information_schema.referential_constraints '
+        . 'WHERE constraint_schema = DATABASE()'
+    )->fetchColumn();
+    assertIntegration(
+        $physicalForeignKeyCount === 58,
+        sprintf('Expected 58 physical foreign keys; MariaDB reported %d.', $physicalForeignKeyCount)
     );
 
     $familyResourceTables = [
@@ -3733,6 +3755,241 @@ try {
     }
     assertIntegration($lockBlocked, 'Concurrent User load was not protected by a row lock.');
 
+    $identity->exec('UPDATE academic_periods SET status_id = ' . $inactiveGeneralStatusId);
+    $insertOperationalPeriod = $identity->prepare(
+        'INSERT INTO academic_periods (code, name, starts_on, ends_on, status_id) '
+        . 'VALUES (:code, :name, :startsOn, :endsOn, :statusId)'
+    );
+    $operationalPeriodIds = [];
+    foreach ([
+        ['E009_PHASE51_A', 'Phase 5.1 period A', '2035-09-01', '2036-06-30'],
+        ['E009_PHASE51_B', 'Phase 5.1 period B', '2036-09-01', '2037-06-30'],
+        ['E009_PHASE51_C', 'Phase 5.1 period C', '2037-09-01', '2038-06-30'],
+    ] as [$code, $name, $startsOn, $endsOn]) {
+        $insertOperationalPeriod->execute([
+            ':code' => $code,
+            ':name' => $name,
+            ':startsOn' => $startsOn,
+            ':endsOn' => $endsOn,
+            ':statusId' => $inactiveGeneralStatusId,
+        ]);
+        $operationalPeriodIds[] = (int) $identity->lastInsertId();
+    }
+    [$operationalPeriodAId, $operationalPeriodBId, $operationalPeriodCId] = $operationalPeriodIds;
+    assertIntegration(
+        $operationalPeriodAId > 0
+        && $operationalPeriodBId > 0
+        && $operationalPeriodCId > 0
+        && count(array_unique($operationalPeriodIds)) === 3,
+        'MariaDB did not generate distinct positive AcademicPeriod lifecycle identities.'
+    );
+
+    $academicPeriodsA = new PdoAcademicPeriodRepository($managerA);
+    $academicPeriodsB = new PdoAcademicPeriodRepository($managerB);
+    $activeAcademicPeriod = new GetActiveAcademicPeriod($academicPeriodsA);
+    $activateAcademicPeriodA = new ActivateAcademicPeriod(
+        $academicPeriodsA,
+        new PdoTransactionRunner($managerA),
+    );
+    $deactivateAcademicPeriodA = new DeactivateAcademicPeriod(
+        $academicPeriodsA,
+        new PdoTransactionRunner($managerA),
+    );
+
+    assertIntegration(
+        $activeAcademicPeriod->handle() === null,
+        'AcademicPeriod was inferred from dates while every period was INACTIVE.'
+    );
+    $activatedA = $activateAcademicPeriodA->handle($operationalPeriodAId);
+    assertIntegration(
+        $activatedA->id === $operationalPeriodAId
+        && $activatedA->code === 'E009_PHASE51_A'
+        && $activatedA->name === 'Phase 5.1 period A'
+        && $activatedA->startsOn === '2035-09-01'
+        && $activatedA->endsOn === '2036-06-30'
+        && $activatedA->status === 'ACTIVE'
+        && $activeAcademicPeriod->handle()?->id === $operationalPeriodAId,
+        'MariaDB AcademicPeriod activation did not return safe exact persisted output.'
+    );
+
+    $activatedB = $activateAcademicPeriodA->handle($operationalPeriodBId);
+    $activeCount = (int) $identity->query(
+        'SELECT COUNT(*) FROM academic_periods ap '
+        . 'INNER JOIN statuses s ON s.id = ap.status_id '
+        . 'INNER JOIN status_types st ON st.id = s.status_type_id '
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE'"
+    )->fetchColumn();
+    assertIntegration(
+        $activatedB->id === $operationalPeriodBId
+        && $activeAcademicPeriod->handle()?->id === $operationalPeriodBId
+        && $academicPeriodsA->findById(new CoreAcademicPeriodId($operationalPeriodAId))?->status()->value === 'INACTIVE'
+        && $activeCount === 1,
+        'Activating AcademicPeriod B did not atomically deactivate A.'
+    );
+
+    $deactivatedB = $deactivateAcademicPeriodA->handle($operationalPeriodBId);
+    assertIntegration(
+        $deactivatedB->status === 'INACTIVE' && $activeAcademicPeriod->handle() === null,
+        'Deactivating the operational AcademicPeriod did not permit zero ACTIVE periods.'
+    );
+    $activateAcademicPeriodA->handle($operationalPeriodAId);
+
+    $identity->exec(
+        'UPDATE academic_periods SET status_id = ' . $generalStatusId
+        . ' WHERE id = ' . $operationalPeriodBId
+    );
+    $multipleActiveRejected = false;
+    try {
+        $academicPeriodsA->findActive();
+    } catch (AcademicPeriodOperationalStateConflict) {
+        $multipleActiveRejected = true;
+    }
+    assertIntegration(
+        $multipleActiveRejected,
+        'MariaDB AcademicPeriod persistence did not fail closed for multiple ACTIVE periods.'
+    );
+    $identity->exec(
+        'UPDATE academic_periods SET status_id = ' . $inactiveGeneralStatusId
+        . ' WHERE id = ' . $operationalPeriodBId
+    );
+
+    $identity->exec(
+        'UPDATE academic_periods SET status_id = ' . $disabledUserStatusId
+        . ' WHERE id = ' . $operationalPeriodCId
+    );
+    $wrongStatusTypeRejected = false;
+    $wrongStatusTypeRejectedByActiveResolution = false;
+    try {
+        $academicPeriodsA->findById(new CoreAcademicPeriodId($operationalPeriodCId));
+    } catch (RuntimeException) {
+        $wrongStatusTypeRejected = true;
+    }
+    try {
+        $academicPeriodsA->findActive();
+    } catch (RuntimeException) {
+        $wrongStatusTypeRejectedByActiveResolution = true;
+    }
+    assertIntegration(
+        $wrongStatusTypeRejected && $wrongStatusTypeRejectedByActiveResolution,
+        'MariaDB AcademicPeriod persistence accepted a status outside GENERAL_STATUS.'
+    );
+    $identity->exec(
+        'UPDATE academic_periods SET status_id = ' . $inactiveGeneralStatusId
+        . ' WHERE id = ' . $operationalPeriodCId
+    );
+
+    $failingAcademicPeriods = new class($academicPeriodsA) implements AcademicPeriodRepository {
+        private int $saveCount = 0;
+
+        public function __construct(private readonly AcademicPeriodRepository $inner)
+        {
+        }
+
+        public function findById(CoreAcademicPeriodId $id): ?AcademicPeriod
+        {
+            return $this->inner->findById($id);
+        }
+
+        public function findActive(): ?AcademicPeriod
+        {
+            return $this->inner->findActive();
+        }
+
+        public function save(AcademicPeriod $period): AcademicPeriod
+        {
+            $this->saveCount++;
+            if ($this->saveCount === 2) {
+                throw new RuntimeException('Forced AcademicPeriod activation failure.');
+            }
+
+            return $this->inner->save($period);
+        }
+
+        public function lockOperationalTransition(): void
+        {
+            $this->inner->lockOperationalTransition();
+        }
+    };
+    $rollbackObserved = false;
+    try {
+        (new ActivateAcademicPeriod(
+            $failingAcademicPeriods,
+            new PdoTransactionRunner($managerA),
+        ))->handle($operationalPeriodBId);
+    } catch (RuntimeException $exception) {
+        $rollbackObserved = $exception->getMessage() === 'Forced AcademicPeriod activation failure.';
+    }
+    assertIntegration(
+        $rollbackObserved
+        && $activeAcademicPeriod->handle()?->id === $operationalPeriodAId
+        && $academicPeriodsA->findById(new CoreAcademicPeriodId($operationalPeriodBId))?->status()->value === 'INACTIVE',
+        'Failed AcademicPeriod activation did not roll back the prior deactivation.'
+    );
+
+    $connectionA->beginTransaction();
+    $academicPeriodsA->lockOperationalTransition();
+    $connectionB->exec('SET innodb_lock_wait_timeout = 1');
+    $competingActivationBlocked = false;
+    try {
+        (new ActivateAcademicPeriod(
+            $academicPeriodsB,
+            new PdoTransactionRunner($managerB),
+        ))->handle($operationalPeriodBId);
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException(
+                'Competing AcademicPeriod activation failed for a reason other than lock contention.',
+                previous: $exception,
+            );
+        }
+        $competingActivationBlocked = true;
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+        if ($connectionA->inTransaction()) {
+            $connectionA->rollBack();
+        }
+    }
+    assertIntegration(
+        $competingActivationBlocked
+        && $activeAcademicPeriod->handle()?->id === $operationalPeriodAId,
+        'Competing AcademicPeriod activation bypassed the stable GENERAL_STATUS/ACTIVE lock.'
+    );
+
+    $serializedB = (new ActivateAcademicPeriod(
+        $academicPeriodsB,
+        new PdoTransactionRunner($managerB),
+    ))->handle($operationalPeriodBId);
+    assertIntegration(
+        $serializedB->id === $operationalPeriodBId
+        && $activeAcademicPeriod->handle()?->id === $operationalPeriodBId
+        && (int) $identity->query(
+            'SELECT COUNT(*) FROM academic_periods ap '
+            . 'INNER JOIN statuses s ON s.id = ap.status_id '
+            . 'INNER JOIN status_types st ON st.id = s.status_type_id '
+            . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE'"
+        )->fetchColumn() === 1,
+        'Serialized competing AcademicPeriod activations did not finish with exactly one ACTIVE period.'
+    );
+
+    $physicalOptions = (new PdoInstitutionalAcknowledgementAcademicPeriodOptionsProvider($managerA))->all();
+    $physicalOptionStatuses = [];
+    foreach ($physicalOptions as $option) {
+        if (in_array($option->id, $operationalPeriodIds, true)) {
+            $physicalOptionStatuses[$option->id] = $option->status;
+        }
+    }
+    assertIntegration(
+        $physicalOptionStatuses[$operationalPeriodAId] === 'INACTIVE'
+        && $physicalOptionStatuses[$operationalPeriodBId] === 'ACTIVE'
+        && $physicalOptionStatuses[$operationalPeriodCId] === 'INACTIVE',
+        'E009 administrator AcademicPeriod provider did not expose exact lifecycle states.'
+    );
+
+    echo 'MariaDB version: ' . $mariaDbVersion . "\n";
+    echo 'Physical inventory: ' . count($actualTables) . ' tables including migrations metadata; '
+        . $physicalForeignKeyCount . " foreign keys\n";
     echo "PASS MySQL clean migration creates the exact 35-table domain baseline plus migrations metadata\n";
     echo "PASS MySQL Institutional Acknowledgements AUTO_INCREMENT UTC constraints ownership and rollback\n";
     echo "PASS MySQL Institutional Acknowledgements repository roundtrip AUTO_INCREMENT UTC transactions and history\n";
@@ -3741,6 +3998,7 @@ try {
     echo "PASS MySQL AdminSeeder preserves existing credentials and status\n";
     echo "PASS MySQL UTC repository locked_at persistence\n";
     echo "PASS MySQL concurrent User row locking with specific MariaDB error classification\n";
+    echo "PASS MySQL Active AcademicPeriod lifecycle atomic transition fail-closed rollback and serialization\n";
     echo "PASS MySQL database-generated Person identities and complete aggregate reconstruction\n";
     echo "PASS MySQL Person normalized identification lookup and uniqueness\n";
     echo "PASS MySQL Person update, nullable fields and GENERAL_STATUS mapping\n";

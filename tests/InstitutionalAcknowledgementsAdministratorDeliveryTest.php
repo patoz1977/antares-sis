@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\AcademicCore\Application\ActivateAcademicPeriod;
+use App\AcademicCore\Application\DeactivateAcademicPeriod;
+use App\AcademicCore\Domain\AcademicPeriodStatus;
+use App\AcademicCore\Domain\ValueObject\AcademicPeriodId as CoreAcademicPeriodId;
 use App\IdentityAccess\Application\GetAuthenticatedUser;
 use App\InstitutionalDocuments\Application\ActivateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Application\CreateAcknowledgementRequirement;
@@ -44,7 +48,11 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
     $runner->add('E009 AcademicPeriod PDO provider lists every status deterministically and revalidates IDs', function (): void {
         $manager = familySqliteManager();
         $pdo = $manager->connection();
+        $pdo->exec('CREATE TABLE status_types (id INTEGER PRIMARY KEY, code TEXT NOT NULL)');
+        $pdo->exec('CREATE TABLE statuses (id INTEGER PRIMARY KEY, status_type_id INTEGER NOT NULL, code TEXT NOT NULL)');
         $pdo->exec('CREATE TABLE academic_periods (id INTEGER PRIMARY KEY, code TEXT, name TEXT, starts_on TEXT, ends_on TEXT, status_id INTEGER)');
+        $pdo->exec("INSERT INTO status_types VALUES (1, 'GENERAL_STATUS')");
+        $pdo->exec("INSERT INTO statuses VALUES (1, 1, 'ACTIVE'), (2, 1, 'INACTIVE')");
         $pdo->exec("INSERT INTO academic_periods VALUES "
             . "(1, 'OLD', 'Old inactive', '2024-09-01', '2025-06-30', 2), "
             . "(2, 'NEW-A', 'New active', '2026-09-01', '2027-06-30', 1), "
@@ -56,10 +64,11 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
             array_map(static fn ($period): array => [$period->id, $period->code], $provider->all()),
         );
         assertSameValue('Old inactive', $provider->findById(1)?->name);
+        assertSameValue('ACTIVE', $provider->findById(2)?->status);
         assertSameValue(null, $provider->findById(999));
         $source = (string) file_get_contents(dirname(__DIR__) . '/app/InstitutionalDocuments/Infrastructure/Persistence/PdoInstitutionalAcknowledgementAcademicPeriodOptionsProvider.php');
         deliveryAssertContains('prepare(', $source);
-        assertSameValue(false, str_contains($source, 'status_id ='));
+        assertSameValue(false, str_contains($source, 'CURRENT_DATE'));
     });
 
     $runner->add('E009 administrator GET requires explicit revalidated AcademicPeriod context', function (): void {
@@ -205,11 +214,65 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
         assertSameValue(false, str_contains($page, 'href="javascript:'));
     });
 
+    $runner->add('E009 administrator activates and deactivates the operational AcademicPeriod with CSRF and PRG', function (): void {
+        [$controller, , $session, , $periodRepository] = institutionalAcknowledgementDeliveryController();
+        deliveryRequest('POST', '/institutional-acknowledgements/academic-period/activate', [
+            '_csrf_token' => 'delivery-csrf',
+            'academic_period_id' => '10',
+        ]);
+        assertSameValue('', $controller->activateAcademicPeriod());
+        assertSameValue(303, http_response_code());
+        assertSameValue(10, $periodRepository->findActive()?->id()?->value());
+        assertSameValue('INACTIVE', $periodRepository->findById(new CoreAcademicPeriodId(9))?->status()->value);
+        assertSameValue('Academic Period activated successfully.', $session->get('_flash_institutional_acknowledgements_success'));
+
+        deliveryRequest('POST', '/institutional-acknowledgements/academic-period/deactivate', [
+            '_csrf_token' => 'delivery-csrf',
+            'academic_period_id' => '10',
+        ]);
+        assertSameValue('', $controller->deactivateAcademicPeriod());
+        assertSameValue(303, http_response_code());
+        assertSameValue(null, $periodRepository->findActive());
+    });
+
+    $runner->add('E009 administrator AcademicPeriod lifecycle rejects CSRF malformed and absent targets safely', function (): void {
+        foreach ([
+            [['_csrf_token' => 'invalid', 'academic_period_id' => '10'], 419],
+            [['_csrf_token' => 'delivery-csrf', 'academic_period_id' => 'bad'], 422],
+            [['_csrf_token' => 'delivery-csrf', 'academic_period_id' => '999'], 404],
+        ] as [$input, $status]) {
+            [$controller, , , , $periodRepository] = institutionalAcknowledgementDeliveryController();
+            deliveryRequest('POST', '/institutional-acknowledgements/academic-period/activate', [
+                '_csrf_token' => $input['_csrf_token'],
+                'academic_period_id' => $input['academic_period_id'],
+            ]);
+            $response = $controller->activateAcademicPeriod();
+            assertSameValue($status, http_response_code());
+            assertSameValue(9, $periodRepository->findActive()?->id()?->value());
+            assertSameValue(false, str_contains($response, 'SQLSTATE'));
+        }
+    });
+
+    $runner->add('E009 administrator AcademicPeriod lifecycle maps persistence failure without disclosure', function (): void {
+        [$controller, , , , $periodRepository] = institutionalAcknowledgementDeliveryController();
+        $periodRepository->failOnSaveNumber = 1;
+        deliveryRequest('POST', '/institutional-acknowledgements/academic-period/activate', [
+            '_csrf_token' => 'delivery-csrf',
+            'academic_period_id' => '10',
+        ]);
+        $response = $controller->activateAcademicPeriod();
+        assertSameValue(409, http_response_code());
+        deliveryAssertContains('operation is unavailable', $response);
+        assertSameValue(false, str_contains($response, 'Forced AcademicPeriod'));
+        assertSameValue(9, $periodRepository->findActive()?->id()?->value());
+    });
+
     $runner->add('E009 administrator exposes exact routes wiring architecture and White Label scope', function (): void {
         $routes = str_replace("\r\n", "\n", (string) file_get_contents(dirname(__DIR__) . '/routes/web.php'));
-        assertSameValue(5, preg_match_all('/\$router->(?:get|post)\(\s*\'\/institutional-acknowledgements/', $routes));
+        assertSameValue(7, preg_match_all('/\$router->(?:get|post)\(\s*\'\/institutional-acknowledgements/', $routes));
         assertSameValue(1, preg_match_all('/\$router->get\(\s*\'\/institutional-acknowledgements\'/', $routes));
         assertSameValue(4, preg_match_all('/\$router->post\(\s*\'\/institutional-acknowledgements\/requirements\//', $routes));
+        assertSameValue(2, preg_match_all('/\$router->post\(\s*\'\/institutional-acknowledgements\/academic-period\//', $routes));
         deliveryAssertContains('AuthenticationMiddleware::class', $routes);
         deliveryAssertContains('InstitutionalDocumentsAdministrationMiddleware::class', $routes);
         assertSameValue(false, str_contains($routes, '/institutional-acknowledgements/delete'));
@@ -232,7 +295,7 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
     });
 }
 
-/** @return array{InstitutionalAcknowledgementController, ApplicationRequirementRepository, FakeSessionManager, object} */
+/** @return array{InstitutionalAcknowledgementController, ApplicationRequirementRepository, FakeSessionManager, object, InMemoryAcademicPeriodRepository} */
 function institutionalAcknowledgementDeliveryController(?ApplicationRequirementRepository $repository = null): array
 {
     $repository ??= new ApplicationRequirementRepository([
@@ -240,8 +303,8 @@ function institutionalAcknowledgementDeliveryController(?ApplicationRequirementR
         applicationRequirement(2, 10, 'Period B Requirement', 'b/url', null, AcknowledgementRequirementStatus::Inactive),
     ]);
     $periods = [
-        new InstitutionalAcknowledgementAcademicPeriodOption(10, 'B', 'Period B', '2026-09-01', '2027-06-30'),
-        new InstitutionalAcknowledgementAcademicPeriodOption(9, 'A', 'Period A', '2025-09-01', '2026-06-30'),
+        new InstitutionalAcknowledgementAcademicPeriodOption(10, 'B', 'Period B', '2026-09-01', '2027-06-30', 'INACTIVE'),
+        new InstitutionalAcknowledgementAcademicPeriodOption(9, 'A', 'Period A', '2025-09-01', '2026-06-30', 'ACTIVE'),
     ];
     $provider = new class($periods) implements InstitutionalAcknowledgementAcademicPeriodOptionsProvider {
         public function __construct(public array $periods)
@@ -265,6 +328,11 @@ function institutionalAcknowledgementDeliveryController(?ApplicationRequirementR
         }
     };
     $session = new FakeSessionManager();
+    $academicPeriods = new InMemoryAcademicPeriodRepository([
+        academicPeriodFixture(10, AcademicPeriodStatus::Inactive, '2026-09-01', '2027-06-30'),
+        academicPeriodFixture(9, AcademicPeriodStatus::Active, '2025-09-01', '2026-06-30'),
+    ]);
+    $transactions = new InMemoryCompositeTransactionRunner([$academicPeriods]);
 
     return [
         new InstitutionalAcknowledgementController(
@@ -276,10 +344,13 @@ function institutionalAcknowledgementDeliveryController(?ApplicationRequirementR
             new FakeDeliveryCsrf(),
             $session,
             $provider,
+            new ActivateAcademicPeriod($academicPeriods, $transactions),
+            new DeactivateAcademicPeriod($academicPeriods, $transactions),
         ),
         $repository,
         $session,
         $provider,
+        $academicPeriods,
     ];
 }
 

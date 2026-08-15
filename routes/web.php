@@ -78,6 +78,16 @@ $router->post(
     [$institutionalAcknowledgementController, 'deactivate'],
     $institutionalAcknowledgementMiddleware,
 );
+$router->post(
+    '/institutional-acknowledgements/academic-period/activate',
+    [$institutionalAcknowledgementController, 'activateAcademicPeriod'],
+    $institutionalAcknowledgementMiddleware,
+);
+$router->post(
+    '/institutional-acknowledgements/academic-period/deactivate',
+    [$institutionalAcknowledgementController, 'deactivateAcademicPeriod'],
+    $institutionalAcknowledgementMiddleware,
+);
 $router->get(
     '/representative',
     [$representativePortalController, 'index'],

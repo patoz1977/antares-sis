@@ -43,6 +43,9 @@ require __DIR__ . '/InstitutionalAcknowledgementsDomainTest.php';
 require __DIR__ . '/InstitutionalAcknowledgementsPersistenceTest.php';
 require __DIR__ . '/InstitutionalAcknowledgementsApplicationTest.php';
 require __DIR__ . '/InstitutionalAcknowledgementsAdministratorDeliveryTest.php';
+require __DIR__ . '/AcademicPeriodDomainTest.php';
+require __DIR__ . '/AcademicPeriodPersistenceTest.php';
+require __DIR__ . '/AcademicPeriodApplicationTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
@@ -80,6 +83,9 @@ require __DIR__ . '/SchemaBaselineTest.php';
 \Tests\registerInstitutionalAcknowledgementsPersistenceTests($runner);
 \Tests\registerInstitutionalAcknowledgementsApplicationTests($runner);
 \Tests\registerInstitutionalAcknowledgementsAdministratorDeliveryTests($runner);
+\Tests\registerAcademicPeriodDomainTests($runner);
+\Tests\registerAcademicPeriodPersistenceTests($runner);
+\Tests\registerAcademicPeriodApplicationTests($runner);
 \Tests\registerSchemaBaselineTests($runner);
 
 ob_start();
