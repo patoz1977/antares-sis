@@ -30,6 +30,19 @@ final class AcknowledgementRequirementApplicationSupport
         return $requirement;
     }
 
+    public static function loadForPeriod(
+        AcknowledgementRequirementRepository $requirements,
+        AcknowledgementRequirementId $id,
+        AcademicPeriodId $academicPeriodId,
+    ): AcknowledgementRequirement {
+        $requirement = self::load($requirements, $id);
+        if (!$requirement->academicPeriodId()->equals($academicPeriodId)) {
+            throw new AcknowledgementRequirementNotFound('Acknowledgement Requirement was not found.');
+        }
+
+        return $requirement;
+    }
+
     /** @return list<AcknowledgementRequirement> */
     public static function forPeriod(
         AcknowledgementRequirementRepository $requirements,

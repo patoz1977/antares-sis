@@ -8,6 +8,7 @@ final readonly class UpdateAcknowledgementRequirementInput
 {
     public function __construct(
         public int $requirementId,
+        public int $academicPeriodId,
         public string $title,
         public string $url,
         public ?string $officialReference,

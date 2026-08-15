@@ -107,6 +107,19 @@ use App\Student\Application\CreateStudent;
 use App\Student\Application\GetStudent;
 use App\Student\Domain\StudentRepository;
 use App\Student\Infrastructure\Persistence\PdoStudentRepository;
+use App\InstitutionalDocuments\Application\ActivateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Application\CreateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Application\DeactivateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Application\GetAcknowledgementRequirements;
+use App\InstitutionalDocuments\Application\UpdateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Domain\AcknowledgementRequirementRepository;
+use App\InstitutionalDocuments\Domain\RepresentativeAcknowledgementCompletionRepository;
+use App\InstitutionalDocuments\Http\InstitutionalAcknowledgementAcademicPeriodOptionsProvider;
+use App\InstitutionalDocuments\Http\InstitutionalAcknowledgementController;
+use App\InstitutionalDocuments\Http\InstitutionalDocumentsAdministrationMiddleware;
+use App\InstitutionalDocuments\Infrastructure\Persistence\PdoAcknowledgementRequirementRepository;
+use App\InstitutionalDocuments\Infrastructure\Persistence\PdoInstitutionalAcknowledgementAcademicPeriodOptionsProvider;
+use App\InstitutionalDocuments\Infrastructure\Persistence\PdoRepresentativeAcknowledgementCompletionRepository;
 
 use App\Services\AuthenticationService;
 use App\Services\AuthenticationServiceInterface;
@@ -318,6 +331,31 @@ $container->singleton(
 );
 $container->singleton(FamilyAdministrationMiddleware::class, FamilyAdministrationMiddleware::class);
 $container->singleton(RepresentativeUserController::class, RepresentativeUserController::class);
+$container->singleton(
+    AcknowledgementRequirementRepository::class,
+    PdoAcknowledgementRequirementRepository::class,
+);
+$container->singleton(
+    RepresentativeAcknowledgementCompletionRepository::class,
+    PdoRepresentativeAcknowledgementCompletionRepository::class,
+);
+$container->singleton(GetAcknowledgementRequirements::class, GetAcknowledgementRequirements::class);
+$container->singleton(CreateAcknowledgementRequirement::class, CreateAcknowledgementRequirement::class);
+$container->singleton(UpdateAcknowledgementRequirement::class, UpdateAcknowledgementRequirement::class);
+$container->singleton(ActivateAcknowledgementRequirement::class, ActivateAcknowledgementRequirement::class);
+$container->singleton(DeactivateAcknowledgementRequirement::class, DeactivateAcknowledgementRequirement::class);
+$container->singleton(
+    InstitutionalAcknowledgementAcademicPeriodOptionsProvider::class,
+    PdoInstitutionalAcknowledgementAcademicPeriodOptionsProvider::class,
+);
+$container->singleton(
+    InstitutionalDocumentsAdministrationMiddleware::class,
+    InstitutionalDocumentsAdministrationMiddleware::class,
+);
+$container->singleton(
+    InstitutionalAcknowledgementController::class,
+    InstitutionalAcknowledgementController::class,
+);
 
 $app = new Application($config, $container);
 
