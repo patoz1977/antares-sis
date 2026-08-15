@@ -575,6 +575,8 @@ function representativeFamilyResourcesFixture(
     bool $withRepresentative = true,
     bool $withFamily = true,
     bool $withSecondFamily = false,
+    array $acknowledgementRequirements = [],
+    ?array $academicPeriods = null,
 ): array {
     $identity = familyContextAuthorizationFixture($withUser, $withRepresentative);
     $families = $identity['families'];
@@ -612,12 +614,18 @@ function representativeFamilyResourcesFixture(
     };
     $relationships = new FakeRelationshipTypeLookup([201]);
     $documents = new FakeFamilyResourceDocumentTypeLookup([9]);
+    $acknowledgements = representativeAcknowledgementTestServices(
+        $identity['getRepresentative'],
+        $acknowledgementRequirements,
+        $academicPeriods,
+    );
     $authorization = new RepresentativeFamilyResourceAuthorization(
         $identity['resolve'],
         new GetFamilyResources($families),
         new GetFamilyMembership($families),
         new GetStudent($students),
         new GetPerson($persons),
+        $acknowledgements['gate'],
     );
     $getResources = new GetRepresentativeFamilyResources($authorization);
     $addressService = new RepresentativeFamilyAddressService(
@@ -665,6 +673,7 @@ function representativeFamilyResourcesFixture(
             $identity['resolve'],
             $identity['select'],
             new FakeDeliveryCsrf(),
+            $acknowledgements['state'],
         ),
         'persons' => $persons,
         'students' => $students,
@@ -672,6 +681,7 @@ function representativeFamilyResourcesFixture(
         'addressService' => $addressService,
         'emergencyService' => $emergencyService,
         'pickupService' => $pickupService,
+        'acknowledgements' => $acknowledgements,
     ]);
 }
 

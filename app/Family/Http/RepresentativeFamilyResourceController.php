@@ -23,6 +23,9 @@ use App\Family\Application\RepresentativeResources\RepresentativeFamilyEmergency
 use App\Family\Domain\Exception\InvalidFamilyState;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
+use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\ActiveAcademicPeriodUnavailable;
+use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementAccessUnavailable;
+use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementsRequired;
 use App\Person\Application\Exception\PersonNotFound;
 use App\Student\Application\Exception\StudentNotFound;
 use Core\Http\Request;
@@ -49,6 +52,12 @@ final class RepresentativeFamilyResourceController extends Controller
     {
         try {
             $resources = $this->getResources->handle();
+        } catch (RepresentativeAcknowledgementsRequired) {
+            return $this->redirect('/representative/acknowledgements', 303);
+        } catch (ActiveAcademicPeriodUnavailable) {
+            return $this->redirect('/representative', 303);
+        } catch (RepresentativeAcknowledgementAccessUnavailable) {
+            return $this->forbidden();
         } catch (RepresentativeFamilySelectionRequired) {
             return $this->redirect('/representative', 302);
         } catch (RepresentativeFamilyContextUnavailable|FamilyNotFound|StudentNotFound|PersonNotFound) {
@@ -343,6 +352,22 @@ final class RepresentativeFamilyResourceController extends Controller
 
         try {
             $handle($familyId, $data);
+        } catch (RepresentativeAcknowledgementsRequired) {
+            $this->session->put(
+                self::FLASH_ERROR_KEY,
+                'Complete Institutional Acknowledgements before updating family data.',
+            );
+
+            return $this->redirect('/representative/acknowledgements', 303);
+        } catch (ActiveAcademicPeriodUnavailable) {
+            $this->session->put(
+                self::FLASH_ERROR_KEY,
+                'No active Academic Period is currently configured.',
+            );
+
+            return $this->redirect('/representative', 303);
+        } catch (RepresentativeAcknowledgementAccessUnavailable) {
+            return $this->forbidden();
         } catch (RepresentativeFamilySelectionRequired) {
             return $this->redirect('/representative', 303);
         } catch (RepresentativeFamilyContextUnavailable|RepresentativeFamilyContextChanged
@@ -550,6 +575,12 @@ final class RepresentativeFamilyResourceController extends Controller
     {
         try {
             $resources = $this->getResources->handle();
+        } catch (RepresentativeAcknowledgementsRequired) {
+            return $this->redirect('/representative/acknowledgements', 303);
+        } catch (ActiveAcademicPeriodUnavailable) {
+            return $this->redirect('/representative', 303);
+        } catch (RepresentativeAcknowledgementAccessUnavailable) {
+            return $this->forbidden();
         } catch (RepresentativeFamilySelectionRequired) {
             return $this->redirect('/representative', 303);
         } catch (RepresentativeFamilyContextUnavailable|FamilyNotFound|StudentNotFound|PersonNotFound) {

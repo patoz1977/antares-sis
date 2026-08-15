@@ -113,15 +113,24 @@ use App\Student\Application\GetStudent;
 use App\Student\Domain\StudentRepository;
 use App\Student\Infrastructure\Persistence\PdoStudentRepository;
 use App\InstitutionalDocuments\Application\ActivateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Application\CheckInstitutionalAcknowledgementSatisfaction;
+use App\InstitutionalDocuments\Application\CompleteRepresentativeAcknowledgements;
 use App\InstitutionalDocuments\Application\CreateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Application\Contract\InstitutionalAcknowledgementSatisfaction;
 use App\InstitutionalDocuments\Application\DeactivateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Application\GetAcknowledgementRequirements;
+use App\InstitutionalDocuments\Application\GetRepresentativeAcknowledgementState;
+use App\InstitutionalDocuments\Application\RepresentativePortal\CompleteAuthenticatedRepresentativeAcknowledgements;
+use App\InstitutionalDocuments\Application\RepresentativePortal\GetRepresentativeAcknowledgementPortalState;
+use App\InstitutionalDocuments\Application\RepresentativePortal\RequireRepresentativeAcknowledgementSatisfaction;
+use App\InstitutionalDocuments\Application\RepresentativePortal\ResolveRepresentativeAcknowledgementContext;
 use App\InstitutionalDocuments\Application\UpdateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Domain\AcknowledgementRequirementRepository;
 use App\InstitutionalDocuments\Domain\RepresentativeAcknowledgementCompletionRepository;
 use App\InstitutionalDocuments\Http\InstitutionalAcknowledgementAcademicPeriodOptionsProvider;
 use App\InstitutionalDocuments\Http\InstitutionalAcknowledgementController;
 use App\InstitutionalDocuments\Http\InstitutionalDocumentsAdministrationMiddleware;
+use App\InstitutionalDocuments\Http\RepresentativeAcknowledgementController;
 use App\InstitutionalDocuments\Infrastructure\Persistence\PdoAcknowledgementRequirementRepository;
 use App\InstitutionalDocuments\Infrastructure\Persistence\PdoInstitutionalAcknowledgementAcademicPeriodOptionsProvider;
 use App\InstitutionalDocuments\Infrastructure\Persistence\PdoRepresentativeAcknowledgementCompletionRepository;
@@ -353,6 +362,28 @@ $container->singleton(CreateAcknowledgementRequirement::class, CreateAcknowledge
 $container->singleton(UpdateAcknowledgementRequirement::class, UpdateAcknowledgementRequirement::class);
 $container->singleton(ActivateAcknowledgementRequirement::class, ActivateAcknowledgementRequirement::class);
 $container->singleton(DeactivateAcknowledgementRequirement::class, DeactivateAcknowledgementRequirement::class);
+$container->singleton(GetRepresentativeAcknowledgementState::class, GetRepresentativeAcknowledgementState::class);
+$container->singleton(CompleteRepresentativeAcknowledgements::class, CompleteRepresentativeAcknowledgements::class);
+$container->singleton(
+    InstitutionalAcknowledgementSatisfaction::class,
+    CheckInstitutionalAcknowledgementSatisfaction::class,
+);
+$container->singleton(
+    ResolveRepresentativeAcknowledgementContext::class,
+    ResolveRepresentativeAcknowledgementContext::class,
+);
+$container->singleton(
+    GetRepresentativeAcknowledgementPortalState::class,
+    GetRepresentativeAcknowledgementPortalState::class,
+);
+$container->singleton(
+    CompleteAuthenticatedRepresentativeAcknowledgements::class,
+    CompleteAuthenticatedRepresentativeAcknowledgements::class,
+);
+$container->singleton(
+    RequireRepresentativeAcknowledgementSatisfaction::class,
+    RequireRepresentativeAcknowledgementSatisfaction::class,
+);
 $container->singleton(
     InstitutionalAcknowledgementAcademicPeriodOptionsProvider::class,
     PdoInstitutionalAcknowledgementAcademicPeriodOptionsProvider::class,
@@ -364,6 +395,10 @@ $container->singleton(
 $container->singleton(
     InstitutionalAcknowledgementController::class,
     InstitutionalAcknowledgementController::class,
+);
+$container->singleton(
+    RepresentativeAcknowledgementController::class,
+    RepresentativeAcknowledgementController::class,
 );
 
 $app = new Application($config, $container);
