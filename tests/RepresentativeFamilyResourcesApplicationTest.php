@@ -13,6 +13,8 @@ use App\Family\Application\RepresentativeResources\Exception\RepresentativeFamil
 use App\Family\Application\RepresentativeResources\Exception\RepresentativeFamilyStudentUnavailable;
 use App\Family\Application\RepresentativeResources\GetRepresentativeFamilyResources;
 use App\Family\Application\RepresentativeResources\RepresentativeFamilyAddressService;
+use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\ActiveAcademicPeriodUnavailable;
+use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementsRequired;
 use DateTimeImmutable;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -22,6 +24,74 @@ use Tests\Support\TestRunner;
 
 function registerRepresentativeFamilyResourcesApplicationTests(TestRunner $runner): void
 {
+    $runner->add('Representative Resources Application blocks reads and mutations while acknowledgements are pending', function (): void {
+        $fixture = representativeFamilyResourcesFixture(
+            acknowledgementRequirements: [representativeAcknowledgementRequirement(10)],
+        );
+
+        assertThrows($fixture['getResources']->handle(...), RepresentativeAcknowledgementsRequired::class);
+        foreach ([
+            static fn () => $fixture['addressService']->create(
+                500,
+                'Blocked',
+                'Blocked street',
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+            ),
+            static fn () => $fixture['emergencyService']->create(
+                500,
+                'Blocked contact',
+                201,
+                'mobile',
+                null,
+                null,
+                null,
+            ),
+            static fn () => $fixture['pickupService']->create(
+                500,
+                'Blocked pickup',
+                201,
+                'mobile',
+                null,
+                null,
+                null,
+                null,
+            ),
+        ] as $mutation) {
+            assertThrows($mutation, RepresentativeAcknowledgementsRequired::class);
+        }
+        assertSameValue(0, $fixture['families']->saveCalls());
+    });
+
+    $runner->add('Representative Resources Application fails closed without ACTIVE period', function (): void {
+        $fixture = representativeFamilyResourcesFixture(academicPeriods: []);
+
+        assertThrows($fixture['getResources']->handle(...), ActiveAcademicPeriodUnavailable::class);
+        assertThrows(
+            static fn () => $fixture['addressService']->activate(500, 11),
+            ActiveAcademicPeriodUnavailable::class,
+        );
+        assertSameValue(0, $fixture['families']->saveCalls());
+    });
+
+    $runner->add('Representative Resources Application allows zero requirements and stable Completion', function (): void {
+        $empty = representativeFamilyResourcesFixture();
+        assertSameValue(500, $empty['getResources']->handle()->familyId);
+        assertSameValue(0, $empty['acknowledgements']['completions']->saveCount);
+
+        $completed = representativeFamilyResourcesFixture(
+            acknowledgementRequirements: [representativeAcknowledgementRequirement(10)],
+        );
+        $completed['acknowledgements']['complete']->handle([10]);
+        $completed['acknowledgements']['requirements']->save(representativeAcknowledgementRequirement(11));
+        assertSameValue(500, $completed['getResources']->handle()->familyId);
+        assertSameValue(1, $completed['acknowledgements']['completions']->saveCount);
+    });
+
     $runner->add('Representative Resources Application fails closed without actor Family or selection', function (): void {
         foreach ([
             [representativeFamilyResourcesFixture(withUser: false, withFamily: false), RepresentativeFamilyContextUnavailable::class],
