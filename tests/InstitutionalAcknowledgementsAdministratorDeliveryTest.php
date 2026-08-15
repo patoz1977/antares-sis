@@ -332,13 +332,13 @@ function institutionalAcknowledgementDeliveryController(?ApplicationRequirementR
         academicPeriodFixture(10, AcademicPeriodStatus::Inactive, '2026-09-01', '2027-06-30'),
         academicPeriodFixture(9, AcademicPeriodStatus::Active, '2025-09-01', '2026-06-30'),
     ]);
-    $transactions = new InMemoryCompositeTransactionRunner([$academicPeriods]);
+    $transactions = new InMemoryCompositeTransactionRunner([$academicPeriods, $repository]);
 
     return [
         new InstitutionalAcknowledgementController(
             new GetAcknowledgementRequirements($repository),
             new CreateAcknowledgementRequirement($repository),
-            new UpdateAcknowledgementRequirement($repository),
+            new UpdateAcknowledgementRequirement($repository, $transactions),
             new ActivateAcknowledgementRequirement($repository),
             new DeactivateAcknowledgementRequirement($repository),
             new FakeDeliveryCsrf(),

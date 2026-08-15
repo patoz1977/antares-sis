@@ -127,21 +127,45 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
     $runner->add('E009 Application updates all approved fields before acknowledgement with one save', function (): void {
         $requirement = applicationRequirement(1, 8, 'Original', 'old/url', null);
         $repository = new ApplicationRequirementRepository([$requirement]);
-        $output = (new UpdateAcknowledgementRequirement($repository))->handle(
+        $transactions = new InMemoryCompositeTransactionRunner([$repository]);
+        $output = (new UpdateAcknowledgementRequirement($repository, $transactions))->handle(
             new UpdateAcknowledgementRequirementInput(1, 8, 'Updated', 'new/url', 'NEW-REF')
         );
 
+        assertSameValue(['lock:update:1', 'history:1', 'save:1'], $repository->operationLog);
+        assertSameValue([1], $repository->lockedRequirementIds);
         assertSameValue(1, $repository->hasAcknowledgementsCount);
         assertSameValue(1, $repository->saveCount);
+        assertSameValue(1, $transactions->beginCount());
+        assertSameValue(1, $transactions->commitCount());
+        assertSameValue(0, $transactions->rollbackCount());
         assertSameValue('Updated', $output->title);
         assertSameValue('new/url', $output->url);
         assertSameValue('NEW-REF', $output->officialReference);
         assertSameValue(8, $output->academicPeriodId);
 
-        $output = (new UpdateAcknowledgementRequirement($repository))->handle(
+        $output = applicationUpdateRequirement($repository)->handle(
             new UpdateAcknowledgementRequirementInput(1, 8, 'Updated again', 'other/url', null)
         );
         assertSameValue(null, $output->officialReference);
+    });
+
+    $runner->add('E009 Application update uses only the Requirement reloaded under lock', function (): void {
+        $stale = applicationRequirement(1, 8, 'Stale', 'stale/url', null);
+        $fresh = applicationRequirement(1, 8, 'Fresh', 'fresh/url', 'FRESH-REF');
+        $repository = new ApplicationRequirementRepository([$stale]);
+        $repository->lockedRequirementOverrides[1] = $fresh;
+        $transactions = new InMemoryCompositeTransactionRunner([$repository]);
+
+        $output = (new UpdateAcknowledgementRequirement($repository, $transactions))->handle(
+            new UpdateAcknowledgementRequirementInput(1, 8, 'Fresh', 'new/url', 'FRESH-REF')
+        );
+
+        assertSameValue('Fresh', $output->title);
+        assertSameValue('new/url', $output->url);
+        assertSameValue('FRESH-REF', $output->officialReference);
+        assertSameValue(['lock:update:1', 'history:1', 'save:1'], $repository->operationLog);
+        assertSameValue(1, $repository->saveCount);
     });
 
     $runner->add('E009 Application permits normalized same protected values and URL change after acknowledgement', function (): void {
@@ -149,7 +173,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         $repository = new ApplicationRequirementRepository([$requirement]);
         $repository->historicalRequirementIds[1] = true;
 
-        $output = (new UpdateAcknowledgementRequirement($repository))->handle(
+        $output = applicationUpdateRequirement($repository)->handle(
             new UpdateAcknowledgementRequirementInput(1, 8, ' Protected ', 'new/url', ' REF ')
         );
 
@@ -169,7 +193,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
             $repository = new ApplicationRequirementRepository([$requirement]);
             $repository->historicalRequirementIds[1] = true;
             assertThrows(
-                static fn () => (new UpdateAcknowledgementRequirement($repository))->handle($input),
+                static fn () => applicationUpdateRequirement($repository)->handle($input),
                 InvalidInstitutionalAcknowledgementState::class,
             );
             assertSameValue(0, $repository->saveCount);
@@ -182,7 +206,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         $repository = new ApplicationRequirementRepository([$nullReference]);
         $repository->historicalRequirementIds[2] = true;
         assertThrows(
-            static fn () => (new UpdateAcknowledgementRequirement($repository))->handle(
+            static fn () => applicationUpdateRequirement($repository)->handle(
                 new UpdateAcknowledgementRequirementInput(2, 8, 'Protected', 'new/url', 'NEW')
             ),
             InvalidInstitutionalAcknowledgementState::class,
@@ -214,7 +238,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         $repository = new ApplicationRequirementRepository([$active, $inactive]);
 
         assertThrows(
-            static fn () => (new UpdateAcknowledgementRequirement($repository))->handle(
+            static fn () => applicationUpdateRequirement($repository)->handle(
                 new UpdateAcknowledgementRequirementInput(1, 9, 'Tampered', 'tampered/url', null)
             ),
             AcknowledgementRequirementNotFound::class,
@@ -320,12 +344,41 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         assertSameValue(true, $output->satisfied);
         assertSameValue(true, ($output->completionId ?? 0) > 0);
         assertSameValue([10, 20], $output->acknowledgedRequirementIds);
+        assertSameValue([10, 20], $requirements->lockedCompletionRequirementIds);
+        assertSameValue(['lock:completion:5'], $requirements->operationLog);
         assertSameValue(1, $completions->saveCount);
         assertSameValue(1, $transactions->runCount);
         assertSameValue(1, $transactions->commitCount);
         assertSameValue(0, $transactions->rollbackCount);
         assertSameValue('2026-08-14 10:11:12', $output->completedAt?->format('Y-m-d H:i:s'));
         assertSameValue('-05:00', $output->completedAt?->format('P'));
+    });
+
+    $runner->add('E009 completion revalidates the authoritative ACTIVE set under ordered locks', function (): void {
+        $staleActive = applicationRequirement(10, 5, 'Stale active', 'stale/url', null);
+        $freshInactive = applicationRequirement(
+            10,
+            5,
+            'Stale active',
+            'stale/url',
+            null,
+            AcknowledgementRequirementStatus::Inactive,
+        );
+        $freshActive = applicationRequirement(20, 5, 'Fresh active', 'fresh/url', null);
+        $requirements = new ApplicationRequirementRepository([$staleActive]);
+        $requirements->lockedPeriodOverrides[5] = [$freshActive, $freshInactive];
+        $completions = new ApplicationCompletionRepository();
+        $transactions = new ApplicationAcknowledgementTransactionRunner($completions);
+
+        $output = (new CompleteRepresentativeAcknowledgements(
+            $requirements,
+            $completions,
+            $transactions,
+        ))->handle(new CompleteRepresentativeAcknowledgementsInput(7, 5, [20], applicationCompletedAt()));
+
+        assertSameValue([10, 20], $requirements->lockedCompletionRequirementIds);
+        assertSameValue([20], $output->acknowledgedRequirementIds);
+        assertSameValue(1, $completions->saveCount);
     });
 
     $runner->add('E009 zero ACTIVE completion returns satisfaction without persistence', function (): void {
@@ -393,6 +446,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
             InstitutionalAcknowledgementsAlreadyCompleted::class,
         );
         assertSameValue(0, $requirements->findByPeriodCount);
+        assertSameValue([], $requirements->operationLog);
         assertSameValue(0, $completions->saveCount);
         assertSameValue(1, $transactions->rollbackCount);
     });
@@ -518,6 +572,15 @@ function applicationRequirement(
         new AcknowledgementRequirementUrl($url),
         $officialReference === null ? null : new AcknowledgementOfficialReference($officialReference),
         $status,
+    );
+}
+
+function applicationUpdateRequirement(
+    ApplicationRequirementRepository $repository,
+): UpdateAcknowledgementRequirement {
+    return new UpdateAcknowledgementRequirement(
+        $repository,
+        new InMemoryCompositeTransactionRunner([$repository]),
     );
 }
 
