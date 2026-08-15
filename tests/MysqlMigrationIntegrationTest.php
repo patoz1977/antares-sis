@@ -41,14 +41,18 @@ use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\InstitutionalDocuments\Domain\AcknowledgementRequirementStatus;
 use App\InstitutionalDocuments\Application\ActivateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Application\CompleteRepresentativeAcknowledgements;
 use App\InstitutionalDocuments\Application\CreateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Application\DeactivateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Application\Dto\CompleteRepresentativeAcknowledgementsInput;
 use App\InstitutionalDocuments\Application\Dto\CreateAcknowledgementRequirementInput;
 use App\InstitutionalDocuments\Application\Dto\UpdateAcknowledgementRequirementInput;
 use App\InstitutionalDocuments\Application\Exception\AcknowledgementRequirementNotFound;
 use App\InstitutionalDocuments\Application\GetAcknowledgementRequirements;
 use App\InstitutionalDocuments\Application\UpdateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Domain\RepresentativeAcknowledgementCompletion;
+use App\InstitutionalDocuments\Domain\RepresentativeAcknowledgementCompletionRepository;
+use App\InstitutionalDocuments\Domain\Exception\InvalidInstitutionalAcknowledgementState;
 use App\InstitutionalDocuments\Domain\ValueObject\AcademicPeriodId as AcknowledgementAcademicPeriodId;
 use App\InstitutionalDocuments\Domain\ValueObject\AcknowledgementOfficialReference;
 use App\InstitutionalDocuments\Domain\ValueObject\AcknowledgementRequirementTitle;
@@ -1414,7 +1418,10 @@ try {
 
     $getAdministratorRequirements = new GetAcknowledgementRequirements($requirementRepository);
     $createAdministratorRequirement = new CreateAcknowledgementRequirement($requirementRepository);
-    $updateAdministratorRequirement = new UpdateAcknowledgementRequirement($requirementRepository);
+    $updateAdministratorRequirement = new UpdateAcknowledgementRequirement(
+        $requirementRepository,
+        new PdoTransactionRunner($managerA),
+    );
     $activateAdministratorRequirement = new ActivateAcknowledgementRequirement($requirementRepository);
     $deactivateAdministratorRequirement = new DeactivateAcknowledgementRequirement($requirementRepository);
     assertIntegration(
@@ -3707,6 +3714,326 @@ try {
         $connectionA->query('SELECT @@session.time_zone')->fetchColumn() === '+00:00',
         'ConnectionFactory did not establish the UTC SQL convention.'
     );
+
+    $concurrencyRequirementsA = new PdoAcknowledgementRequirementRepository($managerA);
+    $concurrencyRequirementsB = new PdoAcknowledgementRequirementRepository($managerB);
+    $concurrencyCompletionsA = new PdoRepresentativeAcknowledgementCompletionRepository($managerA);
+    $concurrencyCompletionsB = new PdoRepresentativeAcknowledgementCompletionRepository($managerB);
+    $insertConcurrencyPeriod = $connectionA->prepare(
+        'INSERT INTO academic_periods (code, name, starts_on, ends_on, status_id) '
+        . 'VALUES (:code, :name, :startsOn, :endsOn, :statusId)'
+    );
+    $concurrencyPeriodIds = [];
+    foreach ([
+        ['E009_CONC_UPDATE_FIRST', 'E009 concurrency update first', '2039-08-01', '2040-07-31'],
+        ['E009_CONC_COMPLETION_FIRST', 'E009 concurrency completion first', '2040-08-01', '2041-07-31'],
+        ['E009_CONC_MULTI', 'E009 concurrency multi Requirement', '2041-08-01', '2042-07-31'],
+        ['E009_CONC_ROLLBACK', 'E009 concurrency rollback', '2042-08-01', '2043-07-31'],
+    ] as [$code, $name, $startsOn, $endsOn]) {
+        $insertConcurrencyPeriod->execute([
+            ':code' => $code,
+            ':name' => $name,
+            ':startsOn' => $startsOn,
+            ':endsOn' => $endsOn,
+            ':statusId' => $inactiveGeneralStatusId,
+        ]);
+        $concurrencyPeriodIds[$code] = (int) $connectionA->lastInsertId();
+    }
+    assertIntegration(
+        count(array_filter($concurrencyPeriodIds, static fn (int $id): bool => $id > 0)) === 4
+        && count(array_unique($concurrencyPeriodIds)) === 4,
+        'MariaDB did not generate the four isolated E009 concurrency AcademicPeriod identities.'
+    );
+
+    $newConcurrencyRequirement = static function (
+        PdoAcknowledgementRequirementRepository $repository,
+        int $academicPeriodId,
+        string $title,
+        string $reference,
+    ): \App\InstitutionalDocuments\Domain\AcknowledgementRequirement {
+        return $repository->save(\App\InstitutionalDocuments\Domain\AcknowledgementRequirement::create(
+            new AcknowledgementAcademicPeriodId($academicPeriodId),
+            new AcknowledgementRequirementTitle($title),
+            new AcknowledgementRequirementUrl('https://example.test/e009/concurrency/' . strtolower($reference)),
+            new AcknowledgementOfficialReference($reference),
+            AcknowledgementRequirementStatus::Active,
+        ));
+    };
+    $representativeId = $persistenceRepresentativeIds['rollback'];
+
+    $updateFirstPeriodId = $concurrencyPeriodIds['E009_CONC_UPDATE_FIRST'];
+    $updateFirstRequirement = $newConcurrencyRequirement(
+        $concurrencyRequirementsA,
+        $updateFirstPeriodId,
+        'Update-first original title',
+        'UPDATE-FIRST',
+    );
+    $updateFirstRequirementId = $updateFirstRequirement->id();
+    assertIntegration($updateFirstRequirementId !== null, 'Update-first Requirement has no identity.');
+    $connectionA->beginTransaction();
+    $lockedUpdateFirst = $concurrencyRequirementsA->lockForPostUseUpdate($updateFirstRequirementId);
+    assertIntegration(
+        $lockedUpdateFirst !== null
+        && !$concurrencyRequirementsA->hasAcknowledgements($updateFirstRequirementId),
+        'Update-first transaction did not lock a Requirement without history.'
+    );
+    $lockedUpdateFirst->update(
+        new AcknowledgementRequirementTitle('Update-first committed title'),
+        $lockedUpdateFirst->url(),
+        $lockedUpdateFirst->officialReference(),
+        false,
+    );
+    $concurrencyRequirementsA->save($lockedUpdateFirst);
+    $connectionB->exec('SET innodb_lock_wait_timeout = 1');
+    $updateFirstCompletionBlocked = false;
+    try {
+        (new CompleteRepresentativeAcknowledgements(
+            $concurrencyRequirementsB,
+            $concurrencyCompletionsB,
+            new PdoTransactionRunner($managerB),
+        ))->handle(new CompleteRepresentativeAcknowledgementsInput(
+            $representativeId,
+            $updateFirstPeriodId,
+            [$updateFirstRequirementId->value()],
+            new DateTimeImmutable('2037-02-03 15:11:12+00:00'),
+        ));
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException(
+                'Update-first Completion failed for a reason other than Requirement lock contention.',
+                previous: $exception,
+            );
+        }
+        $updateFirstCompletionBlocked = true;
+    }
+    assertIntegration(
+        $updateFirstCompletionBlocked && !$connectionB->inTransaction(),
+        'Completion crossed the Requirement protocol while Update retained the row lock.'
+    );
+    $connectionA->commit();
+    $serializedUpdateFirstCompletion = (new CompleteRepresentativeAcknowledgements(
+        $concurrencyRequirementsB,
+        $concurrencyCompletionsB,
+        new PdoTransactionRunner($managerB),
+    ))->handle(new CompleteRepresentativeAcknowledgementsInput(
+        $representativeId,
+        $updateFirstPeriodId,
+        [$updateFirstRequirementId->value()],
+        new DateTimeImmutable('2037-02-03 15:11:12+00:00'),
+    ));
+    $updateFirstReloaded = $concurrencyRequirementsA->findById($updateFirstRequirementId);
+    assertIntegration(
+        ($serializedUpdateFirstCompletion->completionId ?? 0) > 0
+        && $serializedUpdateFirstCompletion->acknowledgedRequirementIds === [$updateFirstRequirementId->value()]
+        && $updateFirstReloaded?->title()->value() === 'Update-first committed title',
+        'Serialized update-first Completion did not use the post-commit Requirement state.'
+    );
+
+    $completionFirstPeriodId = $concurrencyPeriodIds['E009_CONC_COMPLETION_FIRST'];
+    $completionFirstRequirement = $newConcurrencyRequirement(
+        $concurrencyRequirementsA,
+        $completionFirstPeriodId,
+        'Completion-first protected title',
+        'COMPLETION-FIRST',
+    );
+    $completionFirstRequirementId = $completionFirstRequirement->id();
+    assertIntegration($completionFirstRequirementId !== null, 'Completion-first Requirement has no identity.');
+    $connectionB->beginTransaction();
+    $completionFirstLocked = $concurrencyRequirementsB->lockForCompletion(
+        new AcknowledgementAcademicPeriodId($completionFirstPeriodId)
+    );
+    $completionFirstPersisted = $concurrencyCompletionsB->save(
+        RepresentativeAcknowledgementCompletion::complete(
+            new AcknowledgementRepresentativeId($representativeId),
+            new AcknowledgementAcademicPeriodId($completionFirstPeriodId),
+            new DateTimeImmutable('2037-03-03 15:11:12+00:00'),
+            $completionFirstLocked,
+        )
+    );
+    assertIntegration(
+        ($completionFirstPersisted->id()?->value() ?? 0) > 0,
+        'Completion-first transaction did not create its first acknowledgement before commit.'
+    );
+    $completionFirstUpdate = new UpdateAcknowledgementRequirement(
+        $concurrencyRequirementsA,
+        new PdoTransactionRunner($managerA),
+    );
+    $completionFirstUpdateBlocked = false;
+    try {
+        $connectionA->exec('SET innodb_lock_wait_timeout = 1');
+        $completionFirstUpdate->handle(new UpdateAcknowledgementRequirementInput(
+            $completionFirstRequirementId->value(),
+            $completionFirstPeriodId,
+            'Forbidden concurrent title',
+            $completionFirstRequirement->url()->value(),
+            'COMPLETION-FIRST',
+        ));
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException(
+                'Completion-first Update failed for a reason other than Requirement lock contention.',
+                previous: $exception,
+            );
+        }
+        $completionFirstUpdateBlocked = true;
+    }
+    assertIntegration(
+        $completionFirstUpdateBlocked && !$connectionA->inTransaction(),
+        'Update crossed the Requirement protocol while Completion retained the row lock.'
+    );
+    $connectionB->commit();
+
+    foreach ([
+        ['Forbidden post-use title', 'COMPLETION-FIRST'],
+        ['Completion-first protected title', 'FORBIDDEN-REFERENCE'],
+    ] as [$title, $reference]) {
+        $protectedChangeRejected = false;
+        try {
+            $completionFirstUpdate->handle(new UpdateAcknowledgementRequirementInput(
+                $completionFirstRequirementId->value(),
+                $completionFirstPeriodId,
+                $title,
+                $completionFirstRequirement->url()->value(),
+                $reference,
+            ));
+        } catch (InvalidInstitutionalAcknowledgementState) {
+            $protectedChangeRejected = true;
+        }
+        assertIntegration(
+            $protectedChangeRejected,
+            'Post-use Requirement Title or OfficialReference change was not rejected after serialization.'
+        );
+    }
+    $mutableUrl = 'https://example.test/e009/concurrency/post-use-url';
+    $urlUpdated = $completionFirstUpdate->handle(new UpdateAcknowledgementRequirementInput(
+        $completionFirstRequirementId->value(),
+        $completionFirstPeriodId,
+        'Completion-first protected title',
+        $mutableUrl,
+        'COMPLETION-FIRST',
+    ));
+    $deactivatedPostUse = (new DeactivateAcknowledgementRequirement($concurrencyRequirementsA))->handle(
+        $completionFirstRequirementId->value(),
+        $completionFirstPeriodId,
+    );
+    $activatedPostUse = (new ActivateAcknowledgementRequirement($concurrencyRequirementsA))->handle(
+        $completionFirstRequirementId->value(),
+        $completionFirstPeriodId,
+    );
+    $completionFirstReloaded = $concurrencyRequirementsA->findById($completionFirstRequirementId);
+    assertIntegration(
+        $urlUpdated->url === $mutableUrl
+        && $deactivatedPostUse->status === 'INACTIVE'
+        && $activatedPostUse->status === 'ACTIVE'
+        && $completionFirstReloaded?->title()->value() === 'Completion-first protected title'
+        && $completionFirstReloaded?->officialReference()?->value() === 'COMPLETION-FIRST',
+        'Post-use mutable fields or protected Requirement fields lost their approved semantics.'
+    );
+
+    $multiPeriodId = $concurrencyPeriodIds['E009_CONC_MULTI'];
+    $multiRequirementA = $newConcurrencyRequirement(
+        $concurrencyRequirementsA,
+        $multiPeriodId,
+        'Multi Requirement A',
+        'MULTI-A',
+    );
+    $multiRequirementB = $newConcurrencyRequirement(
+        $concurrencyRequirementsA,
+        $multiPeriodId,
+        'Multi Requirement B',
+        'MULTI-B',
+    );
+    $connectionA->beginTransaction();
+    $multiLocked = $concurrencyRequirementsA->lockForCompletion(
+        new AcknowledgementAcademicPeriodId($multiPeriodId)
+    );
+    $multiLockedIds = array_map(
+        static fn ($requirement): ?int => $requirement->id()?->value(),
+        $multiLocked,
+    );
+    $multiSortedIds = $multiLockedIds;
+    sort($multiSortedIds, SORT_NUMERIC);
+    assertIntegration(
+        $multiLockedIds === $multiSortedIds
+        && $multiLockedIds === [$multiRequirementA->id()?->value(), $multiRequirementB->id()?->value()],
+        'Multi-Requirement Completion lock order was not deterministic ascending identity.'
+    );
+    $connectionA->rollBack();
+
+    $rollbackPeriodId = $concurrencyPeriodIds['E009_CONC_ROLLBACK'];
+    $rollbackRequirement = $newConcurrencyRequirement(
+        $concurrencyRequirementsA,
+        $rollbackPeriodId,
+        'Rollback protected title',
+        'ROLLBACK',
+    );
+    $rollbackRequirementId = $rollbackRequirement->id();
+    assertIntegration($rollbackRequirementId !== null, 'Rollback Requirement has no identity.');
+    $failingConcurrencyCompletions = new class($concurrencyCompletionsA) implements
+        RepresentativeAcknowledgementCompletionRepository {
+        public function __construct(
+            private readonly RepresentativeAcknowledgementCompletionRepository $inner,
+        ) {
+        }
+
+        public function findByRepresentativeAndAcademicPeriod(
+            AcknowledgementRepresentativeId $representativeId,
+            AcknowledgementAcademicPeriodId $academicPeriodId,
+        ): ?RepresentativeAcknowledgementCompletion {
+            return $this->inner->findByRepresentativeAndAcademicPeriod($representativeId, $academicPeriodId);
+        }
+
+        public function save(
+            RepresentativeAcknowledgementCompletion $completion,
+        ): RepresentativeAcknowledgementCompletion {
+            $this->inner->save($completion);
+            throw new RuntimeException('Forced E009 concurrency rollback after Completion persistence.');
+        }
+    };
+    $forcedConcurrencyRollback = false;
+    try {
+        (new CompleteRepresentativeAcknowledgements(
+            $concurrencyRequirementsA,
+            $failingConcurrencyCompletions,
+            new PdoTransactionRunner($managerA),
+        ))->handle(new CompleteRepresentativeAcknowledgementsInput(
+            $representativeId,
+            $rollbackPeriodId,
+            [$rollbackRequirementId->value()],
+            new DateTimeImmutable('2037-04-03 15:11:12+00:00'),
+        ));
+    } catch (RuntimeException $exception) {
+        $forcedConcurrencyRollback = $exception->getMessage()
+            === 'Forced E009 concurrency rollback after Completion persistence.';
+    }
+    $rollbackCompletionCount = $connectionA->prepare(
+        'SELECT COUNT(*) FROM representative_acknowledgement_completions '
+        . 'WHERE representative_id = :representativeId AND academic_period_id = :academicPeriodId'
+    );
+    $rollbackCompletionCount->execute([
+        ':representativeId' => $representativeId,
+        ':academicPeriodId' => $rollbackPeriodId,
+    ]);
+    $rollbackChildCount = $connectionA->prepare(
+        'SELECT COUNT(*) FROM representative_acknowledgements WHERE acknowledgement_requirement_id = :id'
+    );
+    $rollbackChildCount->execute([':id' => $rollbackRequirementId->value()]);
+    $lockReleasedAfterRollback = (new PdoTransactionRunner($managerB))->run(
+        static fn () => $concurrencyRequirementsB->lockForPostUseUpdate($rollbackRequirementId)
+    );
+    $rollbackRequirementReloaded = $concurrencyRequirementsA->findById($rollbackRequirementId);
+    assertIntegration(
+        $forcedConcurrencyRollback
+        && (int) $rollbackCompletionCount->fetchColumn() === 0
+        && (int) $rollbackChildCount->fetchColumn() === 0
+        && $rollbackRequirementReloaded?->title()->value() === 'Rollback protected title'
+        && $lockReleasedAfterRollback?->id()?->equals($rollbackRequirementId) === true,
+        'Concurrency rollback left partial Completion, child, Requirement state or retained lock.'
+    );
+
+    echo "PASS MySQL E009 Requirement post-use Update-first serialization and post-commit Completion\n";
+    echo "PASS MySQL E009 Requirement post-use Completion-first protection and mutable URL status\n";
+    echo "PASS MySQL E009 Requirement deterministic multi-lock order rollback and lock release\n";
 
     $knownLockInstant = new DateTimeImmutable('2026-07-31 07:34:56-05:00');
     $repositoryA = new PdoUserRepository($managerA);

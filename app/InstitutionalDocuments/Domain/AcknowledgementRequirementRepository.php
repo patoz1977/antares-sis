@@ -14,6 +14,13 @@ interface AcknowledgementRequirementRepository
     /** @return list<AcknowledgementRequirement> */
     public function findByAcademicPeriodId(AcademicPeriodId $academicPeriodId): array;
 
+    public function lockForPostUseUpdate(
+        AcknowledgementRequirementId $id,
+    ): ?AcknowledgementRequirement;
+
+    /** @return list<AcknowledgementRequirement> */
+    public function lockForCompletion(AcademicPeriodId $academicPeriodId): array;
+
     public function hasAcknowledgements(AcknowledgementRequirementId $id): bool;
 
     public function save(AcknowledgementRequirement $requirement): AcknowledgementRequirement;

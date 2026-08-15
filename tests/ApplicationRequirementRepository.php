@@ -16,6 +16,16 @@ final class ApplicationRequirementRepository implements AcknowledgementRequireme
     public int $saveCount = 0;
     public int $findByPeriodCount = 0;
     public int $hasAcknowledgementsCount = 0;
+    /** @var list<string> */
+    public array $operationLog = [];
+    /** @var list<int> */
+    public array $lockedRequirementIds = [];
+    /** @var list<int> */
+    public array $lockedCompletionRequirementIds = [];
+    /** @var array<int, AcknowledgementRequirement|null> */
+    public array $lockedRequirementOverrides = [];
+    /** @var array<int, list<AcknowledgementRequirement>> */
+    public array $lockedPeriodOverrides = [];
     /** @var array<int, bool> */
     public array $historicalRequirementIds = [];
     /** @var null|callable(AcknowledgementRequirement, AcknowledgementRequirement): AcknowledgementRequirement */
@@ -50,9 +60,42 @@ final class ApplicationRequirementRepository implements AcknowledgementRequireme
         ));
     }
 
+    public function lockForPostUseUpdate(
+        AcknowledgementRequirementId $id,
+    ): ?AcknowledgementRequirement {
+        $this->operationLog[] = 'lock:update:' . $id->value();
+        $this->lockedRequirementIds[] = $id->value();
+
+        return array_key_exists($id->value(), $this->lockedRequirementOverrides)
+            ? $this->lockedRequirementOverrides[$id->value()]
+            : ($this->requirements[$id->value()] ?? null);
+    }
+
+    public function lockForCompletion(AcademicPeriodId $academicPeriodId): array
+    {
+        $this->operationLog[] = 'lock:completion:' . $academicPeriodId->value();
+        $requirements = $this->lockedPeriodOverrides[$academicPeriodId->value()] ?? array_values(array_filter(
+            $this->requirements,
+            static fn (AcknowledgementRequirement $requirement): bool =>
+                $requirement->academicPeriodId()->equals($academicPeriodId),
+        ));
+        usort(
+            $requirements,
+            static fn (AcknowledgementRequirement $left, AcknowledgementRequirement $right): int =>
+                ($left->id()?->value() ?? 0) <=> ($right->id()?->value() ?? 0),
+        );
+        $this->lockedCompletionRequirementIds = array_map(
+            static fn (AcknowledgementRequirement $requirement): int => $requirement->id()?->value() ?? 0,
+            $requirements,
+        );
+
+        return $requirements;
+    }
+
     public function hasAcknowledgements(AcknowledgementRequirementId $id): bool
     {
         $this->hasAcknowledgementsCount++;
+        $this->operationLog[] = 'history:' . $id->value();
 
         return $this->historicalRequirementIds[$id->value()] ?? false;
     }
@@ -60,6 +103,7 @@ final class ApplicationRequirementRepository implements AcknowledgementRequireme
     public function save(AcknowledgementRequirement $requirement): AcknowledgementRequirement
     {
         $this->saveCount++;
+        $this->operationLog[] = 'save:' . ($requirement->id()?->value() ?? 0);
         $persisted = $requirement;
         if ($requirement->id() === null) {
             $persisted = AcknowledgementRequirement::reconstitute(

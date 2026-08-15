@@ -29,7 +29,10 @@ function registerInstitutionalAcknowledgementsPersistenceTests(TestRunner $runne
 {
     $runner->add('Institutional Acknowledgements repositories expose only approved Aggregate operations', function (): void {
         assertSameValue(
-            ['findByAcademicPeriodId', 'findById', 'hasAcknowledgements', 'save'],
+            [
+                'findByAcademicPeriodId', 'findById', 'hasAcknowledgements',
+                'lockForCompletion', 'lockForPostUseUpdate', 'save',
+            ],
             institutionalPublicMethods(AcknowledgementRequirementRepository::class),
         );
         assertSameValue(
@@ -142,6 +145,45 @@ function registerInstitutionalAcknowledgementsPersistenceTests(TestRunner $runne
         assertSameValue(false, $requirementRepository->hasAcknowledgements($requirement->id()));
         $completionRepository->save(institutionalNewCompletion(1, 1, [$requirement]));
         assertSameValue(true, $requirementRepository->hasAcknowledgements($requirement->id()));
+    });
+
+    $runner->add('Requirement locking requires a caller transaction and fails closed for missing identity', function (): void {
+        $pdo = sqliteInstitutionalAcknowledgementsDatabase();
+        $repository = institutionalRequirementRepository($pdo);
+        $persisted = $repository->save(institutionalNewRequirement(1, 'Locked', 'locked/url', null));
+
+        assertThrows(
+            static fn () => $repository->lockForPostUseUpdate($persisted->id()),
+            RuntimeException::class,
+        );
+        $pdo->beginTransaction();
+        $locked = $repository->lockForPostUseUpdate($persisted->id());
+        $missing = $repository->lockForPostUseUpdate(new AcknowledgementRequirementId(999));
+        assertSameValue(true, $pdo->inTransaction());
+        assertSameValue(true, $locked?->id()?->equals($persisted->id()));
+        assertSameValue(null, $missing);
+        $pdo->rollBack();
+    });
+
+    $runner->add('Requirement Completion locking returns fresh history in deterministic identity order', function (): void {
+        $pdo = sqliteInstitutionalAcknowledgementsDatabase();
+        $requirements = institutionalPersistedRequirements($pdo, 1, 3);
+        institutionalCompletionRepository($pdo)->save(institutionalNewCompletion(1, 1, [$requirements[1]]));
+        $repository = institutionalRequirementRepository($pdo);
+
+        $pdo->beginTransaction();
+        $locked = $repository->lockForCompletion(new AcademicPeriodId(1));
+        $lockedIds = array_map(
+            static fn (AcknowledgementRequirement $requirement): ?int => $requirement->id()?->value(),
+            $locked,
+        );
+        $sortedIds = $lockedIds;
+        sort($sortedIds, SORT_NUMERIC);
+
+        assertSameValue($sortedIds, $lockedIds);
+        assertSameValue(true, $repository->hasAcknowledgements($requirements[1]->id()));
+        assertSameValue(true, $pdo->inTransaction());
+        $pdo->rollBack();
     });
 
     $runner->add('Requirement reconstruction fails closed for incompatible persisted status', function (): void {

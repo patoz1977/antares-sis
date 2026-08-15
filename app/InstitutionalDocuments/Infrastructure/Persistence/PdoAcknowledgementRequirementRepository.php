@@ -52,6 +52,28 @@ final class PdoAcknowledgementRequirementRepository implements AcknowledgementRe
         );
     }
 
+    public function lockForPostUseUpdate(
+        AcknowledgementRequirementId $id,
+    ): ?AcknowledgementRequirement {
+        $rows = $this->lockedRows(
+            ' WHERE ar.id = :id',
+            [':id' => $id->value()],
+        );
+        if (count($rows) > 1) {
+            throw new RuntimeException('Acknowledgement Requirement identity resolved more than one locked row.');
+        }
+
+        return $rows === [] ? null : $rows[0];
+    }
+
+    public function lockForCompletion(AcademicPeriodId $academicPeriodId): array
+    {
+        return $this->lockedRows(
+            ' WHERE ar.academic_period_id = :academicPeriodId ORDER BY ar.id ASC',
+            [':academicPeriodId' => $academicPeriodId->value()],
+        );
+    }
+
     public function hasAcknowledgements(AcknowledgementRequirementId $id): bool
     {
         $statement = $this->connection->prepare(
@@ -260,5 +282,47 @@ final class PdoAcknowledgementRequirementRepository implements AcknowledgementRe
             . 'FROM acknowledgement_requirements ar '
             . 'INNER JOIN statuses s ON s.id = ar.status_id '
             . 'INNER JOIN status_types st ON st.id = s.status_type_id';
+    }
+
+    /**
+     * @param array<string, int> $parameters
+     * @return list<AcknowledgementRequirement>
+     */
+    private function lockedRows(string $where, array $parameters): array
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('Acknowledgement Requirement locking requires an active transaction.');
+        }
+
+        $sql = 'SELECT ar.id, ar.academic_period_id, ar.title, ar.url, '
+            . 'ar.official_reference, ar.status_id '
+            . 'FROM acknowledgement_requirements ar' . $where;
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= ' FOR UPDATE';
+        }
+        $statement = $this->connection->prepare($sql);
+        $statement->execute($parameters);
+
+        return array_map(
+            fn (array $row): AcknowledgementRequirement => $this->mapLockedRow($row),
+            $statement->fetchAll(PDO::FETCH_ASSOC),
+        );
+    }
+
+    /** @param array<string, mixed> $row */
+    private function mapLockedRow(array $row): AcknowledgementRequirement
+    {
+        $statement = $this->connection->prepare(
+            'SELECT s.code AS status_code, st.code AS status_type_code '
+            . 'FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id '
+            . 'WHERE s.id = :statusId'
+        );
+        $statement->execute([':statusId' => (int) $row['status_id']]);
+        $statusRows = $statement->fetchAll(PDO::FETCH_ASSOC);
+        if (count($statusRows) !== 1) {
+            throw new RuntimeException('Acknowledgement Requirement status did not resolve exactly once.');
+        }
+
+        return $this->mapRow(array_merge($row, $statusRows[0]));
     }
 }
