@@ -14,6 +14,7 @@ require __DIR__ . '/RepresentativeUserPersistenceTest.php';
 require __DIR__ . '/RepresentativeUserSyncTest.php';
 require __DIR__ . '/RepresentativeAccessResolutionTest.php';
 require __DIR__ . '/FamilyContextAuthorizationTest.php';
+require __DIR__ . '/RepresentativeAcknowledgementTestSupport.php';
 require __DIR__ . '/PersonDomainTest.php';
 require __DIR__ . '/PersonPersistenceTest.php';
 require __DIR__ . '/PersonApplicationTest.php';

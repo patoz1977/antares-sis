@@ -15,6 +15,7 @@ use App\Family\Application\RepresentativeResources\Exception\RepresentativeFamil
 use App\Family\Application\RepresentativeResources\Exception\RepresentativeFamilySelectionRequired;
 use App\Family\Application\RepresentativeResources\Exception\RepresentativeFamilyStudentUnavailable;
 use App\IdentityAccess\Application\ResolveFamilyContext;
+use App\InstitutionalDocuments\Application\RepresentativePortal\RequireRepresentativeAcknowledgementSatisfaction;
 use App\Person\Application\Exception\PersonNotFound;
 use App\Person\Application\GetPerson;
 use App\Student\Application\GetStudent;
@@ -27,6 +28,7 @@ final readonly class RepresentativeFamilyResourceAuthorization
         private GetFamilyMembership $getFamilyMembership,
         private GetStudent $getStudent,
         private GetPerson $getPerson,
+        private RequireRepresentativeAcknowledgementSatisfaction $requireAcknowledgements,
     ) {
     }
 
@@ -41,6 +43,7 @@ final readonly class RepresentativeFamilyResourceAuthorization
         }
 
         $context = $access->context;
+        $this->requireAcknowledgements->handle($context->representativeId);
         $resources = $this->getFamilyResources->handle($context->familyId);
         $family = $this->getFamilyMembership->handle($context->familyId);
         $students = [];

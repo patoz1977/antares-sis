@@ -9,6 +9,10 @@ use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Exception\FamilyContextNotAuthorized;
 use App\IdentityAccess\Application\ResolveFamilyContext;
 use App\IdentityAccess\Application\SelectAuthorizedFamily;
+use App\InstitutionalDocuments\Application\Exception\InvalidPersistedAcknowledgementResult;
+use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\ActiveAcademicPeriodUnavailable;
+use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementAccessUnavailable;
+use App\InstitutionalDocuments\Application\RepresentativePortal\GetRepresentativeAcknowledgementPortalState;
 use Core\Http\Request;
 
 final class RepresentativePortalController extends Controller
@@ -17,6 +21,7 @@ final class RepresentativePortalController extends Controller
         private readonly ResolveFamilyContext $resolveFamilyContext,
         private readonly SelectAuthorizedFamily $selectAuthorizedFamily,
         private readonly CsrfTokenManager $csrf,
+        private readonly GetRepresentativeAcknowledgementPortalState $getAcknowledgementState,
     ) {
     }
 
@@ -35,6 +40,14 @@ final class RepresentativePortalController extends Controller
             ]);
         }
 
+        try {
+            $acknowledgementState = $this->getAcknowledgementState->handle();
+        } catch (ActiveAcademicPeriodUnavailable) {
+            $acknowledgementState = null;
+        } catch (RepresentativeAcknowledgementAccessUnavailable|InvalidPersistedAcknowledgementResult) {
+            return $this->forbidden();
+        }
+
         http_response_code(200);
 
         return $this->view('representative-portal.index', [
@@ -42,6 +55,7 @@ final class RepresentativePortalController extends Controller
             'authorizedFamilies' => $access->authorizedFamilies,
             'context' => $access->context,
             'requiresSelection' => $access->requiresSelection,
+            'acknowledgementState' => $acknowledgementState,
             'csrfToken' => $this->csrf->token(),
         ]);
     }

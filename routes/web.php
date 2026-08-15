@@ -13,6 +13,7 @@ use App\Person\Http\PersonAdministrationMiddleware;
 use App\Person\Http\PersonController;
 use App\InstitutionalDocuments\Http\InstitutionalAcknowledgementController;
 use App\InstitutionalDocuments\Http\InstitutionalDocumentsAdministrationMiddleware;
+use App\InstitutionalDocuments\Http\RepresentativeAcknowledgementController;
 use Core\Middleware\AuthenticationMiddleware;
 use Core\Foundation\Application;
 use Core\Routing\Router;
@@ -30,6 +31,9 @@ $representativeFamilyResourceController = $app->container()->make(
 );
 $institutionalAcknowledgementController = $app->container()->make(
     InstitutionalAcknowledgementController::class,
+);
+$representativeAcknowledgementController = $app->container()->make(
+    RepresentativeAcknowledgementController::class,
 );
 $personMiddleware = [
     AuthenticationMiddleware::class,
@@ -91,6 +95,16 @@ $router->post(
 $router->get(
     '/representative',
     [$representativePortalController, 'index'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/acknowledgements',
+    [$representativeAcknowledgementController, 'index'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/acknowledgements/complete',
+    [$representativeAcknowledgementController, 'complete'],
     AuthenticationMiddleware::class,
 );
 $router->post(

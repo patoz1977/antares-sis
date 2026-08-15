@@ -489,7 +489,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
 
     $runner->add('E009 Application remains isolated from forbidden layers and future phases', function (): void {
         $files = applicationPhpFiles(__DIR__ . '/../app/InstitutionalDocuments/Application');
-        assertSameValue(20, count($files));
+        assertSameValue(29, count($files));
         $source = implode("\n", array_map(static fn (string $file): string => (string) file_get_contents($file), $files));
         foreach ([
             'PDO', 'ConnectionManager', 'Request', 'Response', 'SessionManager', 'Controller',

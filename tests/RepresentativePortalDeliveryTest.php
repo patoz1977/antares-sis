@@ -370,7 +370,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         assertSameValue(0, preg_match('/antares|ueant|colegio/i', $views));
         foreach ([
             'Enrollment', 'Student', 'Address', 'Emergency', 'Pickup',
-            'Document', 'Submission', 'SELECT ', 'Repository',
+            'Submission', 'SELECT ', 'Repository',
         ] as $excluded) {
             assertSameValue(false, str_contains($views, $excluded), $excluded);
         }
@@ -383,6 +383,10 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         $container->instance(
             \App\IdentityAccess\Application\Contract\CsrfTokenManager::class,
             new FakeDeliveryCsrf(),
+        );
+        $container->instance(
+            \App\InstitutionalDocuments\Application\RepresentativePortal\GetRepresentativeAcknowledgementPortalState::class,
+            $fixture['acknowledgements']['state'],
         );
         $container->singleton(RepresentativePortalController::class, RepresentativePortalController::class);
         assertSameValue(
@@ -402,7 +406,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
             $authenticationController,
             "return \$this->redirect('/representative');",
         ));
-        assertSameValue(3, count((new ReflectionClass(RepresentativePortalController::class))
+        assertSameValue(4, count((new ReflectionClass(RepresentativePortalController::class))
             ->getConstructor()?->getParameters() ?? []));
     });
 }
@@ -411,15 +415,23 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
 function representativePortalFixture(
     bool $withRepresentative = true,
     string $loginIdentifier = 'representative-22',
+    array $acknowledgementRequirements = [],
+    ?array $academicPeriods = null,
 ): array {
     $fixture = familyContextAuthorizationFixture(
         withRepresentative: $withRepresentative,
         loginIdentifier: $loginIdentifier,
     );
+    $fixture['acknowledgements'] = representativeAcknowledgementTestServices(
+        $fixture['getRepresentative'],
+        $acknowledgementRequirements,
+        $academicPeriods,
+    );
     $fixture['controller'] = new RepresentativePortalController(
         $fixture['resolve'],
         $fixture['select'],
         new FakeDeliveryCsrf(),
+        $fixture['acknowledgements']['state'],
     );
 
     return $fixture;
@@ -472,6 +484,7 @@ function representativePortalLoginFixture(bool $withRepresentative, string $logi
     $contextSession = new RepresentativeFamilyContextSession($session);
     $resolve = new ResolveFamilyContext($getFamilies, $contextSession);
     $select = new SelectAuthorizedFamily($getFamilies, $contextSession);
+    $acknowledgements = representativeAcknowledgementTestServices($getRepresentative);
 
     return [
         'authentication' => new AuthenticationController(
@@ -482,7 +495,12 @@ function representativePortalLoginFixture(bool $withRepresentative, string $logi
             new FakeDeliveryCsrf(),
             $session,
         ),
-        'portal' => new RepresentativePortalController($resolve, $select, new FakeDeliveryCsrf()),
+        'portal' => new RepresentativePortalController(
+            $resolve,
+            $select,
+            new FakeDeliveryCsrf(),
+            $acknowledgements['state'],
+        ),
         'session' => $session,
         'users' => $users,
         'getUser' => $getUser,
