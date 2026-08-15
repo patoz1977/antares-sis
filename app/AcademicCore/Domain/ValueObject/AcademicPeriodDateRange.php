@@ -16,8 +16,13 @@ final readonly class AcademicPeriodDateRange
     public function __construct(DateTimeImmutable $startsOn, DateTimeImmutable $endsOn)
     {
         $timezone = new DateTimeZone('UTC');
-        $this->startsOn = $startsOn->setTimezone($timezone)->setTime(0, 0);
-        $this->endsOn = $endsOn->setTimezone($timezone)->setTime(0, 0);
+        $normalizedStart = DateTimeImmutable::createFromFormat('!Y-m-d', $startsOn->format('Y-m-d'), $timezone);
+        $normalizedEnd = DateTimeImmutable::createFromFormat('!Y-m-d', $endsOn->format('Y-m-d'), $timezone);
+        if ($normalizedStart === false || $normalizedEnd === false) {
+            throw new InvalidAcademicPeriodState('AcademicPeriod dates are invalid.');
+        }
+        $this->startsOn = $normalizedStart;
+        $this->endsOn = $normalizedEnd;
 
         if ($this->endsOn < $this->startsOn) {
             throw new InvalidAcademicPeriodState('AcademicPeriod end date cannot precede its start date.');
