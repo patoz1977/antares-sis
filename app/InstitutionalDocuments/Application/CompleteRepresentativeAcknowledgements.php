@@ -46,10 +46,20 @@ final readonly class CompleteRepresentativeAcknowledgements
                 );
             }
 
-            $activeRequirements = AcknowledgementRequirementApplicationSupport::activeForPeriod(
-                $this->requirements,
-                $academicPeriodId,
-            );
+            $lockedRequirements = $this->requirements->lockForCompletion($academicPeriodId);
+            foreach ($lockedRequirements as $requirement) {
+                if (!$requirement instanceof AcknowledgementRequirement
+                    || !$requirement->academicPeriodId()->equals($academicPeriodId)
+                ) {
+                    throw new InvalidAcknowledgementConfirmation(
+                        'Institutional Acknowledgements could not resolve the required set.'
+                    );
+                }
+            }
+            $activeRequirements = array_values(array_filter(
+                $lockedRequirements,
+                static fn (AcknowledgementRequirement $requirement): bool => $requirement->isActive(),
+            ));
             $expectedIds = array_map(
                 static fn (AcknowledgementRequirement $requirement): int =>
                     $requirement->id()?->value()
