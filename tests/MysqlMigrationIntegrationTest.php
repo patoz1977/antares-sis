@@ -41,6 +41,7 @@ use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\InstitutionalDocuments\Domain\AcknowledgementRequirementStatus;
 use App\InstitutionalDocuments\Application\ActivateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Application\CheckInstitutionalAcknowledgementSatisfaction;
 use App\InstitutionalDocuments\Application\CompleteRepresentativeAcknowledgements;
 use App\InstitutionalDocuments\Application\CreateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Application\DeactivateAcknowledgementRequirement;
@@ -48,6 +49,7 @@ use App\InstitutionalDocuments\Application\Dto\CompleteRepresentativeAcknowledge
 use App\InstitutionalDocuments\Application\Dto\CreateAcknowledgementRequirementInput;
 use App\InstitutionalDocuments\Application\Dto\UpdateAcknowledgementRequirementInput;
 use App\InstitutionalDocuments\Application\Exception\AcknowledgementRequirementNotFound;
+use App\InstitutionalDocuments\Application\Exception\InvalidAcknowledgementConfirmation;
 use App\InstitutionalDocuments\Application\GetAcknowledgementRequirements;
 use App\InstitutionalDocuments\Application\UpdateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Domain\RepresentativeAcknowledgementCompletion;
@@ -1417,7 +1419,10 @@ try {
     );
 
     $getAdministratorRequirements = new GetAcknowledgementRequirements($requirementRepository);
-    $createAdministratorRequirement = new CreateAcknowledgementRequirement($requirementRepository);
+    $createAdministratorRequirement = new CreateAcknowledgementRequirement(
+        $requirementRepository,
+        new PdoTransactionRunner($managerA),
+    );
     $updateAdministratorRequirement = new UpdateAcknowledgementRequirement(
         $requirementRepository,
         new PdoTransactionRunner($managerA),
@@ -3729,6 +3734,12 @@ try {
         ['E009_CONC_COMPLETION_FIRST', 'E009 concurrency completion first', '2040-08-01', '2041-07-31'],
         ['E009_CONC_MULTI', 'E009 concurrency multi Requirement', '2041-08-01', '2042-07-31'],
         ['E009_CONC_ROLLBACK', 'E009 concurrency rollback', '2042-08-01', '2043-07-31'],
+        ['E009_CONC_CREATE_SCOPE', 'E009 concurrency Requirement creation first', '2043-08-01', '2044-07-31'],
+        ['E009_CONC_COMPLETE_SCOPE', 'E009 concurrency Completion first against creation', '2044-08-01', '2045-07-31'],
+        ['E009_CONC_ZERO_SCOPE', 'E009 concurrency zero Requirement Completion', '2045-08-01', '2046-07-31'],
+        ['E009_CONC_SCOPE_A', 'E009 concurrency isolated scope A', '2046-08-01', '2047-07-31'],
+        ['E009_CONC_SCOPE_B', 'E009 concurrency isolated scope B', '2047-08-01', '2048-07-31'],
+        ['E009_CONC_CREATE_ROLLBACK', 'E009 concurrency Requirement creation rollback', '2048-08-01', '2049-07-31'],
     ] as [$code, $name, $startsOn, $endsOn]) {
         $insertConcurrencyPeriod->execute([
             ':code' => $code,
@@ -3740,9 +3751,9 @@ try {
         $concurrencyPeriodIds[$code] = (int) $connectionA->lastInsertId();
     }
     assertIntegration(
-        count(array_filter($concurrencyPeriodIds, static fn (int $id): bool => $id > 0)) === 4
-        && count(array_unique($concurrencyPeriodIds)) === 4,
-        'MariaDB did not generate the four isolated E009 concurrency AcademicPeriod identities.'
+        count(array_filter($concurrencyPeriodIds, static fn (int $id): bool => $id > 0)) === 10
+        && count(array_unique($concurrencyPeriodIds)) === 10,
+        'MariaDB did not generate the ten isolated E009 concurrency AcademicPeriod identities.'
     );
 
     $newConcurrencyRequirement = static function (
@@ -3839,6 +3850,9 @@ try {
     $completionFirstRequirementId = $completionFirstRequirement->id();
     assertIntegration($completionFirstRequirementId !== null, 'Completion-first Requirement has no identity.');
     $connectionB->beginTransaction();
+    $concurrencyRequirementsB->lockConfigurationScope(
+        new AcknowledgementAcademicPeriodId($completionFirstPeriodId)
+    );
     $completionFirstLocked = $concurrencyRequirementsB->lockForCompletion(
         new AcknowledgementAcademicPeriodId($completionFirstPeriodId)
     );
@@ -3944,6 +3958,7 @@ try {
         'MULTI-B',
     );
     $connectionA->beginTransaction();
+    $concurrencyRequirementsA->lockConfigurationScope(new AcknowledgementAcademicPeriodId($multiPeriodId));
     $multiLocked = $concurrencyRequirementsA->lockForCompletion(
         new AcknowledgementAcademicPeriodId($multiPeriodId)
     );
@@ -4031,9 +4046,298 @@ try {
         'Concurrency rollback left partial Completion, child, Requirement state or retained lock.'
     );
 
+    $creationFirstPeriodId = $concurrencyPeriodIds['E009_CONC_CREATE_SCOPE'];
+    $creationFirstOriginal = $newConcurrencyRequirement(
+        $concurrencyRequirementsA,
+        $creationFirstPeriodId,
+        'Creation-first original Requirement',
+        'CREATE-SCOPE-ORIGINAL',
+    );
+    $creationFirstOriginalId = $creationFirstOriginal->id();
+    assertIntegration($creationFirstOriginalId !== null, 'Creation-first original Requirement has no identity.');
+    $connectionA->beginTransaction();
+    $concurrencyRequirementsA->lockConfigurationScope(
+        new AcknowledgementAcademicPeriodId($creationFirstPeriodId)
+    );
+    $creationFirstAdded = $newConcurrencyRequirement(
+        $concurrencyRequirementsA,
+        $creationFirstPeriodId,
+        'Creation-first added Requirement',
+        'CREATE-SCOPE-ADDED',
+    );
+    $creationFirstAddedId = $creationFirstAdded->id();
+    assertIntegration($creationFirstAddedId !== null, 'Creation-first added Requirement has no identity.');
+    $creationFirstCompletionBlocked = false;
+    try {
+        (new CompleteRepresentativeAcknowledgements(
+            $concurrencyRequirementsB,
+            $concurrencyCompletionsB,
+            new PdoTransactionRunner($managerB),
+        ))->handle(new CompleteRepresentativeAcknowledgementsInput(
+            $representativeId,
+            $creationFirstPeriodId,
+            [$creationFirstOriginalId->value()],
+            new DateTimeImmutable('2037-05-03 15:11:12+00:00'),
+        ));
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException(
+                'Creation-first Completion failed for a reason other than AcademicPeriod scope contention.',
+                previous: $exception,
+            );
+        }
+        $creationFirstCompletionBlocked = true;
+    }
+    assertIntegration(
+        $creationFirstCompletionBlocked && !$connectionB->inTransaction(),
+        'Completion crossed the AcademicPeriod scope while Requirement creation retained its lock.'
+    );
+    $connectionA->commit();
+    $creationFirstStaleRejected = false;
+    try {
+        (new CompleteRepresentativeAcknowledgements(
+            $concurrencyRequirementsB,
+            $concurrencyCompletionsB,
+            new PdoTransactionRunner($managerB),
+        ))->handle(new CompleteRepresentativeAcknowledgementsInput(
+            $representativeId,
+            $creationFirstPeriodId,
+            [$creationFirstOriginalId->value()],
+            new DateTimeImmutable('2037-05-03 15:11:12+00:00'),
+        ));
+    } catch (InvalidAcknowledgementConfirmation) {
+        $creationFirstStaleRejected = true;
+    }
+    $creationFirstBeforeRetry = $concurrencyCompletionsA->findByRepresentativeAndAcademicPeriod(
+        new AcknowledgementRepresentativeId($representativeId),
+        new AcknowledgementAcademicPeriodId($creationFirstPeriodId),
+    );
+    $creationFirstCompleted = (new CompleteRepresentativeAcknowledgements(
+        $concurrencyRequirementsB,
+        $concurrencyCompletionsB,
+        new PdoTransactionRunner($managerB),
+    ))->handle(new CompleteRepresentativeAcknowledgementsInput(
+        $representativeId,
+        $creationFirstPeriodId,
+        [$creationFirstOriginalId->value(), $creationFirstAddedId->value()],
+        new DateTimeImmutable('2037-05-03 15:11:12+00:00'),
+    ));
+    $creationFirstExpectedIds = [$creationFirstOriginalId->value(), $creationFirstAddedId->value()];
+    sort($creationFirstExpectedIds, SORT_NUMERIC);
+    assertIntegration(
+        $creationFirstStaleRejected
+        && $creationFirstBeforeRetry === null
+        && $creationFirstCompleted->acknowledgedRequirementIds === $creationFirstExpectedIds,
+        'Creation-first serialization did not reject the stale set and persist the complete post-commit set.'
+    );
+
+    $completionAgainstCreationPeriodId = $concurrencyPeriodIds['E009_CONC_COMPLETE_SCOPE'];
+    $completionAgainstCreationRequirement = $newConcurrencyRequirement(
+        $concurrencyRequirementsA,
+        $completionAgainstCreationPeriodId,
+        'Completion-first original Requirement',
+        'COMPLETE-SCOPE-ORIGINAL',
+    );
+    $completionAgainstCreationRequirementId = $completionAgainstCreationRequirement->id();
+    assertIntegration(
+        $completionAgainstCreationRequirementId !== null,
+        'Completion-first against creation Requirement has no identity.'
+    );
+    $connectionB->beginTransaction();
+    $completionAgainstCreationPeriod = new AcknowledgementAcademicPeriodId($completionAgainstCreationPeriodId);
+    $concurrencyRequirementsB->lockConfigurationScope($completionAgainstCreationPeriod);
+    $completionAgainstCreationLocked = $concurrencyRequirementsB->lockForCompletion(
+        $completionAgainstCreationPeriod
+    );
+    $completionAgainstCreationPersisted = $concurrencyCompletionsB->save(
+        RepresentativeAcknowledgementCompletion::complete(
+            new AcknowledgementRepresentativeId($representativeId),
+            $completionAgainstCreationPeriod,
+            new DateTimeImmutable('2037-06-03 15:11:12+00:00'),
+            $completionAgainstCreationLocked,
+        )
+    );
+    $completionFirstCreationBlocked = false;
+    try {
+        (new CreateAcknowledgementRequirement(
+            $concurrencyRequirementsA,
+            new PdoTransactionRunner($managerA),
+        ))->handle(new CreateAcknowledgementRequirementInput(
+            $completionAgainstCreationPeriodId,
+            'Completion-first delayed Requirement',
+            'https://example.test/e009/concurrency/complete-scope-added',
+            'COMPLETE-SCOPE-ADDED',
+            'ACTIVE',
+        ));
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException(
+                'Completion-first Requirement creation failed outside AcademicPeriod scope contention.',
+                previous: $exception,
+            );
+        }
+        $completionFirstCreationBlocked = true;
+    }
+    assertIntegration(
+        $completionFirstCreationBlocked && !$connectionA->inTransaction(),
+        'Requirement creation crossed the AcademicPeriod scope while Completion retained its lock.'
+    );
+    $connectionB->commit();
+    $completionFirstCreatedAfterCommit = (new CreateAcknowledgementRequirement(
+        $concurrencyRequirementsA,
+        new PdoTransactionRunner($managerA),
+    ))->handle(new CreateAcknowledgementRequirementInput(
+        $completionAgainstCreationPeriodId,
+        'Completion-first delayed Requirement',
+        'https://example.test/e009/concurrency/complete-scope-added',
+        'COMPLETE-SCOPE-ADDED',
+        'ACTIVE',
+    ));
+    $completionAgainstCreationReloaded = $concurrencyCompletionsA->findByRepresentativeAndAcademicPeriod(
+        new AcknowledgementRepresentativeId($representativeId),
+        $completionAgainstCreationPeriod,
+    );
+    $completionAgainstCreationChildIds = array_map(
+        static fn ($acknowledgement): int => $acknowledgement->acknowledgementRequirementId()->value(),
+        $completionAgainstCreationReloaded?->acknowledgements() ?? [],
+    );
+    assertIntegration(
+        ($completionAgainstCreationPersisted->id()?->value() ?? 0) > 0
+        && $completionFirstCreatedAfterCommit->id > 0
+        && $completionAgainstCreationChildIds === [$completionAgainstCreationRequirementId->value()]
+        && (new CheckInstitutionalAcknowledgementSatisfaction(
+            $concurrencyRequirementsA,
+            $concurrencyCompletionsA,
+        ))->isSatisfied($representativeId, $completionAgainstCreationPeriodId),
+        'Completion-first serialization did not preserve the historical set before later Requirement creation.'
+    );
+
+    $zeroRequirementPeriodId = $concurrencyPeriodIds['E009_CONC_ZERO_SCOPE'];
+    $connectionA->beginTransaction();
+    $zeroRequirementPeriod = new AcknowledgementAcademicPeriodId($zeroRequirementPeriodId);
+    $concurrencyRequirementsA->lockConfigurationScope($zeroRequirementPeriod);
+    $zeroLockedRequirements = $concurrencyRequirementsA->lockForCompletion($zeroRequirementPeriod);
+    assertIntegration($zeroLockedRequirements === [], 'Zero-Requirement Completion observed an unexpected Requirement.');
+    $zeroCreationBlocked = false;
+    try {
+        (new CreateAcknowledgementRequirement(
+            $concurrencyRequirementsB,
+            new PdoTransactionRunner($managerB),
+        ))->handle(new CreateAcknowledgementRequirementInput(
+            $zeroRequirementPeriodId,
+            'Post-zero Requirement',
+            'https://example.test/e009/concurrency/zero-added',
+            'ZERO-SCOPE-ADDED',
+            'ACTIVE',
+        ));
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException(
+                'Zero-Requirement creation failed outside AcademicPeriod scope contention.',
+                previous: $exception,
+            );
+        }
+        $zeroCreationBlocked = true;
+    }
+    assertIntegration(
+        $zeroCreationBlocked && !$connectionB->inTransaction(),
+        'Requirement creation crossed a zero-Requirement Completion configuration scope.'
+    );
+    $connectionA->commit();
+    $zeroCreatedAfterCommit = (new CreateAcknowledgementRequirement(
+        $concurrencyRequirementsB,
+        new PdoTransactionRunner($managerB),
+    ))->handle(new CreateAcknowledgementRequirementInput(
+        $zeroRequirementPeriodId,
+        'Post-zero Requirement',
+        'https://example.test/e009/concurrency/zero-added',
+        'ZERO-SCOPE-ADDED',
+        'ACTIVE',
+    ));
+    $zeroCompletion = $concurrencyCompletionsA->findByRepresentativeAndAcademicPeriod(
+        new AcknowledgementRepresentativeId($representativeId),
+        $zeroRequirementPeriod,
+    );
+    assertIntegration(
+        $zeroCreatedAfterCommit->id > 0
+        && $zeroCompletion === null
+        && !(new CheckInstitutionalAcknowledgementSatisfaction(
+            $concurrencyRequirementsA,
+            $concurrencyCompletionsA,
+        ))->isSatisfied($representativeId, $zeroRequirementPeriodId),
+        'Zero-Requirement serialization persisted a Completion or remained satisfied after active creation.'
+    );
+
+    $isolatedScopeAPeriodId = $concurrencyPeriodIds['E009_CONC_SCOPE_A'];
+    $isolatedScopeBPeriodId = $concurrencyPeriodIds['E009_CONC_SCOPE_B'];
+    $connectionA->beginTransaction();
+    $concurrencyRequirementsA->lockConfigurationScope(
+        new AcknowledgementAcademicPeriodId($isolatedScopeAPeriodId)
+    );
+    $isolatedScopeBCreated = (new CreateAcknowledgementRequirement(
+        $concurrencyRequirementsB,
+        new PdoTransactionRunner($managerB),
+    ))->handle(new CreateAcknowledgementRequirementInput(
+        $isolatedScopeBPeriodId,
+        'Isolated scope B Requirement',
+        'https://example.test/e009/concurrency/scope-b',
+        'SCOPE-B',
+        'ACTIVE',
+    ));
+    $isolatedScopeBCompletion = (new CompleteRepresentativeAcknowledgements(
+        $concurrencyRequirementsB,
+        $concurrencyCompletionsB,
+        new PdoTransactionRunner($managerB),
+    ))->handle(new CompleteRepresentativeAcknowledgementsInput(
+        $representativeId,
+        $isolatedScopeBPeriodId,
+        [$isolatedScopeBCreated->id],
+        new DateTimeImmutable('2037-07-03 15:11:12+00:00'),
+    ));
+    $connectionA->rollBack();
+    assertIntegration(
+        $isolatedScopeBCreated->id > 0
+        && ($isolatedScopeBCompletion->completionId ?? 0) > 0
+        && $isolatedScopeBCompletion->acknowledgedRequirementIds === [$isolatedScopeBCreated->id],
+        'AcademicPeriod A scope lock blocked independent Requirement creation or Completion in period B.'
+    );
+
+    $creationRollbackPeriodId = $concurrencyPeriodIds['E009_CONC_CREATE_ROLLBACK'];
+    $connectionA->beginTransaction();
+    $concurrencyRequirementsA->lockConfigurationScope(
+        new AcknowledgementAcademicPeriodId($creationRollbackPeriodId)
+    );
+    $rolledBackCreation = $newConcurrencyRequirement(
+        $concurrencyRequirementsA,
+        $creationRollbackPeriodId,
+        'Rolled-back Requirement creation',
+        'CREATE-ROLLBACK',
+    );
+    $rolledBackCreationId = $rolledBackCreation->id();
+    assertIntegration($rolledBackCreationId !== null, 'Rolled-back Requirement creation has no identity.');
+    $connectionA->rollBack();
+    $rolledBackCreationReloaded = $concurrencyRequirementsB->findById($rolledBackCreationId);
+    $creationAfterRollback = (new CreateAcknowledgementRequirement(
+        $concurrencyRequirementsB,
+        new PdoTransactionRunner($managerB),
+    ))->handle(new CreateAcknowledgementRequirementInput(
+        $creationRollbackPeriodId,
+        'Requirement after rollback',
+        'https://example.test/e009/concurrency/after-rollback',
+        'CREATE-AFTER-ROLLBACK',
+        'ACTIVE',
+    ));
+    assertIntegration(
+        $rolledBackCreationReloaded === null && $creationAfterRollback->id > 0,
+        'Requirement creation rollback retained data or failed to release the AcademicPeriod scope lock.'
+    );
+
     echo "PASS MySQL E009 Requirement post-use Update-first serialization and post-commit Completion\n";
     echo "PASS MySQL E009 Requirement post-use Completion-first protection and mutable URL status\n";
     echo "PASS MySQL E009 Requirement deterministic multi-lock order rollback and lock release\n";
+    echo "PASS MySQL E009 Requirement creation-first serialization rejects stale Completion sets\n";
+    echo "PASS MySQL E009 Completion-first serialization preserves history before later Requirement creation\n";
+    echo "PASS MySQL E009 zero-Requirement scope cross-period isolation and creation rollback release\n";
 
     $knownLockInstant = new DateTimeImmutable('2026-07-31 07:34:56-05:00');
     $repositoryA = new PdoUserRepository($managerA);

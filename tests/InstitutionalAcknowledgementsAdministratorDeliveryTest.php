@@ -337,7 +337,7 @@ function institutionalAcknowledgementDeliveryController(?ApplicationRequirementR
     return [
         new InstitutionalAcknowledgementController(
             new GetAcknowledgementRequirements($repository),
-            new CreateAcknowledgementRequirement($repository),
+            new CreateAcknowledgementRequirement($repository, $transactions),
             new UpdateAcknowledgementRequirement($repository, $transactions),
             new ActivateAcknowledgementRequirement($repository),
             new DeactivateAcknowledgementRequirement($repository),
