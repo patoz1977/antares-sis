@@ -6,6 +6,7 @@ namespace App\InstitutionalDocuments\Application;
 
 use App\InstitutionalDocuments\Application\Dto\AcknowledgementRequirementOutput;
 use App\InstitutionalDocuments\Domain\AcknowledgementRequirementRepository;
+use App\InstitutionalDocuments\Domain\ValueObject\AcademicPeriodId;
 use App\InstitutionalDocuments\Domain\ValueObject\AcknowledgementRequirementId;
 
 final readonly class ActivateAcknowledgementRequirement
@@ -14,11 +15,12 @@ final readonly class ActivateAcknowledgementRequirement
     {
     }
 
-    public function handle(int $requirementId): AcknowledgementRequirementOutput
+    public function handle(int $requirementId, int $academicPeriodId): AcknowledgementRequirementOutput
     {
-        $requirement = AcknowledgementRequirementApplicationSupport::load(
+        $requirement = AcknowledgementRequirementApplicationSupport::loadForPeriod(
             $this->requirements,
             new AcknowledgementRequirementId($requirementId),
+            new AcademicPeriodId($academicPeriodId),
         );
         $requirement->activate();
 

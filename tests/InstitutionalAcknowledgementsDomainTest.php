@@ -426,9 +426,7 @@ function registerInstitutionalAcknowledgementsDomainTests(TestRunner $runner): v
         foreach (['App\\Representative', 'App\\Family', 'App\\Student', 'App\\Enrollment', 'PDO', 'Service', 'Controller', 'Http'] as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden));
         }
-        foreach (['Delivery', 'Http'] as $forbiddenDirectory) {
-            assertSameValue(false, is_dir(__DIR__ . '/../app/InstitutionalDocuments/' . $forbiddenDirectory));
-        }
+        assertSameValue(false, is_dir(__DIR__ . '/../app/InstitutionalDocuments/Delivery'));
     });
 }
 

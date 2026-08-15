@@ -11,6 +11,8 @@ use App\Family\Http\FamilyResourceController;
 use App\Family\Http\RepresentativeFamilyResourceController;
 use App\Person\Http\PersonAdministrationMiddleware;
 use App\Person\Http\PersonController;
+use App\InstitutionalDocuments\Http\InstitutionalAcknowledgementController;
+use App\InstitutionalDocuments\Http\InstitutionalDocumentsAdministrationMiddleware;
 use Core\Middleware\AuthenticationMiddleware;
 use Core\Foundation\Application;
 use Core\Routing\Router;
@@ -26,6 +28,9 @@ $familyResourceController = $app->container()->make(FamilyResourceController::cl
 $representativeFamilyResourceController = $app->container()->make(
     RepresentativeFamilyResourceController::class,
 );
+$institutionalAcknowledgementController = $app->container()->make(
+    InstitutionalAcknowledgementController::class,
+);
 $personMiddleware = [
     AuthenticationMiddleware::class,
     PersonAdministrationMiddleware::class,
@@ -38,12 +43,41 @@ $representativeUserMiddleware = [
     AuthenticationMiddleware::class,
     PersonAdministrationMiddleware::class,
 ];
+$institutionalAcknowledgementMiddleware = [
+    AuthenticationMiddleware::class,
+    InstitutionalDocumentsAdministrationMiddleware::class,
+];
 
 $router->get('/login', [$authenticationController, 'showLogin']);
 $router->get('/forgot-password', [$authenticationController, 'showForgotPassword']);
 $router->post('/login', [$authenticationController, 'login']);
 $router->post('/logout', [$authenticationController, 'logout']);
 $router->get('/', [$authenticationController, 'dashboard'], AuthenticationMiddleware::class);
+$router->get(
+    '/institutional-acknowledgements',
+    [$institutionalAcknowledgementController, 'index'],
+    $institutionalAcknowledgementMiddleware,
+);
+$router->post(
+    '/institutional-acknowledgements/requirements/create',
+    [$institutionalAcknowledgementController, 'create'],
+    $institutionalAcknowledgementMiddleware,
+);
+$router->post(
+    '/institutional-acknowledgements/requirements/update',
+    [$institutionalAcknowledgementController, 'update'],
+    $institutionalAcknowledgementMiddleware,
+);
+$router->post(
+    '/institutional-acknowledgements/requirements/activate',
+    [$institutionalAcknowledgementController, 'activate'],
+    $institutionalAcknowledgementMiddleware,
+);
+$router->post(
+    '/institutional-acknowledgements/requirements/deactivate',
+    [$institutionalAcknowledgementController, 'deactivate'],
+    $institutionalAcknowledgementMiddleware,
+);
 $router->get(
     '/representative',
     [$representativePortalController, 'index'],

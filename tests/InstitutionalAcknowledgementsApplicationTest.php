@@ -128,7 +128,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         $requirement = applicationRequirement(1, 8, 'Original', 'old/url', null);
         $repository = new ApplicationRequirementRepository([$requirement]);
         $output = (new UpdateAcknowledgementRequirement($repository))->handle(
-            new UpdateAcknowledgementRequirementInput(1, 'Updated', 'new/url', 'NEW-REF')
+            new UpdateAcknowledgementRequirementInput(1, 8, 'Updated', 'new/url', 'NEW-REF')
         );
 
         assertSameValue(1, $repository->hasAcknowledgementsCount);
@@ -139,7 +139,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         assertSameValue(8, $output->academicPeriodId);
 
         $output = (new UpdateAcknowledgementRequirement($repository))->handle(
-            new UpdateAcknowledgementRequirementInput(1, 'Updated again', 'other/url', null)
+            new UpdateAcknowledgementRequirementInput(1, 8, 'Updated again', 'other/url', null)
         );
         assertSameValue(null, $output->officialReference);
     });
@@ -150,7 +150,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         $repository->historicalRequirementIds[1] = true;
 
         $output = (new UpdateAcknowledgementRequirement($repository))->handle(
-            new UpdateAcknowledgementRequirementInput(1, ' Protected ', 'new/url', ' REF ')
+            new UpdateAcknowledgementRequirementInput(1, 8, ' Protected ', 'new/url', ' REF ')
         );
 
         assertSameValue('Protected', $output->title);
@@ -161,9 +161,9 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
 
     $runner->add('E009 Application leaves Requirement unchanged when protected post-use fields are rejected', function (): void {
         foreach ([
-            new UpdateAcknowledgementRequirementInput(1, 'Different', 'new/url', 'REF'),
-            new UpdateAcknowledgementRequirementInput(1, 'Protected', 'new/url', 'DIFFERENT'),
-            new UpdateAcknowledgementRequirementInput(1, 'Protected', 'new/url', null),
+            new UpdateAcknowledgementRequirementInput(1, 8, 'Different', 'new/url', 'REF'),
+            new UpdateAcknowledgementRequirementInput(1, 8, 'Protected', 'new/url', 'DIFFERENT'),
+            new UpdateAcknowledgementRequirementInput(1, 8, 'Protected', 'new/url', null),
         ] as $input) {
             $requirement = applicationRequirement(1, 8, 'Protected', 'old/url', 'REF');
             $repository = new ApplicationRequirementRepository([$requirement]);
@@ -183,7 +183,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         $repository->historicalRequirementIds[2] = true;
         assertThrows(
             static fn () => (new UpdateAcknowledgementRequirement($repository))->handle(
-                new UpdateAcknowledgementRequirementInput(2, 'Protected', 'new/url', 'NEW')
+                new UpdateAcknowledgementRequirementInput(2, 8, 'Protected', 'new/url', 'NEW')
             ),
             InvalidInstitutionalAcknowledgementState::class,
         );
@@ -195,17 +195,45 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         $inactive = applicationRequirement(2, 1, 'Inactive', 'url', null, AcknowledgementRequirementStatus::Inactive);
         $repository = new ApplicationRequirementRepository([$active, $inactive]);
 
-        $deactivated = (new DeactivateAcknowledgementRequirement($repository))->handle(1);
-        $activated = (new ActivateAcknowledgementRequirement($repository))->handle(2);
+        $deactivated = (new DeactivateAcknowledgementRequirement($repository))->handle(1, 1);
+        $activated = (new ActivateAcknowledgementRequirement($repository))->handle(2, 1);
 
         assertSameValue('INACTIVE', $deactivated->status);
         assertSameValue('ACTIVE', $activated->status);
         assertSameValue(2, $repository->saveCount);
         assertSameValue(0, $repository->hasAcknowledgementsCount);
         assertThrows(
-            static fn () => (new ActivateAcknowledgementRequirement($repository))->handle(999),
+            static fn () => (new ActivateAcknowledgementRequirement($repository))->handle(999, 1),
             AcknowledgementRequirementNotFound::class,
         );
+    });
+
+    $runner->add('E009 Application rejects cross-period Requirement mutations before history lookup or mutation', function (): void {
+        $active = applicationRequirement(1, 10, 'Period B', 'original/url', 'REF');
+        $inactive = applicationRequirement(2, 10, 'Inactive B', 'inactive/url', null, AcknowledgementRequirementStatus::Inactive);
+        $repository = new ApplicationRequirementRepository([$active, $inactive]);
+
+        assertThrows(
+            static fn () => (new UpdateAcknowledgementRequirement($repository))->handle(
+                new UpdateAcknowledgementRequirementInput(1, 9, 'Tampered', 'tampered/url', null)
+            ),
+            AcknowledgementRequirementNotFound::class,
+        );
+        assertThrows(
+            static fn () => (new DeactivateAcknowledgementRequirement($repository))->handle(1, 9),
+            AcknowledgementRequirementNotFound::class,
+        );
+        assertThrows(
+            static fn () => (new ActivateAcknowledgementRequirement($repository))->handle(2, 9),
+            AcknowledgementRequirementNotFound::class,
+        );
+
+        assertSameValue(0, $repository->hasAcknowledgementsCount);
+        assertSameValue(0, $repository->saveCount);
+        assertSameValue('Period B', $active->title()->value());
+        assertSameValue('original/url', $active->url()->value());
+        assertSameValue('ACTIVE', $active->status()->value);
+        assertSameValue('INACTIVE', $inactive->status()->value);
     });
 
     $runner->add('E009 Representative state projects existing Completion and only current ACTIVE Requirements', function (): void {
@@ -471,7 +499,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
             assertSameValue(false, str_contains($source, $forbidden));
         }
         assertSameValue(false, file_exists(__DIR__ . '/../app/InstitutionalDocuments/Delivery'));
-        assertSameValue(false, str_contains((string) file_get_contents(__DIR__ . '/../bootstrap/app.php'), 'InstitutionalAcknowledgement'));
+        assertSameValue(true, str_contains((string) file_get_contents(__DIR__ . '/../bootstrap/app.php'), 'InstitutionalAcknowledgementController'));
     });
 }
 

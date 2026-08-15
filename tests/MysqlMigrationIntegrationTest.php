@@ -32,6 +32,14 @@ use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
 use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\InstitutionalDocuments\Domain\AcknowledgementRequirementStatus;
+use App\InstitutionalDocuments\Application\ActivateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Application\CreateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Application\DeactivateAcknowledgementRequirement;
+use App\InstitutionalDocuments\Application\Dto\CreateAcknowledgementRequirementInput;
+use App\InstitutionalDocuments\Application\Dto\UpdateAcknowledgementRequirementInput;
+use App\InstitutionalDocuments\Application\Exception\AcknowledgementRequirementNotFound;
+use App\InstitutionalDocuments\Application\GetAcknowledgementRequirements;
+use App\InstitutionalDocuments\Application\UpdateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Domain\RepresentativeAcknowledgementCompletion;
 use App\InstitutionalDocuments\Domain\ValueObject\AcademicPeriodId as AcknowledgementAcademicPeriodId;
 use App\InstitutionalDocuments\Domain\ValueObject\AcknowledgementOfficialReference;
@@ -40,6 +48,7 @@ use App\InstitutionalDocuments\Domain\ValueObject\AcknowledgementRequirementUrl;
 use App\InstitutionalDocuments\Domain\ValueObject\RepresentativeId as AcknowledgementRepresentativeId;
 use App\InstitutionalDocuments\Infrastructure\Persistence\PdoAcknowledgementRequirementRepository;
 use App\InstitutionalDocuments\Infrastructure\Persistence\PdoRepresentativeAcknowledgementCompletionRepository;
+use App\InstitutionalDocuments\Infrastructure\Persistence\PdoInstitutionalAcknowledgementAcademicPeriodOptionsProvider;
 use App\Family\Application\AddStudentToFamily;
 use App\Family\Application\CreateFamily;
 use App\Family\Application\CreateFamilyAddress;
@@ -1360,6 +1369,130 @@ try {
             new AcknowledgementAcademicPeriodId($persistenceOtherPeriodId),
         ) === null,
         'MariaDB E009 caller rollback left an externally coordinated Completion.'
+    );
+
+    $insertPersistencePeriod->execute([
+        ':code' => 'E009_ADMIN_INACTIVE',
+        ':name' => 'E009 administrator inactive period',
+        ':startsOn' => '2033-08-01',
+        ':endsOn' => '2034-07-31',
+        ':statusId' => $inactiveGeneralStatusId,
+    ]);
+    $administratorInactivePeriodId = (int) $connectionA->lastInsertId();
+    $periodProvider = new PdoInstitutionalAcknowledgementAcademicPeriodOptionsProvider($managerA);
+    $periodOptions = $periodProvider->all();
+    assertIntegration(
+        $administratorInactivePeriodId > 0
+        && $periodOptions[0]->id === $administratorInactivePeriodId
+        && $periodOptions[0]->code === 'E009_ADMIN_INACTIVE'
+        && $periodProvider->findById($persistencePeriodId)?->name === 'E009 persistence period'
+        && $periodProvider->findById(2147483647) === null,
+        'MariaDB E009 administrator AcademicPeriod provider filtered status, misordered, or failed revalidation.'
+    );
+
+    $getAdministratorRequirements = new GetAcknowledgementRequirements($requirementRepository);
+    $createAdministratorRequirement = new CreateAcknowledgementRequirement($requirementRepository);
+    $updateAdministratorRequirement = new UpdateAcknowledgementRequirement($requirementRepository);
+    $activateAdministratorRequirement = new ActivateAcknowledgementRequirement($requirementRepository);
+    $deactivateAdministratorRequirement = new DeactivateAcknowledgementRequirement($requirementRepository);
+    assertIntegration(
+        count($getAdministratorRequirements->handle($persistencePeriodId)) === 3,
+        'MariaDB E009 administrator Application did not list the complete Requirement period state.'
+    );
+
+    $administratorRequirement = $createAdministratorRequirement->handle(
+        new CreateAcknowledgementRequirementInput(
+            $persistenceOtherPeriodId,
+            'E009 administrator Requirement ñ',
+            'custom:administrator/resource',
+            null,
+            'INACTIVE',
+        )
+    );
+    $administratorRequirementId = $administratorRequirement->id;
+    $updatedAdministratorRequirement = $updateAdministratorRequirement->handle(
+        new UpdateAcknowledgementRequirementInput(
+            $administratorRequirementId,
+            $persistenceOtherPeriodId,
+            'E009 administrator Requirement updated ñ',
+            'relative/administrator/updated',
+            'E009-ADMIN-REF',
+        )
+    );
+    $activatedAdministratorRequirement = $activateAdministratorRequirement->handle(
+        $administratorRequirementId,
+        $persistenceOtherPeriodId,
+    );
+    $deactivatedAdministratorRequirement = $deactivateAdministratorRequirement->handle(
+        $administratorRequirementId,
+        $persistenceOtherPeriodId,
+    );
+    assertIntegration(
+        $administratorRequirementId > 0
+        && $updatedAdministratorRequirement->title === 'E009 administrator Requirement updated ñ'
+        && $updatedAdministratorRequirement->officialReference === 'E009-ADMIN-REF'
+        && $activatedAdministratorRequirement->status === 'ACTIVE'
+        && $deactivatedAdministratorRequirement->status === 'INACTIVE',
+        'MariaDB E009 administrator Application did not complete same-period create update and status persistence.'
+    );
+
+    $crossPeriodRequirementId = $requirementB->id()?->value() ?? 0;
+    $crossPeriodBefore = $requirementRepository->findById($requirementB->id());
+    foreach (['update', 'activate', 'deactivate'] as $crossPeriodOperation) {
+        $crossPeriodRejected = false;
+        try {
+            if ($crossPeriodOperation === 'update') {
+                $updateAdministratorRequirement->handle(new UpdateAcknowledgementRequirementInput(
+                    $crossPeriodRequirementId,
+                    $persistenceOtherPeriodId,
+                    'Cross-period mutation',
+                    'cross-period/mutation',
+                    null,
+                ));
+            } elseif ($crossPeriodOperation === 'activate') {
+                $activateAdministratorRequirement->handle(
+                    $crossPeriodRequirementId,
+                    $persistenceOtherPeriodId,
+                );
+            } else {
+                $deactivateAdministratorRequirement->handle(
+                    $crossPeriodRequirementId,
+                    $persistenceOtherPeriodId,
+                );
+            }
+        } catch (AcknowledgementRequirementNotFound) {
+            $crossPeriodRejected = true;
+        }
+        assertIntegration(
+            $crossPeriodRejected,
+            'MariaDB E009 administrator Application allowed cross-period ' . $crossPeriodOperation . '.'
+        );
+    }
+    $crossPeriodAfter = $requirementRepository->findById($requirementB->id());
+    assertIntegration(
+        $crossPeriodBefore !== null
+        && $crossPeriodAfter !== null
+        && $crossPeriodAfter->title()->equals($crossPeriodBefore->title())
+        && $crossPeriodAfter->url()->equals($crossPeriodBefore->url())
+        && $crossPeriodAfter->status() === $crossPeriodBefore->status(),
+        'MariaDB E009 administrator cross-period rejection changed persisted Requirement state.'
+    );
+
+    $administratorPhysical = $connectionA->prepare(
+        'SELECT ar.id, st.code AS status_type_code, s.code AS status_code '
+        . 'FROM acknowledgement_requirements ar '
+        . 'JOIN statuses s ON s.id = ar.status_id '
+        . 'JOIN status_types st ON st.id = s.status_type_id '
+        . 'WHERE ar.id = :id'
+    );
+    $administratorPhysical->execute([':id' => $administratorRequirementId]);
+    $administratorPhysicalRow = $administratorPhysical->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        is_array($administratorPhysicalRow)
+        && (int) $administratorPhysicalRow['id'] === $administratorRequirementId
+        && $administratorPhysicalRow['status_type_code'] === 'GENERAL_STATUS'
+        && $administratorPhysicalRow['status_code'] === 'INACTIVE',
+        'MariaDB E009 administrator flow did not preserve AUTO_INCREMENT and exact GENERAL_STATUS mapping.'
     );
 
     $personFormOptions = (new PdoPersonFormOptionsProvider($managerA))->get();
@@ -3603,6 +3736,7 @@ try {
     echo "PASS MySQL clean migration creates the exact 35-table domain baseline plus migrations metadata\n";
     echo "PASS MySQL Institutional Acknowledgements AUTO_INCREMENT UTC constraints ownership and rollback\n";
     echo "PASS MySQL Institutional Acknowledgements repository roundtrip AUTO_INCREMENT UTC transactions and history\n";
+    echo "PASS MySQL Institutional Acknowledgements administrator AcademicPeriod provider context hardening and Application persistence\n";
     echo "PASS MySQL approved status seed baseline\n";
     echo "PASS MySQL AdminSeeder preserves existing credentials and status\n";
     echo "PASS MySQL UTC repository locked_at persistence\n";

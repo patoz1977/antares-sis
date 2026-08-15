@@ -16,6 +16,7 @@ declare(strict_types=1);
     <?php if (($canAccessPersons ?? false) === true): ?>
     <p><a href="/persons">Manage Persons</a></p>
     <p><a href="/families">Manage Families</a></p>
+    <p><a href="/institutional-acknowledgements">Manage Institutional Acknowledgements</a></p>
     <?php endif; ?>
 
     <form method="post" action="/logout">
