@@ -31,6 +31,7 @@ final readonly class CompleteRepresentativeAcknowledgements
         return $this->transactions->run(function () use ($input): RepresentativeAcknowledgementCompletionOutput {
             $representativeId = new RepresentativeId($input->representativeId);
             $academicPeriodId = new AcademicPeriodId($input->academicPeriodId);
+            $this->requirements->lockConfigurationScope($academicPeriodId);
             $existing = $this->completions->findByRepresentativeAndAcademicPeriod(
                 $representativeId,
                 $academicPeriodId,

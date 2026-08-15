@@ -59,7 +59,8 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
 
     $runner->add('E009 Application creates ACTIVE and INACTIVE Requirements with one verified save', function (): void {
         $repository = new ApplicationRequirementRepository();
-        $create = new CreateAcknowledgementRequirement($repository);
+        $transactions = new ApplicationRequirementTransactionRunner($repository);
+        $create = new CreateAcknowledgementRequirement($repository, $transactions);
         $active = $create->handle(new CreateAcknowledgementRequirementInput(
             4,
             ' Política institucional ñ ',
@@ -76,6 +77,14 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         ));
 
         assertSameValue(2, $repository->saveCount);
+        assertSameValue([4, 4], $repository->lockedConfigurationPeriodIds);
+        assertSameValue([
+            'lock:scope:4', 'save:0',
+            'lock:scope:4', 'save:0',
+        ], $repository->operationLog);
+        assertSameValue(2, $transactions->runCount);
+        assertSameValue(2, $transactions->commitCount);
+        assertSameValue(0, $transactions->rollbackCount);
         assertSameValue(true, $active->id > 0 && $inactive->id > 0);
         assertSameValue('Política institucional ñ', $active->title);
         assertSameValue('external/policy', $active->url);
@@ -87,7 +96,8 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
 
     $runner->add('E009 Application rejects invalid create input before save', function (): void {
         $repository = new ApplicationRequirementRepository();
-        $create = new CreateAcknowledgementRequirement($repository);
+        $transactions = new ApplicationRequirementTransactionRunner($repository);
+        $create = new CreateAcknowledgementRequirement($repository, $transactions);
         assertThrows(
             static fn () => $create->handle(new CreateAcknowledgementRequirementInput(
                 1,
@@ -99,6 +109,42 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
             InvalidInstitutionalAcknowledgementState::class,
         );
         assertSameValue(0, $repository->saveCount);
+        assertSameValue([1], $repository->lockedConfigurationPeriodIds);
+        assertSameValue(1, $transactions->rollbackCount);
+    });
+
+    $runner->add('E009 Application Create fails before persistence when its configuration scope cannot lock', function (): void {
+        $repository = new ApplicationRequirementRepository();
+        $repository->scopeLockFailure = new RuntimeException('Scope unavailable');
+        $transactions = new ApplicationRequirementTransactionRunner($repository);
+
+        assertThrows(
+            static fn () => (new CreateAcknowledgementRequirement($repository, $transactions))->handle(
+                new CreateAcknowledgementRequirementInput(7, 'Title', 'url', null, 'ACTIVE')
+            ),
+            RuntimeException::class,
+        );
+
+        assertSameValue(0, $repository->saveCount);
+        assertSameValue(1, $transactions->rollbackCount);
+    });
+
+    $runner->add('E009 Application Create rolls back and propagates persistence failure after scope locking', function (): void {
+        $repository = new ApplicationRequirementRepository();
+        $repository->saveFailure = new RuntimeException('Persistence failure');
+        $transactions = new ApplicationRequirementTransactionRunner($repository);
+
+        assertThrows(
+            static fn () => (new CreateAcknowledgementRequirement($repository, $transactions))->handle(
+                new CreateAcknowledgementRequirementInput(7, 'Title', 'url', null, 'INACTIVE')
+            ),
+            RuntimeException::class,
+        );
+
+        assertSameValue(1, $repository->saveCount);
+        assertSameValue(['lock:scope:7', 'save:0'], $repository->operationLog);
+        assertSameValue([], $repository->snapshot());
+        assertSameValue(1, $transactions->rollbackCount);
     });
 
     $runner->add('E009 Application rejects every incoherent persisted Requirement result', function (): void {
@@ -114,13 +160,16 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         foreach ($cases as $transformer) {
             $repository = new ApplicationRequirementRepository();
             $repository->saveResult = $transformer;
+            $transactions = new ApplicationRequirementTransactionRunner($repository);
             assertThrows(
-                static fn () => (new CreateAcknowledgementRequirement($repository))->handle(
+                static fn () => (new CreateAcknowledgementRequirement($repository, $transactions))->handle(
                     new CreateAcknowledgementRequirementInput(1, 'Title', 'url', null, 'ACTIVE')
                 ),
                 InvalidPersistedAcknowledgementResult::class,
             );
             assertSameValue(1, $repository->saveCount);
+            assertSameValue([], $repository->snapshot());
+            assertSameValue(1, $transactions->rollbackCount);
         }
     });
 
@@ -345,7 +394,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
         assertSameValue(true, ($output->completionId ?? 0) > 0);
         assertSameValue([10, 20], $output->acknowledgedRequirementIds);
         assertSameValue([10, 20], $requirements->lockedCompletionRequirementIds);
-        assertSameValue(['lock:completion:5'], $requirements->operationLog);
+        assertSameValue(['lock:scope:5', 'lock:completion:5'], $requirements->operationLog);
         assertSameValue(1, $completions->saveCount);
         assertSameValue(1, $transactions->runCount);
         assertSameValue(1, $transactions->commitCount);
@@ -446,7 +495,7 @@ function registerInstitutionalAcknowledgementsApplicationTests(TestRunner $runne
             InstitutionalAcknowledgementsAlreadyCompleted::class,
         );
         assertSameValue(0, $requirements->findByPeriodCount);
-        assertSameValue([], $requirements->operationLog);
+        assertSameValue(['lock:scope:5'], $requirements->operationLog);
         assertSameValue(0, $completions->saveCount);
         assertSameValue(1, $transactions->rollbackCount);
     });

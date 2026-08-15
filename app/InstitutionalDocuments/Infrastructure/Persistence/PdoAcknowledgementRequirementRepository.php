@@ -52,6 +52,27 @@ final class PdoAcknowledgementRequirementRepository implements AcknowledgementRe
         );
     }
 
+    public function lockConfigurationScope(AcademicPeriodId $academicPeriodId): void
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('Acknowledgement Requirement scope locking requires an active transaction.');
+        }
+
+        $sql = 'SELECT id FROM academic_periods WHERE id = :academicPeriodId';
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= ' FOR UPDATE';
+        }
+        $statement = $this->connection->prepare($sql);
+        $statement->execute([':academicPeriodId' => $academicPeriodId->value()]);
+        $rows = $statement->fetchAll(PDO::FETCH_COLUMN);
+
+        if (count($rows) !== 1 || (int) $rows[0] !== $academicPeriodId->value()) {
+            throw new RuntimeException(
+                'Acknowledgement Requirement configuration scope must resolve one persisted AcademicPeriod.'
+            );
+        }
+    }
+
     public function lockForPostUseUpdate(
         AcknowledgementRequirementId $id,
     ): ?AcknowledgementRequirement {

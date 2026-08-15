@@ -8,6 +8,7 @@ use App\InstitutionalDocuments\Domain\AcknowledgementRequirement;
 use App\InstitutionalDocuments\Domain\AcknowledgementRequirementRepository;
 use App\InstitutionalDocuments\Domain\ValueObject\AcademicPeriodId;
 use App\InstitutionalDocuments\Domain\ValueObject\AcknowledgementRequirementId;
+use Throwable;
 
 final class ApplicationRequirementRepository implements AcknowledgementRequirementRepository
 {
@@ -21,6 +22,9 @@ final class ApplicationRequirementRepository implements AcknowledgementRequireme
     /** @var list<int> */
     public array $lockedRequirementIds = [];
     /** @var list<int> */
+    public array $lockedConfigurationPeriodIds = [];
+    public ?Throwable $scopeLockFailure = null;
+    /** @var list<int> */
     public array $lockedCompletionRequirementIds = [];
     /** @var array<int, AcknowledgementRequirement|null> */
     public array $lockedRequirementOverrides = [];
@@ -30,6 +34,7 @@ final class ApplicationRequirementRepository implements AcknowledgementRequireme
     public array $historicalRequirementIds = [];
     /** @var null|callable(AcknowledgementRequirement, AcknowledgementRequirement): AcknowledgementRequirement */
     public $saveResult = null;
+    public ?Throwable $saveFailure = null;
     private int $nextId = 100;
 
     /** @param list<AcknowledgementRequirement> $requirements */
@@ -58,6 +63,15 @@ final class ApplicationRequirementRepository implements AcknowledgementRequireme
             static fn (AcknowledgementRequirement $requirement): bool =>
                 $requirement->academicPeriodId()->equals($academicPeriodId),
         ));
+    }
+
+    public function lockConfigurationScope(AcademicPeriodId $academicPeriodId): void
+    {
+        $this->operationLog[] = 'lock:scope:' . $academicPeriodId->value();
+        $this->lockedConfigurationPeriodIds[] = $academicPeriodId->value();
+        if ($this->scopeLockFailure !== null) {
+            throw $this->scopeLockFailure;
+        }
     }
 
     public function lockForPostUseUpdate(
@@ -104,6 +118,9 @@ final class ApplicationRequirementRepository implements AcknowledgementRequireme
     {
         $this->saveCount++;
         $this->operationLog[] = 'save:' . ($requirement->id()?->value() ?? 0);
+        if ($this->saveFailure !== null) {
+            throw $this->saveFailure;
+        }
         $persisted = $requirement;
         if ($requirement->id() === null) {
             $persisted = AcknowledgementRequirement::reconstitute(
@@ -120,5 +137,17 @@ final class ApplicationRequirementRepository implements AcknowledgementRequireme
         return $this->saveResult === null
             ? $persisted
             : ($this->saveResult)($persisted, $requirement);
+    }
+
+    /** @return array<int, AcknowledgementRequirement> */
+    public function snapshot(): array
+    {
+        return $this->requirements;
+    }
+
+    /** @param array<int, AcknowledgementRequirement> $snapshot */
+    public function restore(array $snapshot): void
+    {
+        $this->requirements = $snapshot;
     }
 }

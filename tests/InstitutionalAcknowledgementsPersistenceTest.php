@@ -31,7 +31,7 @@ function registerInstitutionalAcknowledgementsPersistenceTests(TestRunner $runne
         assertSameValue(
             [
                 'findByAcademicPeriodId', 'findById', 'hasAcknowledgements',
-                'lockForCompletion', 'lockForPostUseUpdate', 'save',
+                'lockConfigurationScope', 'lockForCompletion', 'lockForPostUseUpdate', 'save',
             ],
             institutionalPublicMethods(AcknowledgementRequirementRepository::class),
         );
@@ -163,6 +163,30 @@ function registerInstitutionalAcknowledgementsPersistenceTests(TestRunner $runne
         assertSameValue(true, $locked?->id()?->equals($persisted->id()));
         assertSameValue(null, $missing);
         $pdo->rollBack();
+    });
+
+    $runner->add('Requirement configuration scope locking requires and preserves its caller transaction', function (): void {
+        $pdo = sqliteInstitutionalAcknowledgementsDatabase();
+        $repository = institutionalRequirementRepository($pdo);
+
+        assertThrows(
+            static fn () => $repository->lockConfigurationScope(new AcademicPeriodId(1)),
+            RuntimeException::class,
+        );
+
+        $pdo->beginTransaction();
+        $repository->lockConfigurationScope(new AcademicPeriodId(1));
+        assertSameValue(true, $pdo->inTransaction());
+        assertThrows(
+            static fn () => $repository->lockConfigurationScope(new AcademicPeriodId(999)),
+            RuntimeException::class,
+        );
+        assertSameValue(true, $pdo->inTransaction());
+        $repository->save(institutionalNewRequirement(1, 'Scoped', 'scoped/url', null));
+        $pdo->rollBack();
+
+        assertSameValue(false, $pdo->inTransaction());
+        assertSameValue(0, (int) $pdo->query('SELECT COUNT(*) FROM acknowledgement_requirements')->fetchColumn());
     });
 
     $runner->add('Requirement Completion locking returns fresh history in deterministic identity order', function (): void {
