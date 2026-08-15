@@ -3858,13 +3858,19 @@ try {
         . ' WHERE id = ' . $operationalPeriodCId
     );
     $wrongStatusTypeRejected = false;
+    $wrongStatusTypeRejectedByActiveResolution = false;
     try {
         $academicPeriodsA->findById(new CoreAcademicPeriodId($operationalPeriodCId));
     } catch (RuntimeException) {
         $wrongStatusTypeRejected = true;
     }
+    try {
+        $academicPeriodsA->findActive();
+    } catch (RuntimeException) {
+        $wrongStatusTypeRejectedByActiveResolution = true;
+    }
     assertIntegration(
-        $wrongStatusTypeRejected,
+        $wrongStatusTypeRejected && $wrongStatusTypeRejectedByActiveResolution,
         'MariaDB AcademicPeriod persistence accepted a status outside GENERAL_STATUS.'
     );
     $identity->exec(
