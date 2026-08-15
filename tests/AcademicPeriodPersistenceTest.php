@@ -78,6 +78,10 @@ function registerAcademicPeriodPersistenceTests(TestRunner $runner): void
                 static fn (): mixed => $repository->findById(new AcademicPeriodId(1)),
                 RuntimeException::class,
             );
+            academicPeriodAssertThrows(
+                static fn (): mixed => $repository->findActive(),
+                RuntimeException::class,
+            );
         }
         [$repository, $pdo] = academicPeriodPersistenceFixture();
         $period = $repository->findById(new AcademicPeriodId(2));

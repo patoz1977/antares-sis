@@ -253,6 +253,20 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
         }
     });
 
+    $runner->add('E009 administrator AcademicPeriod lifecycle maps persistence failure without disclosure', function (): void {
+        [$controller, , , , $periodRepository] = institutionalAcknowledgementDeliveryController();
+        $periodRepository->failOnSaveNumber = 1;
+        deliveryRequest('POST', '/institutional-acknowledgements/academic-period/activate', [
+            '_csrf_token' => 'delivery-csrf',
+            'academic_period_id' => '10',
+        ]);
+        $response = $controller->activateAcademicPeriod();
+        assertSameValue(409, http_response_code());
+        deliveryAssertContains('operation is unavailable', $response);
+        assertSameValue(false, str_contains($response, 'Forced AcademicPeriod'));
+        assertSameValue(9, $periodRepository->findActive()?->id()?->value());
+    });
+
     $runner->add('E009 administrator exposes exact routes wiring architecture and White Label scope', function (): void {
         $routes = str_replace("\r\n", "\n", (string) file_get_contents(dirname(__DIR__) . '/routes/web.php'));
         assertSameValue(7, preg_match_all('/\$router->(?:get|post)\(\s*\'\/institutional-acknowledgements/', $routes));

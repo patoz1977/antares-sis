@@ -43,23 +43,20 @@ final class PdoAcademicPeriodRepository implements AcademicPeriodRepository
 
     public function findActive(): ?AcademicPeriod
     {
-        $statement = $this->connection->prepare(
-            $this->selectSql()
-            . ' WHERE st.code = :statusType AND status_row.code = :statusCode ORDER BY ap.id ASC'
-        );
-        $statement->execute([
-            ':statusType' => self::STATUS_TYPE,
-            ':statusCode' => AcademicPeriodStatus::Active->value,
-        ]);
+        $statement = $this->connection->query($this->selectSql() . ' ORDER BY ap.id ASC');
         $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+        $active = array_values(array_filter(
+            array_map($this->mapRow(...), $rows),
+            static fn (AcademicPeriod $period): bool => $period->isActive(),
+        ));
 
-        if (count($rows) > 1) {
+        if (count($active) > 1) {
             throw new AcademicPeriodOperationalStateConflict(
                 'More than one ACTIVE AcademicPeriod exists; operational context is ambiguous.'
             );
         }
 
-        return $rows === [] ? null : $this->mapRow($rows[0]);
+        return $active === [] ? null : $active[0];
     }
 
     public function save(AcademicPeriod $period): AcademicPeriod

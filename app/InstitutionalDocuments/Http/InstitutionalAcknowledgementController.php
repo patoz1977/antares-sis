@@ -23,6 +23,7 @@ use App\InstitutionalDocuments\Application\GetAcknowledgementRequirements;
 use App\InstitutionalDocuments\Application\UpdateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Domain\Exception\InvalidInstitutionalAcknowledgementState;
 use Core\Http\Request;
+use RuntimeException;
 
 final class InstitutionalAcknowledgementController extends Controller
 {
@@ -214,6 +215,8 @@ final class InstitutionalAcknowledgementController extends Controller
             return $this->plainError('Academic Period operational state is inconsistent.', 409);
         } catch (InvalidPersistedAcademicPeriodResult) {
             return $this->plainError('The Academic Period operation could not be confirmed.', 409);
+        } catch (RuntimeException) {
+            return $this->plainError('The Academic Period operation is unavailable.', 409);
         }
 
         $this->session->put(self::FLASH_SUCCESS_KEY, $success);
