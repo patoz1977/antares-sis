@@ -35,16 +35,36 @@ $field = static fn (string $key, mixed $fallback = ''): string => $escape($value
             <option value="">Select an Academic Period</option>
             <?php foreach ($periods as $period): ?>
             <option value="<?= $escape($period->id) ?>"<?= ($selectedPeriod?->id ?? null) === $period->id ? ' selected' : '' ?>>
-                <?= $escape($period->code . ' — ' . $period->name . ' (' . $period->startsOn . ' to ' . $period->endsOn . ')') ?>
+                <?= $escape($period->code . ' — ' . $period->name . ' (' . $period->startsOn . ' to ' . $period->endsOn . ') — ' . $period->status) ?>
             </option>
             <?php endforeach; ?>
         </select>
         <button type="submit">Open</button>
     </form>
 
+    <section aria-labelledby="academic-period-lifecycle-heading">
+        <h2 id="academic-period-lifecycle-heading">Academic Period lifecycle</h2>
+        <?php if ($periods === []): ?>
+        <p>No Academic Periods are configured.</p>
+        <?php endif; ?>
+        <?php foreach ($periods as $period): ?>
+        <article>
+            <h3><?= $escape($period->code . ' — ' . $period->name) ?></h3>
+            <p>Status: <?= $escape($period->status) ?></p>
+            <p><?= $escape($period->startsOn . ' to ' . $period->endsOn) ?></p>
+            <form method="post" action="/institutional-acknowledgements/academic-period/<?= $period->status === 'ACTIVE' ? 'deactivate' : 'activate' ?>">
+                <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
+                <input type="hidden" name="academic_period_id" value="<?= $escape($period->id) ?>">
+                <button type="submit"><?= $period->status === 'ACTIVE' ? 'Deactivate' : 'Activate' ?> Academic Period</button>
+            </form>
+        </article>
+        <?php endforeach; ?>
+    </section>
+
     <?php if (($selectedPeriod ?? null) !== null): ?>
     <h2><?= $escape($selectedPeriod->code . ' — ' . $selectedPeriod->name) ?></h2>
     <p><?= $escape($selectedPeriod->startsOn . ' to ' . $selectedPeriod->endsOn) ?></p>
+    <p>Status: <?= $escape($selectedPeriod->status) ?></p>
 
     <section aria-labelledby="create-requirement-heading">
         <h2 id="create-requirement-heading">Create Requirement</h2>
