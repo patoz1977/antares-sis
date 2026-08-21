@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\AcademicCore\Application\ActivateAcademicPeriod;
 use App\AcademicCore\Application\DeactivateAcademicPeriod;
 use App\AcademicCore\Application\GetActiveAcademicPeriod;
+use App\AcademicCore\Application\GetNextActiveGrade;
+use App\AcademicCore\Infrastructure\Persistence\PdoAcademicPlacementReferenceProvider;
 use App\AcademicCore\Domain\AcademicPeriod;
 use App\AcademicCore\Domain\AcademicPeriodRepository;
 use App\AcademicCore\Domain\Exception\AcademicPeriodOperationalStateConflict;
@@ -141,6 +143,10 @@ use App\Enrollment\Domain\ValueObject\SectionId as EnrollmentSectionId;
 use App\Enrollment\Domain\ValueObject\StudentId as EnrollmentStudentId;
 use App\Enrollment\Domain\ValueObject\TransportInformation as EnrollmentTransportInformation;
 use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
+use App\Enrollment\Application\Dto\StartEnrollmentDraftInput;
+use App\Enrollment\Application\Dto\UpdateEnrollmentTransportInformationInput;
+use App\Enrollment\Application\StartEnrollmentDraft;
+use App\Enrollment\Application\UpdateEnrollmentTransportInformation;
 use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
@@ -828,6 +834,276 @@ function runMariaDbEnrollmentPersistenceScenario(
         }
         $connection->exec('DROP TRIGGER IF EXISTS e010_reject_snapshot_address');
     }
+}
+
+function runMariaDbEnrollmentApplicationConcurrencyScenario(
+    ConnectionManager $managerA,
+    ConnectionManager $managerB,
+    PDO $connectionA,
+    PDO $connectionB,
+    int $studentAId,
+    int $studentBId,
+    int $familyId,
+    int $periodAId,
+    int $periodBId,
+    int $periodCId,
+    int $generalStatusId,
+): void {
+    $repositoryA = new PdoEnrollmentRepository($managerA);
+    $repositoryB = new PdoEnrollmentRepository($managerB);
+
+    $gradeId = (int) $connectionA->query(
+        "SELECT id FROM grades WHERE code = 'E010_GRADE'"
+    )->fetchColumn();
+    $sectionId = (int) $connectionA->query(
+        "SELECT id FROM sections WHERE code = 'E010_SECTION'"
+    )->fetchColumn();
+    $inactiveStatusId = (int) $connectionA->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'INACTIVE'"
+    )->fetchColumn();
+    assertIntegration(
+        $gradeId > 0 && $sectionId > 0 && $inactiveStatusId > 0,
+        'E010 Phase 4 Academic reference fixtures were not available.'
+    );
+
+    $connectionA->prepare(
+        'INSERT INTO grades (code, name, sort_order, status_id) '
+        . 'VALUES (:code, :name, :sortOrder, :statusId)'
+    )->execute([
+        ':code' => 'E010_P4_INACTIVE_GRADE',
+        ':name' => 'E010 Phase 4 Inactive Grade',
+        ':sortOrder' => 32001,
+        ':statusId' => $inactiveStatusId,
+    ]);
+    $connectionA->prepare(
+        'INSERT INTO grades (code, name, sort_order, status_id) '
+        . 'VALUES (:code, :name, :sortOrder, :statusId)'
+    )->execute([
+        ':code' => 'E010_P4_NEXT_GRADE',
+        ':name' => 'E010 Phase 4 Next Grade',
+        ':sortOrder' => 32002,
+        ':statusId' => $generalStatusId,
+    ]);
+    $nextGradeId = (int) $connectionA->lastInsertId();
+    $academicReferences = new PdoAcademicPlacementReferenceProvider($managerA);
+    $nextGrade = (new GetNextActiveGrade($academicReferences))->handle($gradeId);
+    assertIntegration(
+        $academicReferences->findGradeById($gradeId)?->id === $gradeId
+        && $academicReferences->findSectionById($sectionId)?->id === $sectionId
+        && $nextGrade?->id === $nextGradeId
+        && $nextGrade->sortOrder === 32002
+        && $nextGrade->status === 'ACTIVE',
+        'E010 Phase 4 Academic Core Grade Section boundary or next ACTIVE Grade ordering failed.'
+    );
+
+    $billingA = new EnrollmentBillingInformation(
+        new EnrollmentIdentificationTypeId(1),
+        '0911111111',
+        'Billing A',
+        'Address A',
+        'billing-a@example.test',
+        'Phone A',
+    );
+    $billingB = new EnrollmentBillingInformation(
+        new EnrollmentIdentificationTypeId(1),
+        '0922222222',
+        'Billing B',
+        'Address B',
+        'billing-b@example.test',
+        'Phone B',
+    );
+    $medicalA = new EnrollmentMedicalInformation(
+        false, null, false, null, false, null, false, null, false, null,
+        'Pediatrician A', null, 'Medical A',
+    );
+    $medicalB = new EnrollmentMedicalInformation(
+        true, 'Condition B', true, 'Allergy B', true, 'Medication B', true, 'Care B', true, 'Insurance B',
+        'Pediatrician B', 'Phone B', 'Medical B',
+    );
+
+    $draftA = $repositoryA->save(EnrollmentAggregate::startDraft(
+        new EnrollmentStudentId($studentAId),
+        new EnrollmentFamilyId($familyId),
+        new EnrollmentAcademicPeriodId($periodBId),
+        new DateTimeImmutable('2026-08-21 15:00:00+00:00'),
+        new EnrollmentAcademicPlacement(new EnrollmentGradeId($gradeId), new EnrollmentSectionId($sectionId)),
+        $billingA,
+        $medicalA,
+        new EnrollmentTransportInformation(true),
+        false,
+    ));
+    $draftB = $repositoryA->save(EnrollmentAggregate::startDraft(
+        new EnrollmentStudentId($studentBId),
+        new EnrollmentFamilyId($familyId),
+        new EnrollmentAcademicPeriodId($periodAId),
+        new DateTimeImmutable('2026-08-21 15:01:00+00:00'),
+    ));
+    $draftAId = $draftA->id() ?? throw new RuntimeException('E010 Phase 4 Draft A identity missing.');
+    $draftBId = $draftB->id() ?? throw new RuntimeException('E010 Phase 4 Draft B identity missing.');
+
+    $connectionA->beginTransaction();
+    $lockedA = $repositoryA->findByIdForUpdate($draftAId);
+    assertIntegration(
+        $lockedA !== null && $connectionA->inTransaction(),
+        'E010 Phase 4 T1 did not lock Draft A root.'
+    );
+    $lockedA->updateBillingInformation($billingB);
+    $repositoryA->save($lockedA);
+
+    $connectionB->exec('SET innodb_lock_wait_timeout = 1');
+    $sameRootBlocked = false;
+    try {
+        $connectionB->beginTransaction();
+        $repositoryB->findByIdForUpdate($draftAId);
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException(
+                'E010 Phase 4 same-root contention failed for a non-lock reason.',
+                previous: $exception,
+            );
+        }
+        $sameRootBlocked = true;
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+    }
+    assertIntegration($sameRootBlocked, 'E010 Phase 4 competing Draft mutation did not wait for root lock.');
+    $connectionA->commit();
+
+    $connectionB->beginTransaction();
+    $postCommit = $repositoryB->findByIdForUpdate($draftAId);
+    assertIntegration(
+        $postCommit?->billingInformation()?->legalName() === 'Billing B',
+        'E010 Phase 4 T2 did not load committed post-T1 state under lock.'
+    );
+    $postCommit->updateMedicalInformation($medicalB);
+    $repositoryB->save($postCommit);
+    $connectionB->commit();
+    $serialized = $repositoryA->findById($draftAId);
+    assertIntegration(
+        $serialized?->billingInformation()?->legalName() === 'Billing B'
+        && $serialized->medicalInformation()?->observations() === 'Medical B',
+        'E010 Phase 4 same-Enrollment serialization lost Billing or Medical state.'
+    );
+
+    $connectionA->beginTransaction();
+    $repositoryA->findByIdForUpdate($draftAId);
+    $unrelated = (new UpdateEnrollmentTransportInformation(
+        $repositoryB,
+        new PdoTransactionRunner($managerB),
+    ))->handle(new UpdateEnrollmentTransportInformationInput(
+        $draftBId->value(),
+        $studentBId,
+        $familyId,
+        $periodAId,
+        true,
+    ));
+    assertIntegration(
+        $unrelated->transportInformation?->requiresInstitutionalTransport === true
+        && $connectionA->inTransaction(),
+        'E010 Phase 4 lock on Enrollment A blocked or corrupted Enrollment B.'
+    );
+    $connectionA->rollBack();
+
+    $connectionA->beginTransaction();
+    $rollbackCandidate = $repositoryA->findByIdForUpdate($draftAId);
+    $rollbackCandidate?->updateLeaveAloneAuthorization(true);
+    if ($rollbackCandidate !== null) {
+        $repositoryA->save($rollbackCandidate);
+    }
+    $rollbackBlocked = false;
+    try {
+        $connectionB->beginTransaction();
+        $repositoryB->findByIdForUpdate($draftAId);
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException(
+                'E010 Phase 4 rollback contention failed for a non-lock reason.',
+                previous: $exception,
+            );
+        }
+        $rollbackBlocked = true;
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+    }
+    $connectionA->rollBack();
+    $afterRollback = (new UpdateEnrollmentTransportInformation(
+        $repositoryB,
+        new PdoTransactionRunner($managerB),
+    ))->handle(new UpdateEnrollmentTransportInformationInput(
+        $draftAId->value(),
+        $studentAId,
+        $familyId,
+        $periodBId,
+        false,
+    ));
+    assertIntegration(
+        $rollbackBlocked
+        && !$afterRollback->isAuthorizedToLeaveAlone
+        && $afterRollback->transportInformation?->requiresInstitutionalTransport === false,
+        'E010 Phase 4 rollback did not release lock or preserve pre-transaction state.'
+    );
+
+    $raceStudent = new EnrollmentStudentId($studentAId);
+    $racePeriod = new EnrollmentAcademicPeriodId($periodCId);
+    $raceFamilyId = (new PdoFamilyRepository($managerA))->findActiveByStudentId(
+        new FamilyStudentReference($studentAId),
+    )?->id()?->value() ?? 0;
+    assertIntegration(
+        $raceFamilyId > 0
+        &&
+        $repositoryA->findByStudentAndAcademicPeriod($raceStudent, $racePeriod) === null
+        && $repositoryB->findByStudentAndAcademicPeriod($raceStudent, $racePeriod) === null,
+        'E010 Phase 4 concurrent initialization fixture was not empty for both connections.'
+    );
+    $staleDraft = EnrollmentAggregate::startDraft(
+        $raceStudent,
+        new EnrollmentFamilyId($raceFamilyId),
+        $racePeriod,
+        new DateTimeImmutable('2026-08-21 16:00:00+00:00'),
+    );
+    $clock = new class implements Clock {
+        public function now(): DateTimeImmutable
+        {
+            return new DateTimeImmutable('2026-08-21 16:00:01+00:00');
+        }
+    };
+    $created = (new StartEnrollmentDraft(
+        new PdoStudentRepository($managerA),
+        new PdoFamilyRepository($managerA),
+        new PdoAcademicPeriodRepository($managerA),
+        $repositoryA,
+        $academicReferences,
+        $clock,
+        new PdoTransactionRunner($managerA),
+    ))->handle(new StartEnrollmentDraftInput($studentAId, $raceFamilyId, $periodCId));
+    $raceRejected = false;
+    try {
+        $repositoryB->save($staleDraft);
+    } catch (PDOException) {
+        $raceRejected = true;
+    }
+    $raceCount = $connectionA->prepare(
+        'SELECT COUNT(*) FROM enrollments WHERE student_id = :studentId AND academic_period_id = :periodId'
+    );
+    $raceCount->execute([':studentId' => $studentAId, ':periodId' => $periodCId]);
+    $raceSnapshotCount = $connectionA->prepare(
+        'SELECT COUNT(*) FROM enrollment_submission_snapshots s '
+        . 'INNER JOIN enrollments e ON e.id = s.enrollment_id '
+        . 'WHERE e.student_id = :studentId AND e.academic_period_id = :periodId'
+    );
+    $raceSnapshotCount->execute([':studentId' => $studentAId, ':periodId' => $periodCId]);
+    assertIntegration(
+        $created->id > 0
+        && $raceRejected
+        && (int) $raceCount->fetchColumn() === 1
+        && (int) $raceSnapshotCount->fetchColumn() === 0,
+        'E010 Phase 4 concurrent initialization did not preserve one root and zero partial snapshot state.'
+    );
 }
 
 $requiredNonEmptyEnvironment = [
@@ -5088,6 +5364,19 @@ try {
         $persistenceRollbackPeriodId,
         $generalStatusId,
     );
+    runMariaDbEnrollmentApplicationConcurrencyScenario(
+        $managerA,
+        $managerB,
+        $connectionA,
+        $connectionB,
+        $generatedStudentId->value(),
+        $secondStudentId->value(),
+        $generatedFamilyId->value(),
+        $persistencePeriodId,
+        $persistenceOtherPeriodId,
+        $persistenceRollbackPeriodId,
+        $generalStatusId,
+    );
 
     echo 'MariaDB version: ' . $mariaDbVersion . "\n";
     echo 'Physical inventory: ' . count($actualTables) . ' tables including migrations metadata; '
@@ -5123,6 +5412,10 @@ try {
     echo "PASS MySQL Enrollment submission snapshot identities deterministic reconstruction replacement and CASCADE\n";
     echo "PASS MySQL Enrollment completion cancellation uniqueness caller transaction and rollback\n";
     echo "PASS MySQL Enrollment failed insertion and failed resubmission restore complete Aggregate state\n";
+    echo "PASS MySQL Enrollment Application same-root serialization preserves Billing and Medical updates\n";
+    echo "PASS MySQL Enrollment Application cross-root isolation and rollback lock release\n";
+    echo "PASS MySQL Enrollment Application concurrent initialization physical UNIQUE and no partial state\n";
+    echo "PASS MySQL Academic Core Grade Section references and next ACTIVE Grade ordering\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {
     $cleanupFailures = dropDisposableDatabases($server, $createdDatabases);
