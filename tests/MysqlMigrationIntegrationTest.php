@@ -121,6 +121,26 @@ use App\Student\Domain\ValueObject\InstitutionalCode;
 use App\Student\Domain\ValueObject\PersonId as StudentPersonId;
 use App\Student\Application\CreateStudent;
 use App\Student\Infrastructure\Persistence\PdoStudentRepository;
+use App\Enrollment\Domain\Enrollment as EnrollmentAggregate;
+use App\Enrollment\Domain\EnrollmentStatus as EnrollmentAggregateStatus;
+use App\Enrollment\Domain\EnrollmentSubmissionSnapshot as EnrollmentSnapshot;
+use App\Enrollment\Domain\SubmittedAddressSnapshot as EnrollmentSnapshotAddress;
+use App\Enrollment\Domain\SubmittedAuthorizedPickupSnapshot as EnrollmentSnapshotPickup;
+use App\Enrollment\Domain\SubmittedEmergencyContactSnapshot as EnrollmentSnapshotEmergencyContact;
+use App\Enrollment\Domain\ValueObject\AcademicPeriodId as EnrollmentAcademicPeriodId;
+use App\Enrollment\Domain\ValueObject\AcademicPlacement as EnrollmentAcademicPlacement;
+use App\Enrollment\Domain\ValueObject\BillingInformation as EnrollmentBillingInformation;
+use App\Enrollment\Domain\ValueObject\EnrollmentId as EnrollmentAggregateId;
+use App\Enrollment\Domain\ValueObject\FamilyId as EnrollmentFamilyId;
+use App\Enrollment\Domain\ValueObject\Geolocation as EnrollmentGeolocation;
+use App\Enrollment\Domain\ValueObject\GradeId as EnrollmentGradeId;
+use App\Enrollment\Domain\ValueObject\IdentificationTypeId as EnrollmentIdentificationTypeId;
+use App\Enrollment\Domain\ValueObject\MedicalInformation as EnrollmentMedicalInformation;
+use App\Enrollment\Domain\ValueObject\RepresentativeId as EnrollmentRepresentativeId;
+use App\Enrollment\Domain\ValueObject\SectionId as EnrollmentSectionId;
+use App\Enrollment\Domain\ValueObject\StudentId as EnrollmentStudentId;
+use App\Enrollment\Domain\ValueObject\TransportInformation as EnrollmentTransportInformation;
+use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
 use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
@@ -377,6 +397,437 @@ function schemaInventoryDifferenceMessage(array $expected, array $actual): strin
         implode(', ', $expected),
         implode(', ', $actual),
     );
+}
+
+function mariaDbEnrollmentSnapshot(string $addressLabel, int $representativeId): EnrollmentSnapshot
+{
+    return EnrollmentSnapshot::create(
+        new EnrollmentRepresentativeId($representativeId),
+        new DateTimeImmutable('2026-08-18 14:30:31.987654+00:00'),
+        EnrollmentSnapshotAddress::create(
+            $addressLabel,
+            'Calle Persistencia Ñ',
+            'N1-23',
+            'Calle Secundaria',
+            'Sector Norte',
+            'Casa azul',
+            new EnrollmentGeolocation('-0.1234567', '-78.1234567'),
+        ),
+        [
+            EnrollmentSnapshotEmergencyContact::create(
+                'Contacto segundo', 'MOTHER', 'Madre', '0990000002', null,
+                'second@example.test', null, null, 2,
+            ),
+            EnrollmentSnapshotEmergencyContact::create(
+                'Contacto primero', 'FATHER', 'Padre', '0990000001', '020000001',
+                'first@example.test', 'Prioridad', 1, 1,
+            ),
+        ],
+        [
+            EnrollmentSnapshotPickup::create(
+                'Persona B', 'UNCLE', 'Tío', '0980000002', null,
+                'NATIONAL_ID', 'Cédula', 'B-2', null,
+            ),
+            EnrollmentSnapshotPickup::create(
+                'Persona A', 'AUNT', 'Tía', '0980000001', '020000002',
+                'PASSPORT', 'Pasaporte', 'A-1', 'Observación',
+            ),
+        ],
+    );
+}
+
+function runMariaDbEnrollmentPersistenceScenario(
+    ConnectionManager $manager,
+    PDO $connection,
+    int $studentAId,
+    int $studentBId,
+    int $familyId,
+    int $representativeId,
+    int $periodAId,
+    int $periodBId,
+    int $periodCId,
+    int $generalStatusId,
+): void {
+    foreach ([
+        'studentAId' => $studentAId,
+        'studentBId' => $studentBId,
+        'familyId' => $familyId,
+        'representativeId' => $representativeId,
+        'periodAId' => $periodAId,
+        'periodBId' => $periodBId,
+        'periodCId' => $periodCId,
+        'generalStatusId' => $generalStatusId,
+    ] as $label => $value) {
+        assertIntegration($value > 0, 'E010 MariaDB fixture requires positive ' . $label . '.');
+    }
+
+    $connection->prepare(
+        'INSERT INTO grades (code, name, sort_order, status_id) '
+        . 'VALUES (:code, :name, :sortOrder, :statusId)'
+    )->execute([
+        ':code' => 'E010_GRADE',
+        ':name' => 'E010 Grade',
+        ':sortOrder' => 32000,
+        ':statusId' => $generalStatusId,
+    ]);
+    $gradeId = (int) $connection->lastInsertId();
+    $connection->prepare(
+        'INSERT INTO sections (code, name, status_id) VALUES (:code, :name, :statusId)'
+    )->execute([
+        ':code' => 'E010_SECTION',
+        ':name' => 'E010 Section',
+        ':statusId' => $generalStatusId,
+    ]);
+    $sectionId = (int) $connection->lastInsertId();
+    assertIntegration($gradeId > 0 && $sectionId > 0, 'E010 Grade and Section fixtures require AUTO_INCREMENT.');
+
+    $repository = new PdoEnrollmentRepository($manager);
+    $draft = EnrollmentAggregate::startDraft(
+        new EnrollmentStudentId($studentAId),
+        new EnrollmentFamilyId($familyId),
+        new EnrollmentAcademicPeriodId($periodAId),
+        new DateTimeImmutable('2026-08-18 09:10:11.654321-05:00'),
+        new EnrollmentAcademicPlacement(new EnrollmentGradeId($gradeId), new EnrollmentSectionId($sectionId)),
+        new EnrollmentBillingInformation(
+            new EnrollmentIdentificationTypeId(1),
+            '0912345678',
+            'Familia Persistencia Ñ',
+            'Av. Principal 123',
+            'billing@example.test',
+            '+593 99 000 0000',
+        ),
+        new EnrollmentMedicalInformation(
+            true, 'Condición controlada', false, null, true, 'Medicamento',
+            false, null, true, 'Seguro', 'Pediatra', '020000003', 'Observación médica',
+        ),
+        new EnrollmentTransportInformation(true),
+        true,
+    );
+    $persistedDraft = $repository->save($draft);
+    $enrollmentId = $persistedDraft->id();
+    assertIntegration(
+        $draft->id() === null && $enrollmentId !== null && $enrollmentId->value() > 0,
+        'MariaDB Enrollment insert did not preserve new identity or generate AUTO_INCREMENT.'
+    );
+    $roundtrip = $repository->findByStudentAndAcademicPeriod(
+        new EnrollmentStudentId($studentAId),
+        new EnrollmentAcademicPeriodId($periodAId),
+    );
+    assertIntegration(
+        $roundtrip !== null
+        && $roundtrip->id()?->equals($enrollmentId)
+        && $roundtrip->academicPlacement()?->gradeId()->value() === $gradeId
+        && $roundtrip->academicPlacement()?->sectionId()?->value() === $sectionId
+        && $roundtrip->billingInformation()?->legalName() === 'Familia Persistencia Ñ'
+        && $roundtrip->medicalInformation()?->medicalConditionDetail() === 'Condición controlada'
+        && $roundtrip->transportInformation()?->requiresInstitutionalTransport() === true
+        && $roundtrip->isAuthorizedToLeaveAlone()
+        && $roundtrip->startedAt()->format('Y-m-d H:i:s P') === '2026-08-18 14:10:11 +00:00',
+        'MariaDB Enrollment full Draft roundtrip or UTC normalization failed.'
+    );
+
+    $duplicateRejected = false;
+    try {
+        $repository->save(EnrollmentAggregate::startDraft(
+            new EnrollmentStudentId($studentAId),
+            new EnrollmentFamilyId($familyId),
+            new EnrollmentAcademicPeriodId($periodAId),
+            new DateTimeImmutable('2026-08-18 14:10:11+00:00'),
+        ));
+    } catch (PDOException) {
+        $duplicateRejected = true;
+    }
+    assertIntegration($duplicateRejected, 'MariaDB accepted duplicate Student plus AcademicPeriod Enrollment.');
+
+    $changedOwnership = EnrollmentAggregate::reconstitute(
+        $enrollmentId,
+        new EnrollmentStudentId($studentBId),
+        $persistedDraft->familyId(),
+        $persistedDraft->academicPeriodId(),
+        $persistedDraft->status(),
+        $persistedDraft->academicPlacement(),
+        $persistedDraft->billingInformation(),
+        $persistedDraft->medicalInformation(),
+        $persistedDraft->transportInformation(),
+        $persistedDraft->isAuthorizedToLeaveAlone(),
+        null,
+        $persistedDraft->startedAt(),
+        null,
+        null,
+        null,
+    );
+    $ownershipRejected = false;
+    try {
+        $repository->save($changedOwnership);
+    } catch (RuntimeException) {
+        $ownershipRejected = true;
+    }
+    $changedStartedAt = EnrollmentAggregate::reconstitute(
+        $enrollmentId,
+        $persistedDraft->studentId(),
+        $persistedDraft->familyId(),
+        $persistedDraft->academicPeriodId(),
+        $persistedDraft->status(),
+        $persistedDraft->academicPlacement(),
+        $persistedDraft->billingInformation(),
+        $persistedDraft->medicalInformation(),
+        $persistedDraft->transportInformation(),
+        $persistedDraft->isAuthorizedToLeaveAlone(),
+        null,
+        $persistedDraft->startedAt()->modify('+1 second'),
+        null,
+        null,
+        null,
+    );
+    $startedAtRejected = false;
+    try {
+        $repository->save($changedStartedAt);
+    } catch (RuntimeException) {
+        $startedAtRejected = true;
+    }
+    assertIntegration(
+        $ownershipRejected && $startedAtRejected,
+        'MariaDB Enrollment update accepted changed ownership or started_at.'
+    );
+
+    $persistedDraft->submit(
+        mariaDbEnrollmentSnapshot('Original E010', $representativeId),
+        new DateTimeImmutable('2026-08-18 15:00:01.987654+00:00'),
+    );
+    $submitted = $repository->save($persistedDraft);
+    $oldSnapshot = $submitted->submissionSnapshot();
+    assertIntegration(
+        $submitted->status() === EnrollmentAggregateStatus::Submitted
+        && $submitted->submittedAt()?->format('Y-m-d H:i:s P') === '2026-08-18 15:00:01 +00:00'
+        && ($oldSnapshot?->id()?->value() ?? 0) > 0
+        && ($oldSnapshot?->address()->id()?->value() ?? 0) > 0
+        && count($oldSnapshot?->emergencyContacts() ?? []) === 2
+        && count($oldSnapshot?->authorizedPickups() ?? []) === 2
+        && array_map(static fn ($contact): int => $contact->sortOrder(), $oldSnapshot?->emergencyContacts() ?? []) === [1, 2],
+        'MariaDB Enrollment snapshot roundtrip identities structure order or UTC failed.'
+    );
+    $oldSnapshotId = $oldSnapshot?->id()?->value() ?? 0;
+    $oldAddressId = $oldSnapshot?->address()->id()?->value() ?? 0;
+    $oldEmergencyIds = array_map(static fn ($contact): ?int => $contact->id()?->value(), $oldSnapshot?->emergencyContacts() ?? []);
+    $oldPickupIds = array_map(static fn ($pickup): ?int => $pickup->id()?->value(), $oldSnapshot?->authorizedPickups() ?? []);
+    assertIntegration(
+        count(array_unique($oldEmergencyIds)) === 2
+        && count(array_unique($oldPickupIds)) === 2,
+        'MariaDB snapshot child identities were not distinct database-generated values.'
+    );
+
+    $submitted->reopen();
+    $submitted->updateLeaveAloneAuthorization(false);
+    $reopened = $repository->save($submitted);
+    assertIntegration(
+        $reopened->status() === EnrollmentAggregateStatus::Draft
+        && $reopened->submissionSnapshot()?->id()?->value() === $oldSnapshotId,
+        'MariaDB Enrollment reopen did not preserve the immutable prior snapshot.'
+    );
+    $reopened->submit(
+        mariaDbEnrollmentSnapshot('Replacement E010', $representativeId),
+        new DateTimeImmutable('2026-08-18 16:00:02+00:00'),
+    );
+    $resubmitted = $repository->save($reopened);
+    $newSnapshotId = $resubmitted->submissionSnapshot()?->id()?->value() ?? 0;
+    assertIntegration(
+        $newSnapshotId > 0
+        && $newSnapshotId !== $oldSnapshotId
+        && (int) $connection->query(
+            'SELECT COUNT(*) FROM enrollment_submission_snapshots WHERE enrollment_id = ' . $enrollmentId->value()
+        )->fetchColumn() === 1
+        && (int) $connection->query(
+            'SELECT COUNT(*) FROM enrollment_submission_snapshots WHERE id = ' . $oldSnapshotId
+        )->fetchColumn() === 0
+        && (int) $connection->query(
+            'SELECT COUNT(*) FROM snapshot_addresses WHERE id = ' . $oldAddressId
+        )->fetchColumn() === 0,
+        'MariaDB resubmission did not replace one snapshot or cascade old children.'
+    );
+    foreach (array_merge($oldEmergencyIds, $oldPickupIds) as $oldChildId) {
+        assertIntegration(is_int($oldChildId) && $oldChildId > 0, 'Old snapshot child identity was invalid.');
+    }
+
+    $resubmitted->complete(new DateTimeImmutable('2026-08-18 17:00:03+00:00'));
+    $completed = $repository->save($resubmitted);
+    assertIntegration(
+        $completed->status() === EnrollmentAggregateStatus::Completed
+        && $completed->completedAt()?->format('Y-m-d H:i:s P') === '2026-08-18 17:00:03 +00:00',
+        'MariaDB Enrollment Completion roundtrip failed.'
+    );
+
+    $cancelled = EnrollmentAggregate::startDraft(
+        new EnrollmentStudentId($studentBId),
+        new EnrollmentFamilyId($familyId),
+        new EnrollmentAcademicPeriodId($periodBId),
+        new DateTimeImmutable('2026-08-18 18:00:00+00:00'),
+    );
+    $cancelled->cancel(new DateTimeImmutable('2026-08-18 18:30:00+00:00'));
+    $cancelled = $repository->save($cancelled);
+    assertIntegration(
+        $cancelled->status() === EnrollmentAggregateStatus::Cancelled
+        && $cancelled->cancelledAt()?->format('Y-m-d H:i:s P') === '2026-08-18 18:30:00 +00:00',
+        'MariaDB Enrollment Cancellation roundtrip failed.'
+    );
+
+    $completedStatusId = (int) $connection->query(
+        "SELECT s.id FROM statuses s JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'ENROLLMENT_STATUS' AND s.code = 'COMPLETED'"
+    )->fetchColumn();
+    $physicalRoot = $connection->query(
+        'SELECT st.code AS status_type_code, s.code AS status_code, e.started_at, e.submitted_at, e.completed_at '
+        . 'FROM enrollments e JOIN statuses s ON s.id = e.status_id '
+        . 'JOIN status_types st ON st.id = s.status_type_id WHERE e.id = ' . $enrollmentId->value()
+    )->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $physicalRoot !== false
+        && $physicalRoot['status_type_code'] === 'ENROLLMENT_STATUS'
+        && $physicalRoot['status_code'] === 'COMPLETED'
+        && $physicalRoot['started_at'] === '2026-08-18 14:10:11'
+        && $physicalRoot['submitted_at'] === '2026-08-18 16:00:02'
+        && $physicalRoot['completed_at'] === '2026-08-18 17:00:03',
+        'MariaDB Enrollment physical root did not preserve exact status type and UTC seconds.'
+    );
+    $connection->exec('UPDATE enrollments SET status_id = ' . $generalStatusId . ' WHERE id = ' . $enrollmentId->value());
+    $wrongStatusRejected = false;
+    try {
+        $repository->findById($enrollmentId);
+    } catch (RuntimeException) {
+        $wrongStatusRejected = true;
+    }
+    $connection->exec('UPDATE enrollments SET status_id = ' . $completedStatusId . ' WHERE id = ' . $enrollmentId->value());
+    assertIntegration($wrongStatusRejected, 'MariaDB Enrollment accepted status outside ENROLLMENT_STATUS.');
+
+    $connection->beginTransaction();
+    $externalDraft = EnrollmentAggregate::startDraft(
+        new EnrollmentStudentId($studentAId),
+        new EnrollmentFamilyId($familyId),
+        new EnrollmentAcademicPeriodId($periodBId),
+        new DateTimeImmutable('2026-08-19 09:00:00+00:00'),
+    );
+    $externalPersisted = $repository->save($externalDraft);
+    assertIntegration(
+        $connection->inTransaction() && $externalPersisted->id() !== null,
+        'Enrollment Repository committed or lost caller transaction ownership.'
+    );
+    $connection->rollBack();
+    assertIntegration(
+        $repository->findByStudentAndAcademicPeriod(
+            new EnrollmentStudentId($studentAId),
+            new EnrollmentAcademicPeriodId($periodBId),
+        ) === null,
+        'Caller rollback did not remove externally transacted Enrollment.'
+    );
+
+    $connection->exec('DROP TRIGGER IF EXISTS e010_reject_snapshot_address');
+    $connection->exec(
+        "CREATE TRIGGER e010_reject_snapshot_address BEFORE INSERT ON snapshot_addresses "
+        . "FOR EACH ROW BEGIN IF NEW.label LIKE 'Reject%' THEN SIGNAL SQLSTATE '45000' "
+        . "SET MESSAGE_TEXT = 'E010 forced snapshot failure'; END IF; END"
+    );
+    try {
+        $failedNew = EnrollmentAggregate::startDraft(
+            new EnrollmentStudentId($studentBId),
+            new EnrollmentFamilyId($familyId),
+            new EnrollmentAcademicPeriodId($periodCId),
+            new DateTimeImmutable('2026-08-19 10:00:00+00:00'),
+        );
+        $failedNew->submit(
+            mariaDbEnrollmentSnapshot('Reject new', $representativeId),
+            new DateTimeImmutable('2026-08-19 10:30:00+00:00'),
+        );
+        $newFailureObserved = false;
+        try {
+            $repository->save($failedNew);
+        } catch (PDOException) {
+            $newFailureObserved = true;
+        }
+        assertIntegration(
+            $newFailureObserved
+            && $repository->findByStudentAndAcademicPeriod(
+                new EnrollmentStudentId($studentBId),
+                new EnrollmentAcademicPeriodId($periodCId),
+            ) === null,
+            'Failed MariaDB snapshot insert left a partial new Enrollment root.'
+        );
+
+        $original = EnrollmentAggregate::startDraft(
+            new EnrollmentStudentId($studentBId),
+            new EnrollmentFamilyId($familyId),
+            new EnrollmentAcademicPeriodId($periodCId),
+            new DateTimeImmutable('2026-08-19 11:00:00+00:00'),
+        );
+        $original->submit(
+            mariaDbEnrollmentSnapshot('Stable original', $representativeId),
+            new DateTimeImmutable('2026-08-19 11:30:00+00:00'),
+        );
+        $original = $repository->save($original);
+        $stableSnapshotId = $original->submissionSnapshot()?->id()?->value() ?? 0;
+        $stableAddressId = $original->submissionSnapshot()?->address()->id()?->value() ?? 0;
+        $original->reopen();
+        $original->submit(
+            mariaDbEnrollmentSnapshot('Reject replacement', $representativeId),
+            new DateTimeImmutable('2026-08-19 12:00:00+00:00'),
+        );
+        $replacementFailureObserved = false;
+        try {
+            $repository->save($original);
+        } catch (PDOException) {
+            $replacementFailureObserved = true;
+        }
+        $restored = $repository->findById($original->id());
+        assertIntegration(
+            $replacementFailureObserved
+            && $restored?->status() === EnrollmentAggregateStatus::Submitted
+            && $restored->submittedAt()?->format('Y-m-d H:i:s') === '2026-08-19 11:30:00'
+            && $restored->submissionSnapshot()?->id()?->value() === $stableSnapshotId
+            && $restored->submissionSnapshot()?->address()->id()?->value() === $stableAddressId
+            && $restored->submissionSnapshot()?->address()->label() === 'Stable original'
+            && count($restored->submissionSnapshot()?->emergencyContacts() ?? []) === 2
+            && count($restored->submissionSnapshot()?->authorizedPickups() ?? []) === 2,
+            'Failed MariaDB resubmission did not restore prior root snapshot and children.'
+        );
+
+        $connection->beginTransaction();
+        $externalFailed = EnrollmentAggregate::startDraft(
+            new EnrollmentStudentId($studentAId),
+            new EnrollmentFamilyId($familyId),
+            new EnrollmentAcademicPeriodId($periodBId),
+            new DateTimeImmutable('2026-08-19 13:00:00+00:00'),
+        );
+        $externalFailed->submit(
+            mariaDbEnrollmentSnapshot('Reject external', $representativeId),
+            new DateTimeImmutable('2026-08-19 13:30:00+00:00'),
+        );
+        $externalFailureObserved = false;
+        try {
+            $repository->save($externalFailed);
+        } catch (PDOException) {
+            $externalFailureObserved = true;
+        }
+        assertIntegration(
+            $externalFailureObserved
+            && $connection->inTransaction()
+            && (int) $connection->query(
+                'SELECT COUNT(*) FROM enrollments WHERE student_id = ' . $studentAId
+                . ' AND academic_period_id = ' . $periodBId
+            )->fetchColumn() === 1,
+            'Failed external Enrollment save changed caller transaction ownership or hid partial caller state.'
+        );
+        $connection->rollBack();
+        assertIntegration(
+            $repository->findByStudentAndAcademicPeriod(
+                new EnrollmentStudentId($studentAId),
+                new EnrollmentAcademicPeriodId($periodBId),
+            ) === null,
+            'Caller rollback did not remove failed external Enrollment persistence state.'
+        );
+    } finally {
+        if ($connection->inTransaction()) {
+            $connection->rollBack();
+        }
+        $connection->exec('DROP TRIGGER IF EXISTS e010_reject_snapshot_address');
+    }
 }
 
 $requiredNonEmptyEnvironment = [
@@ -4618,6 +5069,26 @@ try {
         'E009 administrator AcademicPeriod provider did not expose exact lifecycle states.'
     );
 
+    if ($generatedStudentId === null
+        || $secondStudentId === null
+        || $generatedFamilyId === null
+        || $generatedRepresentativeId === null
+    ) {
+        throw new RuntimeException('E010 Enrollment persistence requires prior generated Student and Family identities.');
+    }
+    runMariaDbEnrollmentPersistenceScenario(
+        $managerA,
+        $connectionA,
+        $generatedStudentId->value(),
+        $secondStudentId->value(),
+        $generatedFamilyId->value(),
+        $generatedRepresentativeId->value(),
+        $persistencePeriodId,
+        $persistenceOtherPeriodId,
+        $persistenceRollbackPeriodId,
+        $generalStatusId,
+    );
+
     echo 'MariaDB version: ' . $mariaDbVersion . "\n";
     echo 'Physical inventory: ' . count($actualTables) . ' tables including migrations metadata; '
         . $physicalForeignKeyCount . " foreign keys\n";
@@ -4648,6 +5119,10 @@ try {
     echo "PASS MySQL Representative User email-gated AUTO_INCREMENT provisioning lookup hashing and physical uniqueness\n";
     echo "PASS MySQL Representative administrative password change preserves authentication state\n";
     echo "PASS MySQL Representative email document login synchronization conflict rollback and authentication\n";
+    echo "PASS MySQL Enrollment complete roundtrip AUTO_INCREMENT UTC ENROLLMENT_STATUS and immutable ownership\n";
+    echo "PASS MySQL Enrollment submission snapshot identities deterministic reconstruction replacement and CASCADE\n";
+    echo "PASS MySQL Enrollment completion cancellation uniqueness caller transaction and rollback\n";
+    echo "PASS MySQL Enrollment failed insertion and failed resubmission restore complete Aggregate state\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {
     $cleanupFailures = dropDisposableDatabases($server, $createdDatabases);
