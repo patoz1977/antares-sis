@@ -17,5 +17,7 @@ interface FamilyRepository
 
     public function findActiveByStudentId(StudentId $studentId): ?Family;
 
+    public function findActiveByStudentIdForUpdate(StudentId $studentId): ?Family;
+
     public function save(Family $family): Family;
 }

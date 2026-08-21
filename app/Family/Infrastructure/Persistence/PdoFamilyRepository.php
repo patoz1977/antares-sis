@@ -104,6 +104,70 @@ final class PdoFamilyRepository implements FamilyRepository
         return $family;
     }
 
+    public function findActiveByStudentIdForUpdate(StudentId $studentId): ?Family
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('Active FamilyStudent row lock requires an active transaction.');
+        }
+
+        $isSqlite = $this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
+        $sql = 'SELECT fs.id, fs.family_id, fs.student_id FROM family_students fs '
+            . ($isSqlite
+                ? 'WHERE fs.student_id = :studentId AND fs.ended_at IS NULL '
+                : 'WHERE fs.active_student_id = :studentId ')
+            . 'ORDER BY fs.id';
+        if (!$isSqlite) {
+            $sql .= ' FOR UPDATE';
+        }
+
+        $statement = $this->connection->prepare($sql);
+        $statement->execute([':studentId' => $studentId->value()]);
+        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+
+        if (count($rows) > 1) {
+            throw new RuntimeException('Student has more than one active persisted Family membership for update.');
+        }
+        if ($rows === []) {
+            return null;
+        }
+
+        $row = $rows[0];
+        $membershipId = new FamilyStudentId($this->persistedPositiveInt(
+            $row['id'] ?? null,
+            'Locked FamilyStudent id',
+        ));
+        $familyId = new FamilyId($this->persistedPositiveInt(
+            $row['family_id'] ?? null,
+            'Locked FamilyStudent family_id',
+        ));
+        $lockedStudentId = new StudentId($this->persistedPositiveInt(
+            $row['student_id'] ?? null,
+            'Locked FamilyStudent student_id',
+        ));
+        if (!$lockedStudentId->equals($studentId)) {
+            throw new RuntimeException('Active FamilyStudent row lock returned an incoherent Student identity.');
+        }
+
+        $family = $this->findById($familyId);
+        if ($family === null) {
+            throw new RuntimeException('Locked active FamilyStudent membership references a missing Family.');
+        }
+
+        $matches = array_values(array_filter(
+            $family->activeStudents(),
+            static fn (FamilyStudent $membership): bool => $membership->studentId()->equals($studentId),
+        ));
+        if (count($matches) !== 1
+            || $matches[0]->id()?->equals($membershipId) !== true
+        ) {
+            throw new RuntimeException(
+                'Reconstructed Family is incoherent with the locked active FamilyStudent membership.'
+            );
+        }
+
+        return $family;
+    }
+
     public function save(Family $family): Family
     {
         $ownsTransaction = !$this->connection->inTransaction();
@@ -1815,6 +1879,22 @@ final class PdoFamilyRepository implements FamilyRepository
             . 'st.code AS status_type_code FROM families f '
             . 'INNER JOIN statuses s ON s.id = f.status_id '
             . 'INNER JOIN status_types st ON st.id = s.status_type_id';
+    }
+
+    private function persistedPositiveInt(mixed $value, string $label): int
+    {
+        if (is_int($value)) {
+            $integer = $value;
+        } elseif (is_string($value) && preg_match('/^[0-9]+$/D', $value) === 1) {
+            $integer = (int) $value;
+        } else {
+            throw new RuntimeException($label . ' must be a persisted positive integer.');
+        }
+        if ($integer <= 0) {
+            throw new RuntimeException($label . ' must be a persisted positive integer.');
+        }
+
+        return $integer;
     }
 
     private function generatedId(string $entity): int
