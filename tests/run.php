@@ -50,6 +50,7 @@ require __DIR__ . '/AcademicPeriodDomainTest.php';
 require __DIR__ . '/AcademicPeriodPersistenceTest.php';
 require __DIR__ . '/AcademicPeriodApplicationTest.php';
 require __DIR__ . '/EnrollmentDomainTest.php';
+require __DIR__ . '/EnrollmentPersistenceTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
@@ -93,6 +94,7 @@ require __DIR__ . '/SchemaBaselineTest.php';
 \Tests\registerAcademicPeriodPersistenceTests($runner);
 \Tests\registerAcademicPeriodApplicationTests($runner);
 \Tests\registerEnrollmentDomainTests($runner);
+\Tests\registerEnrollmentPersistenceTests($runner);
 \Tests\registerSchemaBaselineTests($runner);
 
 ob_start();

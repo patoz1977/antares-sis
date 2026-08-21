@@ -645,7 +645,7 @@ function registerEnrollmentDomainTests(TestRunner $runner): void
         }
 
         sort($files, SORT_STRING);
-        assertSameValue(26, count($files));
+        assertSameValue(27, count($files));
         foreach ([
             'App\\Family\\',
             'App\\Student\\',
@@ -658,11 +658,11 @@ function registerEnrollmentDomainTests(TestRunner $runner): void
             'Request',
             'Response',
             'Session',
-            'Repository',
         ] as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden));
         }
-        foreach (['Application', 'Infrastructure', 'Delivery', 'Http'] as $directoryName) {
+        assertSameValue(true, interface_exists(\App\Enrollment\Domain\EnrollmentRepository::class));
+        foreach (['Application', 'Delivery', 'Http'] as $directoryName) {
             assertSameValue(false, is_dir(__DIR__ . '/../app/Enrollment/' . $directoryName));
         }
     });
