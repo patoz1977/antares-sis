@@ -72,7 +72,7 @@ use Tests\Support\TestRunner;
 function registerEnrollmentApplicationTests(TestRunner $runner): void
 {
     $runner->add('Enrollment Application starts empty Draft from validated trusted context and Clock', function (): void {
-        [$start, $repository, $transactions, $clock] = e010ApplicationStartFixture();
+        [$start, $repository, $transactions, $clock, , $families, $trace] = e010ApplicationStartFixture();
 
         $output = $start->handle(new StartEnrollmentDraftInput(20, 30, 40));
 
@@ -89,6 +89,10 @@ function registerEnrollmentApplicationTests(TestRunner $runner): void
         assertSameValue('2026-08-21 14:15:16', $output->startedAt->format('Y-m-d H:i:s'));
         assertSameValue(1, $clock->calls);
         assertSameValue(1, $repository->saveCalls);
+        assertSameValue(1, $families->lockCalls);
+        assertSameValue(0, $families->ordinaryCalls);
+        assertSameValue(true, $families->lockObservedActiveTransaction);
+        assertSameValue(['family-lock', 'enrollment-save'], $trace->events);
         assertSameValue(['begin', 'commit'], $transactions->events);
     });
 
@@ -382,7 +386,7 @@ function registerEnrollmentApplicationTests(TestRunner $runner): void
     });
 }
 
-/** @return array{StartEnrollmentDraft, E010InMemoryEnrollmentRepository, E010FakeTransactionRunner, E010FakeClock, E010AcademicReferences} */
+/** @return array{StartEnrollmentDraft, E010InMemoryEnrollmentRepository, E010FakeTransactionRunner, E010FakeClock, E010AcademicReferences, E010FamilyRepository, E010InitializationTrace} */
 function e010ApplicationStartFixture(
     bool $studentExists = true,
     ?int $familyId = 30,
@@ -390,12 +394,18 @@ function e010ApplicationStartFixture(
     ?E010AcademicReferences $references = null,
 ): array {
     $transactions = new E010FakeTransactionRunner();
-    $repository = new E010InMemoryEnrollmentRepository($transactions);
+    $trace = new E010InitializationTrace();
+    $repository = new E010InMemoryEnrollmentRepository($transactions, $trace);
     $clock = new E010FakeClock(new DateTimeImmutable('2026-08-21 14:15:16.987654+00:00'));
     $academicReferences = $references ?? e010AcademicReferences();
+    $families = new E010FamilyRepository(
+        $familyId === null ? null : e010Family($familyId),
+        $transactions,
+        $trace,
+    );
     $start = new StartEnrollmentDraft(
         new E010StudentRepository($studentExists ? e010Student(20) : null),
-        new E010FamilyRepository($familyId === null ? null : e010Family($familyId)),
+        $families,
         new E010AcademicPeriodRepository($periodExists ? e010AcademicPeriod(40) : null),
         $repository,
         $academicReferences,
@@ -403,7 +413,7 @@ function e010ApplicationStartFixture(
         $transactions,
     );
 
-    return [$start, $repository, $transactions, $clock, $academicReferences];
+    return [$start, $repository, $transactions, $clock, $academicReferences, $families, $trace];
 }
 
 /** @return array{E010InMemoryEnrollmentRepository, E010FakeTransactionRunner, E010AcademicReferences, int} */
@@ -537,6 +547,12 @@ final class E010FakeTransactionRunner implements TransactionRunner
     }
 }
 
+final class E010InitializationTrace
+{
+    /** @var list<string> */
+    public array $events = [];
+}
+
 final class E010InMemoryEnrollmentRepository implements EnrollmentRepository
 {
     /** @var array<int, Enrollment> */
@@ -553,8 +569,10 @@ final class E010InMemoryEnrollmentRepository implements EnrollmentRepository
 
     public bool $corruptSaveResult = false;
 
-    public function __construct(private readonly E010FakeTransactionRunner $transactions)
-    {
+    public function __construct(
+        private readonly E010FakeTransactionRunner $transactions,
+        private readonly ?E010InitializationTrace $initializationTrace = null,
+    ) {
     }
 
     public function findById(EnrollmentId $id): ?Enrollment
@@ -592,6 +610,9 @@ final class E010InMemoryEnrollmentRepository implements EnrollmentRepository
     {
         ++$this->saveCalls;
         $this->sequence[] = 'save';
+        if ($this->initializationTrace !== null) {
+            $this->initializationTrace->events[] = 'enrollment-save';
+        }
         if ($this->saveFailure !== null) {
             throw $this->saveFailure;
         }
@@ -701,10 +722,19 @@ final readonly class E010StudentRepository implements StudentRepository
     }
 }
 
-final readonly class E010FamilyRepository implements FamilyRepository
+final class E010FamilyRepository implements FamilyRepository
 {
-    public function __construct(private ?Family $family)
-    {
+    public int $ordinaryCalls = 0;
+
+    public int $lockCalls = 0;
+
+    public bool $lockObservedActiveTransaction = false;
+
+    public function __construct(
+        private readonly ?Family $family,
+        private readonly E010FakeTransactionRunner $transactions,
+        private readonly E010InitializationTrace $trace,
+    ) {
     }
 
     public function findById(FamilyId $id): ?Family
@@ -719,6 +749,20 @@ final readonly class E010FamilyRepository implements FamilyRepository
 
     public function findActiveByStudentId(FamilyStudentId $studentId): ?Family
     {
+        ++$this->ordinaryCalls;
+
+        return $this->family;
+    }
+
+    public function findActiveByStudentIdForUpdate(FamilyStudentId $studentId): ?Family
+    {
+        ++$this->lockCalls;
+        $this->lockObservedActiveTransaction = $this->transactions->active;
+        if (!$this->lockObservedActiveTransaction) {
+            throw new RuntimeException('FamilyStudent lock requires transaction.');
+        }
+        $this->trace->events[] = 'family-lock';
+
         return $this->family;
     }
 

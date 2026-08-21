@@ -145,6 +145,7 @@ use App\Enrollment\Domain\ValueObject\TransportInformation as EnrollmentTranspor
 use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
 use App\Enrollment\Application\Dto\StartEnrollmentDraftInput;
 use App\Enrollment\Application\Dto\UpdateEnrollmentTransportInformationInput;
+use App\Enrollment\Application\Exception\EnrollmentFamilyContextUnavailable;
 use App\Enrollment\Application\StartEnrollmentDraft;
 use App\Enrollment\Application\UpdateEnrollmentTransportInformation;
 use Core\Database\ConnectionFactory;
@@ -1104,6 +1105,365 @@ function runMariaDbEnrollmentApplicationConcurrencyScenario(
         && (int) $raceSnapshotCount->fetchColumn() === 0,
         'E010 Phase 4 concurrent initialization did not preserve one root and zero partial snapshot state.'
     );
+}
+
+function runMariaDbEnrollmentActiveFamilyCaptureScenario(
+    ConnectionManager $managerA,
+    ConnectionManager $managerB,
+    PDO $connectionA,
+    PDO $connectionB,
+    int $studentAId,
+    int $studentBId,
+    int $representativeId,
+): void {
+    $familyRepositoryA = new PdoFamilyRepository($managerA);
+    $familyRepositoryB = new PdoFamilyRepository($managerB);
+    $enrollmentRepositoryA = new PdoEnrollmentRepository($managerA);
+    $academicReferences = new PdoAcademicPlacementReferenceProvider($managerA);
+    $clock = new class implements Clock {
+        public function now(): DateTimeImmutable
+        {
+            return new DateTimeImmutable('2026-08-21 18:00:00+00:00');
+        }
+    };
+    $familyAId = $familyRepositoryA->findActiveByStudentId(
+        new FamilyStudentReference($studentAId),
+    )?->id()?->value() ?? 0;
+    assertIntegration($familyAId > 0, 'E010 corrective authoritative Family A fixture is unavailable.');
+
+    $inactiveStatusId = (int) $connectionA->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'INACTIVE'"
+    )->fetchColumn();
+    assertIntegration($inactiveStatusId > 0, 'E010 corrective AcademicPeriod status fixture is unavailable.');
+
+    $periodIds = [];
+    $periodInsert = $connectionA->prepare(
+        'INSERT INTO academic_periods (code, name, starts_on, ends_on, status_id) '
+        . 'VALUES (:code, :name, :startsOn, :endsOn, :statusId)'
+    );
+    foreach ([
+        'START_FIRST',
+        'STALE_NO_ACTIVE',
+        'STALE_CURRENT_FAMILY',
+        'CURRENT_FAMILY',
+        'ROLLBACK_RELEASE',
+    ] as $index => $code) {
+        $periodInsert->execute([
+            ':code' => 'E010_FAMILY_CAPTURE_' . $code,
+            ':name' => 'E010 Family Capture ' . $code,
+            ':startsOn' => sprintf('203%d-01-01', $index + 1),
+            ':endsOn' => sprintf('203%d-12-31', $index + 1),
+            ':statusId' => $inactiveStatusId,
+        ]);
+        $periodIds[$code] = (int) $connectionA->lastInsertId();
+        assertIntegration($periodIds[$code] > 0, 'E010 corrective AcademicPeriod identity was not generated.');
+    }
+
+    $studentBFamily = $familyRepositoryA->findActiveByStudentId(
+        new FamilyStudentReference($studentBId),
+    );
+    if ($studentBFamily === null) {
+        $familyA = $familyRepositoryA->findById(new FamilyId($familyAId));
+        if ($familyA === null) {
+            throw new RuntimeException('E010 corrective Family A fixture is unavailable.');
+        }
+        $familyA->addStudent(
+            new FamilyStudentReference($studentBId),
+            new DateTimeImmutable('2026-08-21 17:59:00+00:00'),
+        );
+        $familyRepositoryA->save($familyA);
+    } elseif ($studentBFamily->id()?->value() !== $familyAId) {
+        throw new RuntimeException('E010 corrective Student B belongs to an unexpected active Family.');
+    }
+
+
+    $activeMembership = $connectionA->prepare(
+        'SELECT id FROM family_students WHERE active_student_id = :studentId'
+    );
+    $activeMembership->execute([':studentId' => $studentAId]);
+    $studentAMembershipId = (int) $activeMembership->fetchColumn();
+    $activeMembership->execute([':studentId' => $studentBId]);
+    $studentBMembershipId = (int) $activeMembership->fetchColumn();
+    assertIntegration(
+        $studentAMembershipId > 0 && $studentBMembershipId > 0,
+        'E010 corrective active FamilyStudent fixtures are unavailable.'
+    );
+
+    $lockedStudentAFamilyId = null;
+    $lockedStudentBFamilyId = null;
+    try {
+        $connectionA->beginTransaction();
+        $lockedStudentA = $familyRepositoryA->findActiveByStudentIdForUpdate(
+            new FamilyStudentReference($studentAId),
+        );
+        $connectionB->beginTransaction();
+        $lockedStudentB = $familyRepositoryB->findActiveByStudentIdForUpdate(
+            new FamilyStudentReference($studentBId),
+        );
+        $lockedStudentAFamilyId = $lockedStudentA?->id()?->value();
+        $lockedStudentBFamilyId = $lockedStudentB?->id()?->value();
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+        if ($connectionA->inTransaction()) {
+            $connectionA->rollBack();
+        }
+    }
+    assertIntegration(
+        $lockedStudentAFamilyId === $familyAId
+        && $lockedStudentBFamilyId === $familyAId,
+        sprintf(
+            'E010 corrective FamilyStudent lock leaked across unrelated Students: expected=%d, A=%s, B=%s.',
+            $familyAId,
+            diagnosticValue($lockedStudentAFamilyId),
+            diagnosticValue($lockedStudentBFamilyId),
+        )
+    );
+
+    $connectionB->exec('SET innodb_lock_wait_timeout = 1');
+    $startFirstBlocked = false;
+    $blockingFamilyRepository = new class(
+        $familyRepositoryA,
+        function () use (
+            $connectionB,
+            $studentAMembershipId,
+            &$startFirstBlocked,
+        ): void {
+            try {
+                $connectionB->beginTransaction();
+                $statement = $connectionB->prepare(
+                    'UPDATE family_students SET ended_at = :endedAt WHERE id = :id'
+                );
+                $statement->execute([
+                    ':endedAt' => '2026-08-21 18:01:00',
+                    ':id' => $studentAMembershipId,
+                ]);
+            } catch (PDOException $exception) {
+                if (!isExpectedMariaDbLockException($exception)) {
+                    throw new RuntimeException(
+                        'E010 corrective Start-first contention failed for a non-lock reason.',
+                        previous: $exception,
+                    );
+                }
+                $startFirstBlocked = true;
+            } finally {
+                if ($connectionB->inTransaction()) {
+                    $connectionB->rollBack();
+                }
+            }
+        },
+    ) implements FamilyRepository {
+        private bool $afterLockCalled = false;
+
+        public function __construct(
+            private readonly FamilyRepository $delegate,
+            private readonly \Closure $afterLock,
+        ) {
+        }
+
+        public function findById(FamilyId $id): ?Family
+        {
+            return $this->delegate->findById($id);
+        }
+
+        public function findActiveByRepresentativeId(FamilyRepresentativeReference $representativeId): array
+        {
+            return $this->delegate->findActiveByRepresentativeId($representativeId);
+        }
+
+        public function findActiveByStudentId(FamilyStudentReference $studentId): ?Family
+        {
+            return $this->delegate->findActiveByStudentId($studentId);
+        }
+
+        public function findActiveByStudentIdForUpdate(FamilyStudentReference $studentId): ?Family
+        {
+            $family = $this->delegate->findActiveByStudentIdForUpdate($studentId);
+            if (!$this->afterLockCalled) {
+                $this->afterLockCalled = true;
+                ($this->afterLock)();
+            }
+
+            return $family;
+        }
+
+        public function save(Family $family): Family
+        {
+            return $this->delegate->save($family);
+        }
+    };
+    $startFirst = (new StartEnrollmentDraft(
+        new PdoStudentRepository($managerA),
+        $blockingFamilyRepository,
+        new PdoAcademicPeriodRepository($managerA),
+        $enrollmentRepositoryA,
+        $academicReferences,
+        $clock,
+        new PdoTransactionRunner($managerA),
+    ))->handle(new StartEnrollmentDraftInput(
+        $studentAId,
+        $familyAId,
+        $periodIds['START_FIRST'],
+    ));
+    assertIntegration(
+        $startFirstBlocked
+        && $startFirst->familyId === $familyAId,
+        'E010 corrective Start-first did not serialize Enrollment before membership end.'
+    );
+
+    $connectionB->beginTransaction();
+    $endStudentA = $connectionB->prepare(
+        'UPDATE family_students SET ended_at = :endedAt WHERE id = :id AND ended_at IS NULL'
+    );
+    $endStudentA->execute([
+        ':endedAt' => '2026-08-21 18:01:00',
+        ':id' => $studentAMembershipId,
+    ]);
+    assertIntegration($endStudentA->rowCount() === 1, 'E010 corrective blocked membership did not continue.');
+    $connectionB->commit();
+
+    $startFirstRow = $connectionA->prepare(
+        'SELECT family_id FROM enrollments WHERE student_id = :studentId AND academic_period_id = :periodId'
+    );
+    $startFirstRow->execute([
+        ':studentId' => $studentAId,
+        ':periodId' => $periodIds['START_FIRST'],
+    ]);
+    assertIntegration(
+        (int) $startFirstRow->fetchColumn() === $familyAId,
+        'E010 corrective Start-first did not preserve the serialized historical Family context.'
+    );
+
+
+    $startWithFamily = static function (
+        int $familyId,
+        int $periodId,
+    ) use (
+        $managerA,
+        $enrollmentRepositoryA,
+        $academicReferences,
+        $clock,
+        $studentAId,
+    ): void {
+        (new StartEnrollmentDraft(
+            new PdoStudentRepository($managerA),
+            new PdoFamilyRepository($managerA),
+            new PdoAcademicPeriodRepository($managerA),
+            $enrollmentRepositoryA,
+            $academicReferences,
+            $clock,
+            new PdoTransactionRunner($managerA),
+        ))->handle(new StartEnrollmentDraftInput($studentAId, $familyId, $periodId));
+    };
+
+    $noActiveRejected = false;
+    try {
+        $startWithFamily($familyAId, $periodIds['STALE_NO_ACTIVE']);
+    } catch (EnrollmentFamilyContextUnavailable) {
+        $noActiveRejected = true;
+    }
+    assertIntegration(
+        $noActiveRejected
+        && mariaDbEnrollmentCount($connectionA, $studentAId, $periodIds['STALE_NO_ACTIVE']) === 0,
+        'E010 corrective membership-change-first persisted a historical Family without active membership.'
+    );
+
+    $familyB = Family::create(
+        new DisplayName('E010 Corrective Family B'),
+        FamilyStatus::Active,
+        new FamilyRepresentativeReference($representativeId),
+        new RelationshipTypeId(1),
+        new DateTimeImmutable('2026-08-21 18:02:00+00:00'),
+    );
+    $familyB->addStudent(
+        new FamilyStudentReference($studentAId),
+        new DateTimeImmutable('2026-08-21 18:02:00+00:00'),
+    );
+    $persistedFamilyB = $familyRepositoryA->save($familyB);
+    $familyBId = $persistedFamilyB->id()?->value() ?? 0;
+    assertIntegration($familyBId > 0, 'E010 corrective current Family B was not persisted.');
+
+
+    $staleFamilyRejected = false;
+    try {
+        $startWithFamily($familyAId, $periodIds['STALE_CURRENT_FAMILY']);
+    } catch (EnrollmentFamilyContextUnavailable) {
+        $staleFamilyRejected = true;
+    }
+    assertIntegration(
+        $staleFamilyRejected
+        && mariaDbEnrollmentCount($connectionA, $studentAId, $periodIds['STALE_CURRENT_FAMILY']) === 0,
+        'E010 corrective locking read accepted stale Family A after Family B became active.'
+    );
+
+    $startWithFamily($familyBId, $periodIds['CURRENT_FAMILY']);
+    $currentFamilyRow = $connectionA->prepare(
+        'SELECT family_id FROM enrollments WHERE student_id = :studentId AND academic_period_id = :periodId'
+    );
+    $currentFamilyRow->execute([
+        ':studentId' => $studentAId,
+        ':periodId' => $periodIds['CURRENT_FAMILY'],
+    ]);
+    assertIntegration(
+        (int) $currentFamilyRow->fetchColumn() === $familyBId,
+        'E010 corrective Start did not accept the authoritative current Family B.'
+    );
+
+
+    $connectionA->beginTransaction();
+    $familyRepositoryA->findActiveByStudentIdForUpdate(new FamilyStudentReference($studentBId));
+    $rollbackBlocked = false;
+    try {
+        $connectionB->beginTransaction();
+        $statement = $connectionB->prepare(
+            'UPDATE family_students SET ended_at = :endedAt WHERE id = :id'
+        );
+        $statement->execute([
+            ':endedAt' => '2026-08-21 18:03:00',
+            ':id' => $studentBMembershipId,
+        ]);
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException(
+                'E010 corrective rollback contention failed for a non-lock reason.',
+                previous: $exception,
+            );
+        }
+        $rollbackBlocked = true;
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+    }
+    $connectionA->rollBack();
+
+    $connectionB->beginTransaction();
+    $endStudentB = $connectionB->prepare(
+        'UPDATE family_students SET ended_at = :endedAt WHERE id = :id AND ended_at IS NULL'
+    );
+    $endStudentB->execute([
+        ':endedAt' => '2026-08-21 18:03:00',
+        ':id' => $studentBMembershipId,
+    ]);
+    $connectionB->commit();
+    assertIntegration(
+        $rollbackBlocked
+        && $endStudentB->rowCount() === 1
+        && mariaDbEnrollmentCount($connectionA, $studentBId, $periodIds['ROLLBACK_RELEASE']) === 0,
+        'E010 corrective rollback did not release membership lock or preserve zero partial Enrollment.'
+    );
+}
+
+function mariaDbEnrollmentCount(PDO $connection, int $studentId, int $academicPeriodId): int
+{
+    $statement = $connection->prepare(
+        'SELECT COUNT(*) FROM enrollments WHERE student_id = :studentId AND academic_period_id = :periodId'
+    );
+    $statement->execute([':studentId' => $studentId, ':periodId' => $academicPeriodId]);
+
+    return (int) $statement->fetchColumn();
 }
 
 $requiredNonEmptyEnvironment = [
@@ -3552,6 +3912,11 @@ try {
             return $this->delegate->findActiveByStudentId($studentId);
         }
 
+        public function findActiveByStudentIdForUpdate(FamilyStudentReference $studentId): ?Family
+        {
+            return $this->delegate->findActiveByStudentIdForUpdate($studentId);
+        }
+
         public function save(Family $family): Family
         {
             $this->delegate->save($family);
@@ -5377,6 +5742,15 @@ try {
         $persistenceRollbackPeriodId,
         $generalStatusId,
     );
+    runMariaDbEnrollmentActiveFamilyCaptureScenario(
+        $managerA,
+        $managerB,
+        $connectionA,
+        $connectionB,
+        $generatedStudentId->value(),
+        $secondStudentId->value(),
+        $generatedRepresentativeId->value(),
+    );
 
     echo 'MariaDB version: ' . $mariaDbVersion . "\n";
     echo 'Physical inventory: ' . count($actualTables) . ' tables including migrations metadata; '
@@ -5415,6 +5789,9 @@ try {
     echo "PASS MySQL Enrollment Application same-root serialization preserves Billing and Medical updates\n";
     echo "PASS MySQL Enrollment Application cross-root isolation and rollback lock release\n";
     echo "PASS MySQL Enrollment Application concurrent initialization physical UNIQUE and no partial state\n";
+    echo "PASS MySQL Enrollment active Family capture Start-first and current-Family serialization\n";
+    echo "PASS MySQL Enrollment stale Family rejection after membership-change-first\n";
+    echo "PASS MySQL Enrollment FamilyStudent lock rollback release and cross-Student isolation\n";
     echo "PASS MySQL Academic Core Grade Section references and next ACTIVE Grade ordering\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {

@@ -146,6 +146,11 @@ final class InMemoryFamilyApplicationRepository implements FamilyRepository
         return $match === null ? null : $this->copy($match);
     }
 
+    public function findActiveByStudentIdForUpdate(StudentId $studentId): ?Family
+    {
+        return $this->findActiveByStudentId($studentId);
+    }
+
     public function save(Family $family): Family
     {
         $this->saveCalls++;
