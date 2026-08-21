@@ -1,0 +1,24 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Enrollment\Application\Dto;
+
+final readonly class UpdateEnrollmentAcademicPlacementInput extends EnrollmentMutationInput
+{
+    public function __construct(
+        int $enrollmentId,
+        int $expectedStudentId,
+        int $expectedFamilyId,
+        int $expectedAcademicPeriodId,
+        public int $gradeId,
+        public ?int $sectionId,
+    ) {
+        parent::__construct(
+            $enrollmentId,
+            $expectedStudentId,
+            $expectedFamilyId,
+            $expectedAcademicPeriodId,
+        );
+    }
+}
