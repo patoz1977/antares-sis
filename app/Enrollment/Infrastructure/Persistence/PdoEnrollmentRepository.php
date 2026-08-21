@@ -55,6 +55,32 @@ final class PdoEnrollmentRepository implements EnrollmentRepository
         return $this->mapUniqueEnrollment($statement, 'Enrollment identity resolved more than one row.');
     }
 
+    public function findByIdForUpdate(EnrollmentId $id): ?Enrollment
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('Enrollment row lock requires an active transaction.');
+        }
+
+        $sql = 'SELECT id FROM enrollments WHERE id = :id';
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= ' FOR UPDATE';
+        }
+        $statement = $this->connection->prepare($sql);
+        $statement->execute([':id' => $id->value()]);
+        $rows = $statement->fetchAll(PDO::FETCH_COLUMN);
+        if (count($rows) > 1) {
+            throw new RuntimeException('Enrollment identity resolved more than one root row for update.');
+        }
+        if ($rows === []) {
+            return null;
+        }
+        if ($this->positiveInt($rows[0], 'Locked Enrollment id') !== $id->value()) {
+            throw new RuntimeException('Enrollment row lock returned an incoherent identity.');
+        }
+
+        return $this->findById($id);
+    }
+
     public function findByStudentAndAcademicPeriod(
         StudentId $studentId,
         AcademicPeriodId $academicPeriodId,

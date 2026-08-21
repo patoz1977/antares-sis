@@ -37,6 +37,7 @@
         },
         "exclude-from-classmap": [
             "tests/IdentityAccessTest.php",
+            "tests/EnrollmentApplicationTest.php",
             "tests/PersonDeliveryTest.php"
         ]
     },

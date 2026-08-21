@@ -12,6 +12,8 @@ interface EnrollmentRepository
 {
     public function findById(EnrollmentId $id): ?Enrollment;
 
+    public function findByIdForUpdate(EnrollmentId $id): ?Enrollment;
+
     public function findByStudentAndAcademicPeriod(
         StudentId $studentId,
         AcademicPeriodId $academicPeriodId,

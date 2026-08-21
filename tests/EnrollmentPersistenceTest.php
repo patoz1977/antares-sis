@@ -40,12 +40,31 @@ function registerEnrollmentPersistenceTests(TestRunner $runner): void
 {
     $runner->add('Enrollment persistence exposes exactly the approved repository contract', function (): void {
         assertSameValue(
-            ['findById', 'findByStudentAndAcademicPeriod', 'save'],
+            ['findById', 'findByIdForUpdate', 'findByStudentAndAcademicPeriod', 'save'],
             e010PersistencePublicMethods(EnrollmentRepository::class),
         );
         assertSameValue(true, (new ReflectionClass(PdoEnrollmentRepository::class))->implementsInterface(
             EnrollmentRepository::class,
         ));
+    });
+
+    $runner->add('Enrollment persistence row lock requires a transaction and loads exact root', function (): void {
+        [$repository, $pdo] = e010PersistenceFixture();
+        $persisted = $repository->save(e010PersistenceDraft());
+        $id = $persisted->id();
+        if ($id === null) {
+            throw new RuntimeException('Fixture Enrollment was not persisted.');
+        }
+
+        assertThrows(static fn () => $repository->findByIdForUpdate($id), RuntimeException::class);
+        $pdo->beginTransaction();
+        try {
+            assertSameValue(true, $repository->findByIdForUpdate($id)?->id()?->equals($id));
+            assertSameValue(null, $repository->findByIdForUpdate(new EnrollmentId(999)));
+            assertSameValue(true, $pdo->inTransaction());
+        } finally {
+            $pdo->rollBack();
+        }
     });
 
     $runner->add('Enrollment persistence inserts Draft with database identity and UTC seconds', function (): void {
