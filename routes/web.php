@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\IdentityAccess\Http\AuthenticationController;
 use App\IdentityAccess\Http\RepresentativePortalController;
 use App\IdentityAccess\Http\RepresentativeUserController;
+use App\Enrollment\Http\RepresentativeEnrollmentController;
 use App\Family\Http\FamilyAdministrationMiddleware;
 use App\Family\Http\FamilyController;
 use App\Family\Http\FamilyResourceController;
@@ -23,6 +24,7 @@ use Core\Routing\Router;
 $authenticationController = $app->container()->make(AuthenticationController::class);
 $representativePortalController = $app->container()->make(RepresentativePortalController::class);
 $representativeUserController = $app->container()->make(RepresentativeUserController::class);
+$representativeEnrollmentController = $app->container()->make(RepresentativeEnrollmentController::class);
 $personController = $app->container()->make(PersonController::class);
 $familyController = $app->container()->make(FamilyController::class);
 $familyResourceController = $app->container()->make(FamilyResourceController::class);
@@ -110,6 +112,56 @@ $router->post(
 $router->post(
     '/representative/family',
     [$representativePortalController, 'selectFamily'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/enrollment',
+    [$representativeEnrollmentController, 'index'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/enrollment/open',
+    [$representativeEnrollmentController, 'open'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/enrollment/representative/personal',
+    [$representativeEnrollmentController, 'updateRepresentativePersonal'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/enrollment/representative/contact',
+    [$representativeEnrollmentController, 'updateRepresentativeContact'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/enrollment/representative/employment',
+    [$representativeEnrollmentController, 'updateRepresentativeEmployment'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/enrollment/student/personal',
+    [$representativeEnrollmentController, 'updateStudentPersonal'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/enrollment/student/billing',
+    [$representativeEnrollmentController, 'updateBilling'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/enrollment/student/medical',
+    [$representativeEnrollmentController, 'updateMedical'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/enrollment/student/transport',
+    [$representativeEnrollmentController, 'updateTransport'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/enrollment/student/leave-alone',
+    [$representativeEnrollmentController, 'updateLeaveAlone'],
     AuthenticationMiddleware::class,
 );
 $router->get(

@@ -34,6 +34,7 @@ $acknowledgements = ($acknowledgementState ?? null) instanceof RepresentativeAck
 <?php if ($currentContext !== null): ?>
 <p>Current family: <strong><?= $escape($currentContext->familyDisplayName) ?></strong></p>
 <p>Your authorized family context is ready.</p>
+<p><a href="/representative/enrollment">Enrollment / Student information</a></p>
 <?php if ($acknowledgements?->satisfied === true): ?>
 <p><a href="/representative/resources">Manage family resources</a></p>
 <?php endif; ?>

@@ -19,8 +19,27 @@ use Core\Session\SessionInterface;
 use App\AcademicCore\Application\ActivateAcademicPeriod;
 use App\AcademicCore\Application\DeactivateAcademicPeriod;
 use App\AcademicCore\Application\GetActiveAcademicPeriod;
+use App\AcademicCore\Application\AcademicPlacementReferenceProvider;
 use App\AcademicCore\Domain\AcademicPeriodRepository;
 use App\AcademicCore\Infrastructure\Persistence\PdoAcademicPeriodRepository;
+use App\AcademicCore\Infrastructure\Persistence\PdoAcademicPlacementReferenceProvider;
+use App\Enrollment\Application\RepresentativePortal\GetRepresentativeEnrollmentPortalState;
+use App\Enrollment\Application\RepresentativePortal\RepresentativeEnrollmentPortalAuthorization;
+use App\Enrollment\Application\RepresentativePortal\ResolveOrStartRepresentativeEnrollment;
+use App\Enrollment\Application\RepresentativePortal\Support\RepresentativeEnrollmentMutationSupport;
+use App\Enrollment\Application\RepresentativePortal\UpdateAuthenticatedRepresentativeContactInformation;
+use App\Enrollment\Application\RepresentativePortal\UpdateAuthenticatedRepresentativeEmploymentInformation;
+use App\Enrollment\Application\RepresentativePortal\UpdateAuthenticatedRepresentativePersonalInformation;
+use App\Enrollment\Application\RepresentativePortal\UpdateAuthorizedStudentPersonalInformation;
+use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollmentBillingInformation;
+use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollmentLeaveAloneAuthorization;
+use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollmentMedicalInformation;
+use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollmentTransportInformation;
+use App\Enrollment\Application\Support\EnrollmentDraftInitializer;
+use App\Enrollment\Domain\EnrollmentRepository;
+use App\Enrollment\Http\RepresentativeEnrollmentController;
+use App\Enrollment\Http\RepresentativeEnrollmentInputMapper;
+use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
 use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
 use App\IdentityAccess\Application\Contract\Clock;
@@ -274,11 +293,13 @@ $container->singleton(PersonController::class, PersonController::class);
 $container->singleton(PersonAdministrationMiddleware::class, PersonAdministrationMiddleware::class);
 $container->singleton(TransactionRunner::class, PdoTransactionRunner::class);
 $container->singleton(AcademicPeriodRepository::class, PdoAcademicPeriodRepository::class);
+$container->singleton(AcademicPlacementReferenceProvider::class, PdoAcademicPlacementReferenceProvider::class);
 $container->singleton(GetActiveAcademicPeriod::class, GetActiveAcademicPeriod::class);
 $container->singleton(ActivateAcademicPeriod::class, ActivateAcademicPeriod::class);
 $container->singleton(DeactivateAcademicPeriod::class, DeactivateAcademicPeriod::class);
 $container->singleton(RepresentativeRepository::class, PdoRepresentativeRepository::class);
 $container->singleton(StudentRepository::class, PdoStudentRepository::class);
+$container->singleton(EnrollmentRepository::class, PdoEnrollmentRepository::class);
 $container->singleton(FamilyRepository::class, PdoFamilyRepository::class);
 $container->singleton(RelationshipTypeLookup::class, PdoRelationshipTypeLookup::class);
 $container->singleton(DocumentTypeLookup::class, PdoDocumentTypeLookup::class);
@@ -400,6 +421,57 @@ $container->singleton(
     RepresentativeAcknowledgementController::class,
     RepresentativeAcknowledgementController::class,
 );
+$container->singleton(EnrollmentDraftInitializer::class, EnrollmentDraftInitializer::class);
+$container->singleton(
+    RepresentativeEnrollmentPortalAuthorization::class,
+    RepresentativeEnrollmentPortalAuthorization::class,
+);
+$container->singleton(
+    RepresentativeEnrollmentMutationSupport::class,
+    RepresentativeEnrollmentMutationSupport::class,
+);
+$container->singleton(
+    GetRepresentativeEnrollmentPortalState::class,
+    GetRepresentativeEnrollmentPortalState::class,
+);
+$container->singleton(
+    ResolveOrStartRepresentativeEnrollment::class,
+    ResolveOrStartRepresentativeEnrollment::class,
+);
+$container->singleton(
+    UpdateAuthenticatedRepresentativePersonalInformation::class,
+    UpdateAuthenticatedRepresentativePersonalInformation::class,
+);
+$container->singleton(
+    UpdateAuthenticatedRepresentativeContactInformation::class,
+    UpdateAuthenticatedRepresentativeContactInformation::class,
+);
+$container->singleton(
+    UpdateAuthenticatedRepresentativeEmploymentInformation::class,
+    UpdateAuthenticatedRepresentativeEmploymentInformation::class,
+);
+$container->singleton(
+    UpdateAuthorizedStudentPersonalInformation::class,
+    UpdateAuthorizedStudentPersonalInformation::class,
+);
+$container->singleton(
+    UpdateRepresentativeEnrollmentBillingInformation::class,
+    UpdateRepresentativeEnrollmentBillingInformation::class,
+);
+$container->singleton(
+    UpdateRepresentativeEnrollmentMedicalInformation::class,
+    UpdateRepresentativeEnrollmentMedicalInformation::class,
+);
+$container->singleton(
+    UpdateRepresentativeEnrollmentTransportInformation::class,
+    UpdateRepresentativeEnrollmentTransportInformation::class,
+);
+$container->singleton(
+    UpdateRepresentativeEnrollmentLeaveAloneAuthorization::class,
+    UpdateRepresentativeEnrollmentLeaveAloneAuthorization::class,
+);
+$container->singleton(RepresentativeEnrollmentInputMapper::class, RepresentativeEnrollmentInputMapper::class);
+$container->singleton(RepresentativeEnrollmentController::class, RepresentativeEnrollmentController::class);
 
 $app = new Application($config, $container);
 
