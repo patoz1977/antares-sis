@@ -38,6 +38,7 @@ use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollme
 use App\Enrollment\Application\Support\EnrollmentDraftInitializer;
 use App\Enrollment\Domain\EnrollmentRepository;
 use App\Enrollment\Http\RepresentativeEnrollmentController;
+use App\Enrollment\Http\RepresentativeEnrollmentAutosaveResponder;
 use App\Enrollment\Http\RepresentativeEnrollmentInputMapper;
 use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
 use App\IdentityAccess\Application\AuthenticationPolicy;
@@ -471,6 +472,10 @@ $container->singleton(
     UpdateRepresentativeEnrollmentLeaveAloneAuthorization::class,
 );
 $container->singleton(RepresentativeEnrollmentInputMapper::class, RepresentativeEnrollmentInputMapper::class);
+$container->singleton(
+    RepresentativeEnrollmentAutosaveResponder::class,
+    RepresentativeEnrollmentAutosaveResponder::class,
+);
 $container->singleton(RepresentativeEnrollmentController::class, RepresentativeEnrollmentController::class);
 
 $app = new Application($config, $container);

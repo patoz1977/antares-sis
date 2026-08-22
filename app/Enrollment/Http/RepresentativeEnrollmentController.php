@@ -65,6 +65,7 @@ final class RepresentativeEnrollmentController extends Controller
         private readonly CsrfTokenManager $csrf,
         private readonly SessionManager $session,
         private readonly RepresentativeEnrollmentInputMapper $inputMapper,
+        private readonly RepresentativeEnrollmentAutosaveResponder $autosaveResponder,
     ) {
     }
 
@@ -368,8 +369,17 @@ final class RepresentativeEnrollmentController extends Controller
         string $section,
         bool $studentRequired = false,
     ): string {
+        $autosave = $section !== 'draft' && $this->autosaveResponder->isRequested();
         $request = (new Request())->input();
         if (!$this->csrf->isValid($this->rawScalar($request, '_csrf_token'))) {
+            if ($autosave) {
+                return $this->autosaveResponder->failure(
+                    $section,
+                    ['The request could not be verified.'],
+                    403,
+                );
+            }
+
             return $this->error('The request could not be verified.', 403);
         }
 
@@ -381,12 +391,29 @@ final class RepresentativeEnrollmentController extends Controller
         }
         $mapped = $map($values, $errors);
         if ($errors !== []) {
-            return $this->renderFailure($studentId, $values, $errors, $section, 422);
+            return $this->commandFailure(
+                $autosave,
+                $studentId,
+                $values,
+                $errors,
+                $section,
+                422,
+            );
         }
 
         try {
             $handle($mapped);
         } catch (RepresentativeAcknowledgementsRequired) {
+            if ($autosave) {
+                return $this->autosaveResponder->failure(
+                    $section,
+                    ['Complete Institutional Acknowledgements before updating Enrollment information.'],
+                    409,
+                    $this->csrf->token(),
+                    false,
+                    '/representative/acknowledgements',
+                );
+            }
             $this->session->put(
                 self::FLASH_ERROR_KEY,
                 'Complete Institutional Acknowledgements before updating Enrollment information.',
@@ -394,28 +421,64 @@ final class RepresentativeEnrollmentController extends Controller
 
             return $this->redirect('/representative/acknowledgements', 303);
         } catch (RepresentativeEnrollmentFamilySelectionRequired) {
+            if ($autosave) {
+                return $this->autosaveResponder->failure(
+                    $section,
+                    ['The Enrollment context changed. Reload the page.'],
+                    409,
+                    $this->csrf->token(),
+                    false,
+                    '/representative',
+                );
+            }
+
             return $this->redirect('/representative', 303);
         } catch (RepresentativeEnrollmentAcademicPeriodUnavailable) {
+            if ($autosave) {
+                return $this->autosaveResponder->failure(
+                    $section,
+                    ['The Enrollment context changed. Reload the page.'],
+                    409,
+                    $this->csrf->token(),
+                    true,
+                );
+            }
             $this->session->put(self::FLASH_ERROR_KEY, 'No active Academic Period is currently configured.');
 
             return $this->redirect('/representative/enrollment', 303);
         } catch (RepresentativeEnrollmentContextChanged) {
-            return $this->renderFailure(
+            return $this->commandFailure(
+                $autosave,
                 $studentId,
                 $values,
-                ['The Enrollment context changed. Reload the page and try again.'],
+                [$autosave
+                    ? 'The Enrollment context changed. Reload the page.'
+                    : 'The Enrollment context changed. Reload the page and try again.'],
                 $section,
                 409,
+                true,
             );
         } catch (RepresentativeEnrollmentStudentUnavailable|RepresentativeEnrollmentContextUnavailable) {
+            if ($autosave) {
+                return $this->autosaveResponder->failure(
+                    $section,
+                    ['The Enrollment context changed. Reload the page.'],
+                    409,
+                    $this->csrf->token(),
+                    true,
+                );
+            }
+
             return $this->forbidden();
         } catch (RepresentativeEnrollmentUnavailable) {
-            return $this->renderFailure(
+            return $this->commandFailure(
+                $autosave,
                 $studentId,
                 $values,
                 ['This Enrollment is no longer editable.'],
                 $section,
                 409,
+                true,
             );
         } catch (InvalidEnrollmentState) {
             try {
@@ -424,23 +487,30 @@ final class RepresentativeEnrollmentController extends Controller
                 $readOnly = false;
             }
 
-            return $this->renderFailure(
+            return $this->commandFailure(
+                $autosave,
                 $studentId,
                 $values,
                 [$readOnly ? 'This Enrollment is no longer editable.' : 'Review the entered information.'],
                 $section,
                 $readOnly ? 409 : 422,
+                $readOnly,
             );
         } catch (EnrollmentAlreadyExists) {
-            return $this->renderFailure(
+            return $this->commandFailure(
+                $autosave,
                 $studentId,
                 $values,
-                ['The Enrollment changed concurrently. Reload the page and try again.'],
+                [$autosave
+                    ? 'The Enrollment context changed. Reload the page.'
+                    : 'The Enrollment changed concurrently. Reload the page and try again.'],
                 $section,
                 409,
+                true,
             );
         } catch (RepresentativeRequiresContactEmail|DomainException) {
-            return $this->renderFailure(
+            return $this->commandFailure(
+                $autosave,
                 $studentId,
                 $values,
                 ['Review the entered information.'],
@@ -448,6 +518,15 @@ final class RepresentativeEnrollmentController extends Controller
                 422,
             );
         } catch (RuntimeException) {
+            if ($autosave) {
+                return $this->autosaveResponder->failure(
+                    $section,
+                    ['The information could not be saved.'],
+                    500,
+                    $this->csrf->token(),
+                );
+            }
+
             return $this->renderFailure(
                 $studentId,
                 $values,
@@ -456,7 +535,33 @@ final class RepresentativeEnrollmentController extends Controller
                 422,
             );
         } catch (Throwable) {
+            if ($autosave) {
+                return $this->autosaveResponder->failure(
+                    $section,
+                    ['The information could not be saved.'],
+                    500,
+                    $this->csrf->token(),
+                );
+            }
+
             return $this->error('The operation could not be completed.', 500);
+        }
+
+        if ($autosave) {
+            try {
+                return $this->autosaveResponder->success(
+                    $section,
+                    $this->getState->handle($studentId),
+                    $this->csrf->token(),
+                );
+            } catch (Throwable) {
+                return $this->autosaveResponder->failure(
+                    $section,
+                    ['The information could not be saved.'],
+                    500,
+                    $this->csrf->token(),
+                );
+            }
         }
 
         $this->session->put(self::FLASH_SUCCESS_KEY, $success);
@@ -536,6 +641,29 @@ final class RepresentativeEnrollmentController extends Controller
         } catch (Throwable) {
             return $this->error('The Enrollment portal could not be loaded.', 422);
         }
+    }
+
+    /** @param array<string, string> $values @param list<string> $errors */
+    private function commandFailure(
+        bool $autosave,
+        ?int $studentId,
+        array $values,
+        array $errors,
+        string $section,
+        int $status,
+        bool $reloadRequired = false,
+    ): string {
+        if ($autosave) {
+            return $this->autosaveResponder->failure(
+                $section,
+                $errors,
+                $status,
+                $this->csrf->token(),
+                $reloadRequired,
+            );
+        }
+
+        return $this->renderFailure($studentId, $values, $errors, $section, $status);
     }
 
     /** @param array<string, string> $values @param list<string> $errors */
