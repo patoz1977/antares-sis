@@ -381,7 +381,6 @@ function registerEnrollmentApplicationTests(TestRunner $runner): void
             as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden), $forbidden);
         }
-        assertSameValue(false, is_dir(__DIR__ . '/../app/Enrollment/Http'));
         assertSameValue(false, is_dir(__DIR__ . '/../app/Enrollment/Delivery'));
     });
 }

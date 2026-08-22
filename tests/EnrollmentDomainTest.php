@@ -663,9 +663,7 @@ function registerEnrollmentDomainTests(TestRunner $runner): void
         }
         assertSameValue(true, interface_exists(\App\Enrollment\Domain\EnrollmentRepository::class));
         assertSameValue(true, is_dir(__DIR__ . '/../app/Enrollment/Application'));
-        foreach (['Delivery', 'Http'] as $directoryName) {
-            assertSameValue(false, is_dir(__DIR__ . '/../app/Enrollment/' . $directoryName));
-        }
+        assertSameValue(false, is_dir(__DIR__ . '/../app/Enrollment/Delivery'));
     });
 }
 

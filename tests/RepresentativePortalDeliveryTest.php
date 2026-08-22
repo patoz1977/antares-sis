@@ -50,7 +50,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
             assertSameValue(true, str_contains($routes, $required), $required);
         }
         foreach ([
-            '/representative/students', '/representative/enrollment',
+            '/representative/students',
             '/representative/documents', '/representative/profile',
             '/representative/family/change',
         ] as $excluded) {
@@ -368,12 +368,10 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
             );
         }
         assertSameValue(0, preg_match('/antares|ueant|colegio/i', $views));
-        foreach ([
-            'Enrollment', 'Student', 'Address', 'Emergency', 'Pickup',
-            'Submission', 'SELECT ', 'Repository',
-        ] as $excluded) {
+        foreach (['Submission', 'SELECT ', 'Repository'] as $excluded) {
             assertSameValue(false, str_contains($views, $excluded), $excluded);
         }
+        assertSameValue(true, str_contains($views, '/representative/enrollment'));
         assertSameValue(true, str_contains($views, 'htmlspecialchars'));
 
         $fixture = representativePortalFixture();
