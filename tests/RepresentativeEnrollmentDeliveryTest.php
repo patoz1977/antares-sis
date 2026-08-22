@@ -12,6 +12,7 @@ use App\Enrollment\Domain\ValueObject\EnrollmentId;
 use App\Enrollment\Domain\ValueObject\FamilyId as EnrollmentFamilyId;
 use App\Enrollment\Domain\ValueObject\StudentId as EnrollmentStudentId;
 use App\Enrollment\Http\RepresentativeEnrollmentController;
+use App\Enrollment\Http\RepresentativeEnrollmentAutosaveResponder;
 use App\Enrollment\Http\RepresentativeEnrollmentInputMapper;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\StudentId as FamilyStudentId;
@@ -337,15 +338,21 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         }
     });
 
-    $runner->add('E011 Delivery is escaped White Label mobile-first accessible and has no JavaScript autosave', function (): void {
+    $runner->add('E011 autosave HTML preserves fallback accessibility White Label and readonly behavior', function (): void {
         $fixture = representativeEnrollmentDeliveryFixture();
         $fixture['services']['resolveOrStart']->handle(new ResolveOrStartRepresentativeEnrollmentInput(77, 5, 44));
-        representativeEnrollmentPost($fixture['controller'], 'open', representativeEnrollmentContext());
         deliveryRequest('GET', '/representative/enrollment?student_id=44', ['student_id' => '44']);
         $html = $fixture['controller']->index();
-        foreach (['class="container', 'col-12', '<label', '<fieldset', '<legend', 'role="status"', 'Family Resources'] as $required) {
+        foreach ([
+            'class="container', 'col-12', '<label', '<fieldset', '<legend', 'role="status"',
+            'Family Resources', '/js/representative-enrollment.js', 'data-enrollment-autosave',
+            'data-enrollment-autosave-status', 'data-enrollment-autosave-errors',
+            'data-enrollment-navigation', 'data-enrollment-fallback-save', 'data-progress-section="billing"',
+        ] as $required) {
             deliveryAssertContains($required, $html);
         }
+        assertSameValue(8, substr_count($html, ' data-enrollment-autosave data-section='));
+        assertSameValue(8, substr_count($html, 'data-enrollment-autosave-status'));
         deliveryAssertContains('Identification &lt;Type&gt;', $html);
         deliveryAssertContains('Marital &amp; Status', $html);
         deliveryAssertContains('Education &quot;Level&quot;', $html);
@@ -353,7 +360,7 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         $source = representativeEnrollmentNormalizedSource('app/Enrollment/Http/RepresentativeEnrollmentController.php')
             . representativeEnrollmentNormalizedSource('app/Enrollment/Http/RepresentativeEnrollmentInputMapper.php')
             . representativeEnrollmentNormalizedSource('resources/views/representative-portal/enrollment.php');
-        foreach (['fetch(', 'XMLHttpRequest', 'debounce', 'beforeunload', 'sendBeacon', 'keepalive', 'SubmissionSnapshot', '->submit(', '->complete(', '->cancel(', '->reopen('] as $forbidden) {
+        foreach (['XMLHttpRequest', 'sendBeacon', 'SubmissionSnapshot', '->submit(', '->complete(', '->cancel(', '->reopen('] as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden), $forbidden);
         }
         assertSameValue(0, preg_match('/ueant|unidad educativa antares/i', $source));
@@ -361,6 +368,175 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         assertSameValue(false, str_contains($source, 'name="family_id"'));
         assertSameValue(false, str_contains($source, 'name="academic_period_id"'));
         assertSameValue(true, str_contains($source, 'htmlspecialchars'));
+        foreach ([
+            '<a href="/representative" data-enrollment-navigation>Representative Portal</a>',
+            '<a href="/representative/resources" data-enrollment-navigation>Family Resources</a>',
+            '<a href="/representative" data-enrollment-navigation>Change Family</a>',
+            '<a href="/representative/acknowledgements" data-enrollment-navigation>',
+            '<form method="get" action="/representative/enrollment" class="row g-2 align-items-end" data-enrollment-navigation>',
+        ] as $navigationMarker) {
+            deliveryAssertContains($navigationMarker, $source);
+        }
+
+        $readOnly = representativeEnrollmentDeliveryFixture();
+        $readOnly['services']['enrollments']->seed(representativeEnrollmentPersistedState(EnrollmentStatus::Submitted));
+        deliveryRequest('GET', '/representative/enrollment?student_id=44', ['student_id' => '44']);
+        $readOnlyHtml = $readOnly['controller']->index();
+        assertSameValue(false, str_contains($readOnlyHtml, 'data-enrollment-autosave data-section='));
+        assertSameValue(false, str_contains($readOnlyHtml, 'Save Personal Information'));
+        assertSameValue(false, str_contains($readOnlyHtml, 'Submit Enrollment'));
+        assertSameValue(false, str_contains(
+            representativeEnrollmentNormalizedSource('resources/views/representative-portal/index.php'),
+            '/js/representative-enrollment.js',
+        ));
+    });
+
+    $runner->add('E011 autosave JSON success returns only safe compact section state', function (): void {
+        $fixture = representativeEnrollmentDeliveryFixture();
+        $fixture['services']['resolveOrStart']->handle(new ResolveOrStartRepresentativeEnrollmentInput(77, 5, 44));
+        $requests = [
+            ['updateRepresentativePersonal', array_merge(representativeEnrollmentContext(), [
+                'first_name' => 'JSON Name', 'middle_name' => '', 'first_surname' => 'Representative',
+                'second_surname' => '', 'birth_date' => '1991-02-03',
+                'marital_status_id' => '4', 'education_level_id' => '5',
+            ]), 'representative-personal'],
+            ['updateStudentPersonal', array_merge(representativeEnrollmentContext(), [
+                'first_name' => 'JSON Student', 'middle_name' => '', 'first_surname' => 'Updated',
+                'second_surname' => '', 'birth_date' => '2015-02-03',
+                'marital_status_id' => '4', 'education_level_id' => '5',
+            ]), 'student-personal'],
+            ['updateBilling', array_merge(representativeEnrollmentContext(), [
+                'identification_type_id' => '2', 'identification_number' => 'JSON-BILL',
+                'legal_name' => 'JSON Billing', 'billing_address' => 'JSON Address',
+                'billing_email' => 'json@example.test', 'phone' => '555-0100',
+            ]), 'billing'],
+            ['updateMedical', array_merge(representativeEnrollmentContext(), representativeEnrollmentMedicalValues()), 'medical'],
+            ['updateTransport', array_merge(representativeEnrollmentContext(), ['requires_institutional_transport' => '1']), 'transport'],
+            ['updateLeaveAlone', array_merge(representativeEnrollmentContext(), ['is_authorized_to_leave_alone' => '1']), 'leave-alone'],
+        ];
+        foreach ($requests as [$method, $input, $section]) {
+            $body = representativeEnrollmentJsonPost($fixture['controller'], $method, $input);
+            $payload = representativeEnrollmentJson($body);
+            assertSameValue(200, http_response_code(), $method);
+            assertSameValue(true, $payload['ok'] ?? null, $method);
+            assertSameValue('saved', $payload['state'] ?? null, $method);
+            assertSameValue($section, $payload['section'] ?? null, $method);
+            assertSameValue(true, in_array($payload['sectionStatus'] ?? null, ['PENDING', 'COMPLETE'], true), $method);
+            assertSameValue('delivery-csrf', $payload['csrfToken'] ?? null, $method);
+            assertSameValue(false, str_contains($body, '<html'), $method);
+            assertSameValue(false, str_contains($body, 'JSON-BILL'), $method);
+            assertSameValue(false, array_key_exists('enrollment', $payload), $method);
+        }
+        $responder = representativeEnrollmentNormalizedSource(
+            'app/Enrollment/Http/RepresentativeEnrollmentAutosaveResponder.php',
+        );
+        deliveryAssertContains("header('Content-Type: application/json; charset=utf-8')", $responder);
+        deliveryAssertContains('JSON_THROW_ON_ERROR', $responder);
+    });
+
+    $runner->add('E011 autosave JSON validation CSRF stale acknowledgement and unexpected failures stay safe', function (): void {
+        $invalid = representativeEnrollmentDeliveryFixture();
+        $body = representativeEnrollmentJsonPost(
+            $invalid['controller'],
+            'updateRepresentativePersonal',
+            array_merge(representativeEnrollmentContext(), [
+                'first_name' => 'Unsafe value', 'middle_name' => '', 'first_surname' => 'Representative',
+                'second_surname' => '', 'birth_date' => '2026-02-30',
+                'marital_status_id' => '4', 'education_level_id' => '5',
+            ]),
+        );
+        $payload = representativeEnrollmentJson($body);
+        assertSameValue(422, http_response_code());
+        assertSameValue(false, $payload['ok'] ?? null);
+        assertSameValue('error', $payload['state'] ?? null);
+        assertSameValue('representative-personal', $payload['section'] ?? null);
+        assertSameValue(false, str_contains($body, 'Unsafe value'));
+        assertSameValue(false, str_contains($body, '<'));
+        assertSameValue(0, $invalid['services']['persons']->saveCalls());
+
+        $csrf = representativeEnrollmentDeliveryFixture();
+        $csrfBody = representativeEnrollmentJsonPost($csrf['controller'], 'updateTransport', [
+            '_csrf_token' => 'invalid',
+            'requires_institutional_transport' => '1',
+        ]);
+        $csrfPayload = representativeEnrollmentJson($csrfBody);
+        assertSameValue(403, http_response_code());
+        assertSameValue(['The request could not be verified.'], $csrfPayload['errors'] ?? null);
+        assertSameValue(0, $csrf['services']['enrollments']->saveCalls);
+
+        $stale = representativeEnrollmentDeliveryFixture();
+        $staleBody = representativeEnrollmentJsonPost(
+            $stale['controller'],
+            'updateTransport',
+            array_merge(representativeEnrollmentContext(), [
+                'expected_academic_period_id' => '6',
+                'requires_institutional_transport' => '1',
+            ]),
+        );
+        $stalePayload = representativeEnrollmentJson($staleBody);
+        assertSameValue(409, http_response_code());
+        assertSameValue(true, $stalePayload['reloadRequired'] ?? null);
+        assertSameValue(false, str_contains($staleBody, '6'));
+        assertSameValue(0, $stale['services']['enrollments']->saveCalls);
+
+        $pending = representativeEnrollmentDeliveryFixture(acknowledgementsSatisfied: false);
+        $pendingBody = representativeEnrollmentJsonPost(
+            $pending['controller'],
+            'updateRepresentativeContact',
+            array_merge(representativeEnrollmentContext(), [
+                'email' => 'representative@example.test', 'mobile_phone' => '', 'landline_phone' => '',
+            ]),
+        );
+        $pendingPayload = representativeEnrollmentJson($pendingBody);
+        assertSameValue(409, http_response_code());
+        assertSameValue('/representative/acknowledgements', $pendingPayload['redirect'] ?? null);
+        assertSameValue(0, $pending['services']['persons']->saveCalls());
+        assertSameValue(null, $pending['session']->get('_flash_representative_enrollment_error'));
+
+        $familySelection = representativeEnrollmentDeliveryFixture(familyCount: 2);
+        $familySelectionBody = representativeEnrollmentJsonPost(
+            $familySelection['controller'],
+            'updateTransport',
+            array_merge(representativeEnrollmentContext(), ['requires_institutional_transport' => '1']),
+        );
+        $familySelectionPayload = representativeEnrollmentJson($familySelectionBody);
+        assertSameValue(409, http_response_code());
+        assertSameValue('/representative', $familySelectionPayload['redirect'] ?? null);
+        assertSameValue(false, $familySelectionPayload['reloadRequired'] ?? false);
+        assertSameValue(0, $familySelection['services']['enrollments']->saveCalls);
+
+        $failure = representativeEnrollmentDeliveryFixture();
+        $failure['services']['resolveOrStart']->handle(new ResolveOrStartRepresentativeEnrollmentInput(77, 5, 44));
+        $failure['services']['enrollments']->saveFailure = new RuntimeException('SQLSTATE secret medical row');
+        $failureBody = representativeEnrollmentJsonPost(
+            $failure['controller'],
+            'updateTransport',
+            array_merge(representativeEnrollmentContext(), ['requires_institutional_transport' => '1']),
+        );
+        $failurePayload = representativeEnrollmentJson($failureBody);
+        assertSameValue(500, http_response_code());
+        assertSameValue(['The information could not be saved.'], $failurePayload['errors'] ?? null);
+        assertSameValue(false, str_contains($failureBody, 'SQLSTATE'));
+        assertSameValue(false, str_contains($failureBody, 'medical row'));
+    });
+
+    $runner->add('E011 autosave JavaScript declares debounce revision navigation and exit safety contracts', function (): void {
+        $script = representativeEnrollmentNormalizedSource('public/js/representative-enrollment.js');
+        foreach ([
+            'const DEBOUNCE_MS = 900;', 'class RepresentativeEnrollmentAutosave',
+            "state.revision += 1", 'state.revision === sentRevision', 'state.revision !== sentRevision',
+            'window.fetch(', 'new window.FormData(form)', "Accept: 'application/json'",
+            "credentials: 'same-origin'", 'flushAll()', 'data-enrollment-navigation',
+            "'Saving...'", "'Saved'", "'Save error'", "'beforeunload'", "'pagehide'",
+            'keepalive: true', 'form.checkValidity()', 'form.reportValidity()',
+            'data-medical-controller', 'detail.value = \'\'', 'data-progress-section',
+        ] as $required) {
+            deliveryAssertContains($required, $script);
+        }
+        foreach (['localStorage', 'sessionStorage', 'indexedDB', 'AbortController', 'sendBeacon', '/api/', 'enrollment_id'] as $forbidden) {
+            assertSameValue(false, str_contains($script, $forbidden), $forbidden);
+        }
+        assertSameValue(1, substr_count($script, 'const DEBOUNCE_MS = 900;'));
     });
 
     $runner->add('E011 production wiring resolves every Phase 2 boundary without a service locator', function (): void {
@@ -434,6 +610,7 @@ function representativeEnrollmentDeliveryFixture(
         new FakeDeliveryCsrf(),
         $session,
         new RepresentativeEnrollmentInputMapper(),
+        new RepresentativeEnrollmentAutosaveResponder(),
     );
 
     return ['controller' => $controller, 'services' => $services, 'session' => $session];
@@ -469,9 +646,37 @@ function representativeEnrollmentPost(
     string $method,
     array $input,
 ): string {
+    unset($_SERVER['HTTP_ACCEPT']);
     deliveryRequest('POST', '/representative/enrollment', $input);
 
     return $controller->{$method}();
+}
+
+/** @param array<string, mixed> $input */
+function representativeEnrollmentJsonPost(
+    RepresentativeEnrollmentController $controller,
+    string $method,
+    array $input,
+): string {
+    deliveryRequest('POST', '/representative/enrollment', $input);
+    $_SERVER['HTTP_ACCEPT'] = 'application/json';
+
+    try {
+        return $controller->{$method}();
+    } finally {
+        unset($_SERVER['HTTP_ACCEPT']);
+    }
+}
+
+/** @return array<string, mixed> */
+function representativeEnrollmentJson(string $body): array
+{
+    $decoded = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
+    if (!is_array($decoded)) {
+        throw new RuntimeException('Expected a JSON object response.');
+    }
+
+    return $decoded;
 }
 
 function representativeEnrollmentStatus(RepresentativeEnrollmentController $controller): int
