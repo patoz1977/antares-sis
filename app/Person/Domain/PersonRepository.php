@@ -11,6 +11,8 @@ interface PersonRepository
 {
     public function findById(PersonId $id): ?Person;
 
+    public function findByIdForUpdate(PersonId $id): ?Person;
+
     public function findByIdentification(Identification $identification): ?Person;
 
     public function save(Person $person): Person;

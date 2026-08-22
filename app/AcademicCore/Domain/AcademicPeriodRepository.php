@@ -15,4 +15,6 @@ interface AcademicPeriodRepository
     public function save(AcademicPeriod $period): AcademicPeriod;
 
     public function lockOperationalTransition(): void;
+
+    public function lockActiveContextForRead(): void;
 }

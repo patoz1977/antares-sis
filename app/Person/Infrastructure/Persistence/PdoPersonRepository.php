@@ -30,9 +30,35 @@ final class PdoPersonRepository implements PersonRepository
 
     public function findById(PersonId $id): ?Person
     {
-        $statement = $this->connection->prepare(
-            $this->selectSql() . ' WHERE p.id = :id LIMIT 1'
-        );
+        return $this->findByIdWithLock($id, false);
+    }
+
+    public function findByIdForUpdate(PersonId $id): ?Person
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('Person row lock requires an active transaction.');
+        }
+
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $lock = $this->connection->prepare(
+                'SELECT id FROM persons WHERE id = :id LIMIT 1 FOR UPDATE'
+            );
+            $lock->execute([':id' => $id->value()]);
+            if ($lock->fetchColumn() === false) {
+                return null;
+            }
+        }
+
+        return $this->findByIdWithLock($id, true);
+    }
+
+    private function findByIdWithLock(PersonId $id, bool $forUpdate): ?Person
+    {
+        $sql = $this->selectSql() . ' WHERE p.id = :id LIMIT 1';
+        if ($forUpdate && $this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= ' LOCK IN SHARE MODE';
+        }
+        $statement = $this->connection->prepare($sql);
         $statement->execute([':id' => $id->value()]);
 
         return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));

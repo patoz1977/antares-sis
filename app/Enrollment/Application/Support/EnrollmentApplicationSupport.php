@@ -31,15 +31,24 @@ final class EnrollmentApplicationSupport
         callable $mutation,
     ): EnrollmentOutput {
         return $transactions->run(function () use ($enrollments, $input, $mutation): EnrollmentOutput {
-            $enrollment = $enrollments->findByIdForUpdate(new EnrollmentId($input->enrollmentId));
-            if ($enrollment === null) {
-                throw new EnrollmentNotFound('Enrollment was not found.');
-            }
-            self::assertContext($enrollment, $input);
-            $mutation($enrollment);
-
-            return self::save($enrollments, $enrollment);
+            return self::updateInsideCurrentTransaction($enrollments, $input, $mutation);
         });
+    }
+
+    /** @param callable(Enrollment): void $mutation */
+    public static function updateInsideCurrentTransaction(
+        EnrollmentRepository $enrollments,
+        EnrollmentMutationInput $input,
+        callable $mutation,
+    ): EnrollmentOutput {
+        $enrollment = $enrollments->findByIdForUpdate(new EnrollmentId($input->enrollmentId));
+        if ($enrollment === null) {
+            throw new EnrollmentNotFound('Enrollment was not found.');
+        }
+        self::assertContext($enrollment, $input);
+        $mutation($enrollment);
+
+        return self::save($enrollments, $enrollment);
     }
 
     public static function save(
