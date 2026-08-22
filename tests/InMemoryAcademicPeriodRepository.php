@@ -74,6 +74,11 @@ final class InMemoryAcademicPeriodRepository implements AcademicPeriodRepository
         $this->lockCount++;
     }
 
+    public function lockActiveContextForRead(): void
+    {
+        $this->lockCount++;
+    }
+
     private static function copy(AcademicPeriod $period): AcademicPeriod
     {
         $copy = unserialize(serialize($period), ['allowed_classes' => true]);

@@ -41,6 +41,11 @@ final class InMemoryRepresentativeApplicationRepository implements Representativ
             : null;
     }
 
+    public function findByIdForUpdate(RepresentativeId $id): ?Representative
+    {
+        return $this->findById($id);
+    }
+
     public function findByPersonId(PersonId $personId): ?Representative
     {
         foreach ($this->representatives as $representative) {

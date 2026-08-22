@@ -1289,6 +1289,13 @@ function runMariaDbEnrollmentActiveFamilyCaptureScenario(
             return $family;
         }
 
+        public function findActiveByRepresentativeAndFamilyForUpdate(
+            FamilyRepresentativeReference $representativeId,
+            FamilyId $familyId,
+        ): ?Family {
+            return $this->delegate->findActiveByRepresentativeAndFamilyForUpdate($representativeId, $familyId);
+        }
+
         public function save(Family $family): Family
         {
             return $this->delegate->save($family);
@@ -1464,6 +1471,319 @@ function mariaDbEnrollmentCount(PDO $connection, int $studentId, int $academicPe
     $statement->execute([':studentId' => $studentId, ':periodId' => $academicPeriodId]);
 
     return (int) $statement->fetchColumn();
+}
+
+function runMariaDbRepresentativeEnrollmentPortalConcurrencyScenarioBody(
+    ConnectionManager $managerA,
+    ConnectionManager $managerB,
+    PDO $connectionA,
+    PDO $connectionB,
+    int $representativePersonId,
+    int $unrelatedPersonId,
+    int $representativeId,
+    int $studentId,
+    int $expectedActivePeriodId,
+    int $alternatePeriodId,
+): void {
+    $connectionA->exec('SET innodb_lock_wait_timeout = 1');
+    $connectionB->exec('SET innodb_lock_wait_timeout = 1');
+    $personsA = new PdoPersonRepository($managerA);
+    $personsB = new PdoPersonRepository($managerB);
+    $representativesA = new PdoRepresentativeRepository($managerA);
+    $familiesA = new PdoFamilyRepository($managerA);
+    $periodsA = new PdoAcademicPeriodRepository($managerA);
+    $periodsB = new PdoAcademicPeriodRepository($managerB);
+    $personId = new \App\Person\Domain\ValueObject\PersonId($representativePersonId);
+    $otherPersonId = new \App\Person\Domain\ValueObject\PersonId($unrelatedPersonId);
+
+    $connectionA->beginTransaction();
+    $personal = $personsA->findByIdForUpdate($personId)
+        ?? throw new RuntimeException('E011 Person lock fixture is unavailable.');
+    $originalIdentification = $personal->identification();
+    $originalSex = $personal->sexId();
+    $originalStatus = $personal->status();
+    $personal->updateIdentity(
+        new PersonalName('E011 Personal', null, 'Serialized', null),
+        $originalIdentification,
+        $personal->birthDate(),
+        $originalSex,
+        $personal->maritalStatusId(),
+        $personal->educationLevelId(),
+        new DateTimeImmutable('2026-08-21', new DateTimeZone('UTC')),
+    );
+    $personsA->save($personal);
+    $samePersonBlocked = false;
+    try {
+        $connectionB->beginTransaction();
+        $personsB->findByIdForUpdate($personId);
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException('E011 Person contention failed for a non-lock reason.', previous: $exception);
+        }
+        $samePersonBlocked = true;
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+    }
+    $connectionA->commit();
+
+    $connectionB->beginTransaction();
+    $contact = $personsB->findByIdForUpdate($personId)
+        ?? throw new RuntimeException('E011 Person contact fixture disappeared.');
+    $contact->updateContactInformation(new ContactInformation(
+        'e011-contact@example.test',
+        'portal mobile',
+        'portal landline',
+    ));
+    $personsB->save($contact);
+    $connectionB->commit();
+    $finalPerson = $personsA->findById($personId);
+    assertIntegration(
+        $samePersonBlocked
+        && $finalPerson?->personalName()->firstName() === 'E011 Personal'
+        && $finalPerson->contactInformation()?->email() === 'e011-contact@example.test'
+        && ($originalIdentification === null
+            ? $finalPerson->identification() === null
+            : $finalPerson->identification()?->equals($originalIdentification) === true)
+        && $finalPerson->sexId() === $originalSex
+        && $finalPerson->status() === $originalStatus,
+        'E011 Person same-row serialization lost Personal Contact or restricted state.'
+    );
+
+    $connectionA->beginTransaction();
+    $personsA->findByIdForUpdate($personId);
+    $connectionB->beginTransaction();
+    $unrelated = $personsB->findByIdForUpdate($otherPersonId);
+    assertIntegration(
+        $unrelated?->id()?->value() === $unrelatedPersonId,
+        'E011 Person lock blocked an unrelated Person row.'
+    );
+    $connectionB->rollBack();
+    $connectionA->rollBack();
+
+    $representativeReference = new \App\Representative\Domain\ValueObject\RepresentativeId($representativeId);
+    $connectionA->beginTransaction();
+    $representative = $representativesA->findByIdForUpdate($representativeReference)
+        ?? throw new RuntimeException('E011 Representative lock fixture is unavailable.');
+    $representativeStatus = $representative->status();
+    $representativePersonReference = $representative->personId()->value();
+    $representative->replaceEmploymentInformation(new EmploymentInformation(
+        'E011 occupation', null, null, null, null,
+    ));
+    $representativesA->save($representative);
+    $representativeBlocked = false;
+    try {
+        $connectionB->beginTransaction();
+        (new PdoRepresentativeRepository($managerB))->findByIdForUpdate($representativeReference);
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException('E011 Representative contention failed for a non-lock reason.', previous: $exception);
+        }
+        $representativeBlocked = true;
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+    }
+    $connectionA->commit();
+    $finalRepresentative = $representativesA->findById($representativeReference);
+    assertIntegration(
+        $representativeBlocked
+        && $finalRepresentative?->employmentInformation()?->occupation() === 'E011 occupation'
+        && $finalRepresentative->status() === $representativeStatus
+        && $finalRepresentative->personId()->value() === $representativePersonReference,
+        'E011 Representative employment serialization lost identity or status.'
+    );
+
+    $currentFamily = $familiesA->findActiveByStudentId(new FamilyStudentReference($studentId));
+    $familyIdValue = $currentFamily?->id()?->value() ?? 0;
+    assertIntegration($familyIdValue > 0, 'E011 active Family fixture is unavailable.');
+    $familyId = new FamilyId($familyIdValue);
+    $familyRepresentative = new FamilyRepresentativeReference($representativeId);
+    $connectionA->beginTransaction();
+    $lockedFamily = $familiesA->findActiveByRepresentativeAndFamilyForUpdate(
+        $familyRepresentative,
+        $familyId,
+    );
+    assertIntegration($lockedFamily?->id()?->value() === $familyIdValue, 'E011 FamilyRepresentative lock failed.');
+    $representativeRevocationBlocked = false;
+    try {
+        $connectionB->beginTransaction();
+        $statement = $connectionB->prepare(
+            'UPDATE family_representatives SET ended_at = :endedAt '
+            . 'WHERE family_id = :familyId AND representative_id = :representativeId AND ended_at IS NULL'
+        );
+        $statement->execute([
+            ':endedAt' => '2026-08-21 19:00:00',
+            ':familyId' => $familyIdValue,
+            ':representativeId' => $representativeId,
+        ]);
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException('E011 FamilyRepresentative contention failed for a non-lock reason.', previous: $exception);
+        }
+        $representativeRevocationBlocked = true;
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+        $connectionA->rollBack();
+    }
+    $connectionB->beginTransaction();
+    $revokeRepresentative = $connectionB->prepare(
+        'UPDATE family_representatives SET ended_at = :endedAt '
+        . 'WHERE family_id = :familyId AND representative_id = :representativeId AND ended_at IS NULL'
+    );
+    $revokeRepresentative->execute([
+        ':endedAt' => '2026-08-21 19:00:00',
+        ':familyId' => $familyIdValue,
+        ':representativeId' => $representativeId,
+    ]);
+    $connectionB->commit();
+    $connectionA->beginTransaction();
+    $revokedRepresentativeRejected = $familiesA->findActiveByRepresentativeAndFamilyForUpdate(
+        $familyRepresentative,
+        $familyId,
+    ) === null;
+    $connectionA->rollBack();
+    $restoreRepresentative = $connectionA->prepare(
+        'UPDATE family_representatives SET ended_at = NULL '
+        . 'WHERE family_id = :familyId AND representative_id = :representativeId '
+        . 'AND ended_at = :endedAt'
+    );
+    $restoreRepresentative->execute([
+        ':familyId' => $familyIdValue,
+        ':representativeId' => $representativeId,
+        ':endedAt' => '2026-08-21 19:00:00',
+    ]);
+    assertIntegration(
+        $representativeRevocationBlocked && $revokedRepresentativeRejected && $restoreRepresentative->rowCount() === 1,
+        'E011 FamilyRepresentative portal-first or revocation-first serialization failed.'
+    );
+
+    $studentReference = new FamilyStudentReference($studentId);
+    $connectionA->beginTransaction();
+    $familiesA->findActiveByStudentIdForUpdate($studentReference);
+    $studentRevocationBlocked = false;
+    try {
+        $connectionB->beginTransaction();
+        $statement = $connectionB->prepare(
+            'UPDATE family_students SET ended_at = :endedAt WHERE active_student_id = :studentId'
+        );
+        $statement->execute([':endedAt' => '2026-08-21 19:01:00', ':studentId' => $studentId]);
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException('E011 FamilyStudent contention failed for a non-lock reason.', previous: $exception);
+        }
+        $studentRevocationBlocked = true;
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+        $connectionA->rollBack();
+    }
+    $connectionB->beginTransaction();
+    $revokeStudent = $connectionB->prepare(
+        'UPDATE family_students SET ended_at = :endedAt WHERE active_student_id = :studentId'
+    );
+    $revokeStudent->execute([':endedAt' => '2026-08-21 19:01:00', ':studentId' => $studentId]);
+    $connectionB->commit();
+    $connectionA->beginTransaction();
+    $revokedStudentRejected = $familiesA->findActiveByStudentIdForUpdate($studentReference) === null;
+    $connectionA->rollBack();
+    $restoreStudent = $connectionA->prepare(
+        'UPDATE family_students SET ended_at = NULL WHERE student_id = :studentId AND ended_at = :endedAt'
+    );
+    $restoreStudent->execute([':studentId' => $studentId, ':endedAt' => '2026-08-21 19:01:00']);
+    assertIntegration(
+        $studentRevocationBlocked && $revokedStudentRejected && $restoreStudent->rowCount() === 1,
+        'E011 FamilyStudent portal-first or revocation-first serialization failed.'
+    );
+
+    $connectionA->beginTransaction();
+    $periodsA->lockActiveContextForRead();
+    $connectionB->beginTransaction();
+    $periodsB->lockActiveContextForRead();
+    $secondSharedLockSucceeded = $connectionB->inTransaction();
+    $connectionB->rollBack();
+    $connectionA->rollBack();
+
+    $connectionA->beginTransaction();
+    $periodsA->lockActiveContextForRead();
+    $periodSwitchBlocked = false;
+    try {
+        (new ActivateAcademicPeriod($periodsB, new PdoTransactionRunner($managerB)))->handle($alternatePeriodId);
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException('E011 ActivePeriod contention failed for a non-lock reason.', previous: $exception);
+        }
+        $periodSwitchBlocked = true;
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+        $connectionA->rollBack();
+    }
+    (new ActivateAcademicPeriod($periodsB, new PdoTransactionRunner($managerB)))->handle($alternatePeriodId);
+    $connectionA->beginTransaction();
+    $periodsA->lockActiveContextForRead();
+    $switchFirstRejectedAsStale = $periodsA->findActive()?->id()?->value() !== $expectedActivePeriodId;
+    $connectionA->rollBack();
+    (new ActivateAcademicPeriod($periodsA, new PdoTransactionRunner($managerA)))->handle($expectedActivePeriodId);
+    assertIntegration(
+        $secondSharedLockSucceeded
+        && $periodSwitchBlocked
+        && $switchFirstRejectedAsStale
+        && $periodsA->findActive()?->id()?->value() === $expectedActivePeriodId,
+        'E011 ActivePeriod shared stabilization or stale-page rejection failed.'
+    );
+
+    $connectionA->beginTransaction();
+    $personsA->findByIdForUpdate($personId);
+    $connectionA->rollBack();
+    $connectionB->beginTransaction();
+    $released = $personsB->findByIdForUpdate($personId);
+    $connectionB->rollBack();
+    assertIntegration(
+        $released?->id()?->value() === $representativePersonId,
+        'E011 rollback did not release portal root lock.'
+    );
+}
+
+function runMariaDbRepresentativeEnrollmentPortalConcurrencyScenario(
+    ConnectionManager $managerA,
+    ConnectionManager $managerB,
+    PDO $connectionA,
+    PDO $connectionB,
+    int $representativePersonId,
+    int $unrelatedPersonId,
+    int $representativeId,
+    int $studentId,
+    int $expectedActivePeriodId,
+    int $alternatePeriodId,
+): void {
+    try {
+        runMariaDbRepresentativeEnrollmentPortalConcurrencyScenarioBody(
+            $managerA,
+            $managerB,
+            $connectionA,
+            $connectionB,
+            $representativePersonId,
+            $unrelatedPersonId,
+            $representativeId,
+            $studentId,
+            $expectedActivePeriodId,
+            $alternatePeriodId,
+        );
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+        if ($connectionA->inTransaction()) {
+            $connectionA->rollBack();
+        }
+    }
 }
 
 $requiredNonEmptyEnvironment = [
@@ -3917,6 +4237,13 @@ try {
             return $this->delegate->findActiveByStudentIdForUpdate($studentId);
         }
 
+        public function findActiveByRepresentativeAndFamilyForUpdate(
+            FamilyRepresentativeReference $representativeId,
+            FamilyId $familyId,
+        ): ?Family {
+            return $this->delegate->findActiveByRepresentativeAndFamilyForUpdate($representativeId, $familyId);
+        }
+
         public function save(Family $family): Family
         {
             $this->delegate->save($family);
@@ -5632,6 +5959,11 @@ try {
         {
             $this->inner->lockOperationalTransition();
         }
+
+        public function lockActiveContextForRead(): void
+        {
+            $this->inner->lockActiveContextForRead();
+        }
     };
     $rollbackObserved = false;
     try {
@@ -5714,6 +6046,8 @@ try {
         || $secondStudentId === null
         || $generatedFamilyId === null
         || $generatedRepresentativeId === null
+        || $generatedPersonId === null
+        || $secondGeneratedPersonId === null
     ) {
         throw new RuntimeException('E010 Enrollment persistence requires prior generated Student and Family identities.');
     }
@@ -5750,6 +6084,18 @@ try {
         $generatedStudentId->value(),
         $secondStudentId->value(),
         $generatedRepresentativeId->value(),
+    );
+    runMariaDbRepresentativeEnrollmentPortalConcurrencyScenario(
+        $managerA,
+        $managerB,
+        $connectionA,
+        $connectionB,
+        $generatedPersonId->value(),
+        $secondGeneratedPersonId->value(),
+        $generatedRepresentativeId->value(),
+        $generatedStudentId->value(),
+        $operationalPeriodBId,
+        $operationalPeriodAId,
     );
 
     echo 'MariaDB version: ' . $mariaDbVersion . "\n";
@@ -5792,6 +6138,9 @@ try {
     echo "PASS MySQL Enrollment active Family capture Start-first and current-Family serialization\n";
     echo "PASS MySQL Enrollment stale Family rejection after membership-change-first\n";
     echo "PASS MySQL Enrollment FamilyStudent lock rollback release and cross-Student isolation\n";
+    echo "PASS MySQL E011 Person and Representative same-row serialization cross-root isolation and rollback release\n";
+    echo "PASS MySQL E011 FamilyRepresentative and FamilyStudent portal-first revocation-first serialization\n";
+    echo "PASS MySQL E011 ActivePeriod shared portal locks lifecycle exclusion and stale-page rejection\n";
     echo "PASS MySQL Academic Core Grade Section references and next ACTIVE Grade ordering\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {

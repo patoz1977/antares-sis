@@ -38,6 +38,7 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
 
         assertSameValue(
             [
+                'findActiveByRepresentativeAndFamilyForUpdate',
                 'findActiveByRepresentativeId',
                 'findActiveByStudentId',
                 'findActiveByStudentIdForUpdate',
@@ -204,6 +205,41 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
             assertSameValue(1, $family?->activeStudents()[0]->studentId()->value());
             assertSameValue(null, $missing);
             assertSameValue(true, $pdo->inTransaction());
+        } finally {
+            $pdo->rollBack();
+        }
+    });
+
+    $runner->add('pdo Family exact Representative membership lock rejects historical and mismatched context', function (): void {
+        $pdo = sqliteFamilyDatabase();
+        insertRawFamily($pdo, 156, 1, 'Locked Representative', 1, '2026-01-01 00:00:00');
+        insertRawRepresentativeMembership($pdo, 1562, 156, 2, 1, false, '2025-01-01 00:00:00', '2025-02-01 00:00:00');
+        $repository = familyPersistenceRepositoryWithPdo($pdo);
+
+        assertThrows(
+            static fn () => $repository->findActiveByRepresentativeAndFamilyForUpdate(
+                new RepresentativeId(1), new FamilyId(156),
+            ),
+            RuntimeException::class,
+        );
+        $pdo->beginTransaction();
+        try {
+            $family = $repository->findActiveByRepresentativeAndFamilyForUpdate(
+                new RepresentativeId(1), new FamilyId(156),
+            );
+            assertSameValue(156, $family?->id()?->value());
+            assertSameValue(
+                null,
+                $repository->findActiveByRepresentativeAndFamilyForUpdate(
+                    new RepresentativeId(2), new FamilyId(156),
+                ),
+            );
+            assertSameValue(
+                null,
+                $repository->findActiveByRepresentativeAndFamilyForUpdate(
+                    new RepresentativeId(1), new FamilyId(157),
+                ),
+            );
         } finally {
             $pdo->rollBack();
         }
