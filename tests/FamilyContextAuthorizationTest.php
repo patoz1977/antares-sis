@@ -511,6 +511,11 @@ function familyContextRepositoryReturning(array $results): FamilyRepository
             return null;
         }
 
+        public function findActiveByStudentIdForUpdate(StudentId $studentId): ?Family
+        {
+            return null;
+        }
+
         public function save(Family $family): Family
         {
             return $family;

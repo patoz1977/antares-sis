@@ -37,7 +37,13 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
         sort($methods, SORT_STRING);
 
         assertSameValue(
-            ['findActiveByRepresentativeId', 'findActiveByStudentId', 'findById', 'save'],
+            [
+                'findActiveByRepresentativeId',
+                'findActiveByStudentId',
+                'findActiveByStudentIdForUpdate',
+                'findById',
+                'save',
+            ],
             $methods,
         );
         assertSameValue(Family::class, $reflection->getMethod('save')->getReturnType()?->getName());
@@ -177,6 +183,32 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
         assertSameValue(null, $repository->findActiveByStudentId(new StudentId(10)));
     });
 
+    $runner->add('pdo Family active Student locking lookup requires caller transaction and reconstructs exact row', function (): void {
+        $pdo = sqliteFamilyDatabase();
+        insertRawFamily($pdo, 155, 1, 'Locked Student', 1, '2026-01-01 00:00:00');
+        insertRawStudentMembership($pdo, 1551, 155, 1, '2026-01-01 00:00:00', null);
+        $repository = familyPersistenceRepositoryWithPdo($pdo);
+
+        assertThrows(
+            static fn (): ?Family => $repository->findActiveByStudentIdForUpdate(new StudentId(1)),
+            RuntimeException::class,
+        );
+
+        $pdo->beginTransaction();
+        try {
+            $family = $repository->findActiveByStudentIdForUpdate(new StudentId(1));
+            $missing = $repository->findActiveByStudentIdForUpdate(new StudentId(10));
+
+            assertSameValue(155, $family?->id()?->value());
+            assertSameValue(1551, $family?->activeStudents()[0]->id()?->value());
+            assertSameValue(1, $family?->activeStudents()[0]->studentId()->value());
+            assertSameValue(null, $missing);
+            assertSameValue(true, $pdo->inTransaction());
+        } finally {
+            $pdo->rollBack();
+        }
+    });
+
     $runner->add('pdo Family lookup rejects multiple active Families for one Student', function (): void {
         $pdo = sqliteFamilyDatabase(false);
         insertRawFamily($pdo, 160, 1, 'First', 1, '2026-01-01 00:00:00');
@@ -189,6 +221,16 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
             static fn (): ?Family => $repository->findActiveByStudentId(new StudentId(1)),
             RuntimeException::class,
         );
+
+        $pdo->beginTransaction();
+        try {
+            assertThrows(
+                static fn (): ?Family => $repository->findActiveByStudentIdForUpdate(new StudentId(1)),
+                RuntimeException::class,
+            );
+        } finally {
+            $pdo->rollBack();
+        }
     });
 
     $runner->add('pdo Family insert is atomic and returns every generated identity', function (): void {

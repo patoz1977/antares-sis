@@ -55,7 +55,7 @@ final readonly class StartEnrollmentDraft
                 throw new EnrollmentStudentNotFound('Student for Enrollment was not found.');
             }
 
-            $activeFamily = $this->families->findActiveByStudentId(
+            $activeFamily = $this->families->findActiveByStudentIdForUpdate(
                 new FamilyStudentId($studentId->value()),
             );
             if ($activeFamily === null

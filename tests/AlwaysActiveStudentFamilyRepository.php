@@ -33,6 +33,11 @@ final readonly class AlwaysActiveStudentFamilyRepository implements FamilyReposi
         return $this->delegate->findById(new FamilyId($this->activeFamilyId));
     }
 
+    public function findActiveByStudentIdForUpdate(StudentId $studentId): ?Family
+    {
+        return $this->findActiveByStudentId($studentId);
+    }
+
     public function save(Family $family): Family
     {
         return $this->delegate->save($family);
