@@ -151,6 +151,11 @@ function registerPersonApplicationTests(TestRunner $runner): void
                 return null;
             }
 
+            public function findByIdForUpdate(PersonId $id): ?Person
+            {
+                return null;
+            }
+
             public function findByIdentification(Identification $identification): ?Person
             {
                 return null;

@@ -11,6 +11,8 @@ interface RepresentativeRepository
 {
     public function findById(RepresentativeId $id): ?Representative;
 
+    public function findByIdForUpdate(RepresentativeId $id): ?Representative;
+
     public function findByPersonId(PersonId $personId): ?Representative;
 
     public function save(Representative $representative): Representative;

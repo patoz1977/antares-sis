@@ -78,6 +78,77 @@ final class PdoFamilyRepository implements FamilyRepository
         return $this->findFamiliesByIds($statement->fetchAll(PDO::FETCH_COLUMN));
     }
 
+    public function findActiveByRepresentativeAndFamilyForUpdate(
+        RepresentativeId $representativeId,
+        FamilyId $familyId,
+    ): ?Family {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('Active FamilyRepresentative row lock requires an active transaction.');
+        }
+
+        $isSqlite = $this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
+        $sql = 'SELECT fr.id, fr.family_id, fr.representative_id FROM family_representatives fr '
+            . ($isSqlite
+                ? 'WHERE fr.family_id = :familyId AND fr.representative_id = :representativeId '
+                    . 'AND fr.ended_at IS NULL '
+                : 'WHERE fr.active_family_representative_key = :activeKey ')
+            . 'ORDER BY fr.id';
+        if (!$isSqlite) {
+            $sql .= ' FOR UPDATE';
+        }
+
+        $statement = $this->connection->prepare($sql);
+        $statement->execute($isSqlite ? [
+            ':familyId' => $familyId->value(),
+            ':representativeId' => $representativeId->value(),
+        ] : [
+            ':activeKey' => $familyId->value() . ':' . $representativeId->value(),
+        ]);
+        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+        if (count($rows) > 1) {
+            throw new RuntimeException(
+                'Representative has more than one active persisted membership in the selected Family.'
+            );
+        }
+        if ($rows === []) {
+            return null;
+        }
+
+        $row = $rows[0];
+        $membershipId = new FamilyRepresentativeId($this->persistedPositiveInt(
+            $row['id'] ?? null,
+            'Locked FamilyRepresentative id',
+        ));
+        $lockedFamilyId = new FamilyId($this->persistedPositiveInt(
+            $row['family_id'] ?? null,
+            'Locked FamilyRepresentative family_id',
+        ));
+        $lockedRepresentativeId = new RepresentativeId($this->persistedPositiveInt(
+            $row['representative_id'] ?? null,
+            'Locked FamilyRepresentative representative_id',
+        ));
+        if (!$lockedFamilyId->equals($familyId) || !$lockedRepresentativeId->equals($representativeId)) {
+            throw new RuntimeException('Active FamilyRepresentative row lock returned incoherent identities.');
+        }
+
+        $family = $this->findById($familyId);
+        if ($family === null) {
+            throw new RuntimeException('Locked active FamilyRepresentative references a missing Family.');
+        }
+        $matches = array_values(array_filter(
+            $family->activeRepresentatives(),
+            static fn (FamilyRepresentative $membership): bool =>
+                $membership->representativeId()->equals($representativeId),
+        ));
+        if (count($matches) !== 1 || $matches[0]->id()?->equals($membershipId) !== true) {
+            throw new RuntimeException(
+                'Reconstructed Family is incoherent with the locked active Representative membership.'
+            );
+        }
+
+        return $family;
+    }
+
     public function findActiveByStudentId(StudentId $studentId): ?Family
     {
         $statement = $this->connection->prepare(

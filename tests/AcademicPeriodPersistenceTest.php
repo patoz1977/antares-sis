@@ -59,6 +59,22 @@ function registerAcademicPeriodPersistenceTests(TestRunner $runner): void
         });
     });
 
+    $runner->add('E011 PDO AcademicPeriod shared portal stabilization requires caller transaction', function (): void {
+        [$repository, , $manager] = academicPeriodPersistenceFixture();
+        academicPeriodAssertThrows(
+            static fn (): mixed => $repository->lockActiveContextForRead(),
+            RuntimeException::class,
+        );
+        (new PdoTransactionRunner($manager))->run(function () use ($repository): void {
+            $repository->lockActiveContextForRead();
+        });
+
+        $source = (string) file_get_contents(
+            dirname(__DIR__) . '/app/AcademicCore/Infrastructure/Persistence/PdoAcademicPeriodRepository.php'
+        );
+        assertSameValue(true, str_contains($source, 'LOCK IN SHARE MODE'));
+    });
+
     $runner->add('E009 Phase 5.1 PDO AcademicPeriod findActive returns zero or one and rejects corruption', function (): void {
         [$repository, $pdo] = academicPeriodPersistenceFixture();
         $pdo->exec('UPDATE academic_periods SET status_id = 2');

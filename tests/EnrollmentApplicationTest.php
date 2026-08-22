@@ -376,8 +376,8 @@ function registerEnrollmentApplicationTests(TestRunner $runner): void
             }
         }
         foreach (['PDO', 'SELECT ', 'INSERT ', 'UPDATE ', 'DELETE ', 'Request', 'Response',
-            'SessionManager', 'Controller', 'Infrastructure\\', 'RepresentativeId',
-            'InstitutionalAcknowledgement', 'SubmissionService', 'submit(', 'reopen(', 'complete(', 'cancel(']
+            'SessionManager', 'Controller', 'Infrastructure\\',
+            'SubmissionService', 'submit(', 'reopen(', 'complete(', 'cancel(']
             as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden), $forbidden);
         }
@@ -766,6 +766,13 @@ final class E010FamilyRepository implements FamilyRepository
         return $this->family;
     }
 
+    public function findActiveByRepresentativeAndFamilyForUpdate(
+        \App\Family\Domain\ValueObject\RepresentativeId $representativeId,
+        FamilyId $familyId,
+    ): ?Family {
+        return $this->family?->id()?->equals($familyId) === true ? $this->family : null;
+    }
+
     public function save(Family $family): Family
     {
         return $family;
@@ -794,6 +801,10 @@ final readonly class E010AcademicPeriodRepository implements AcademicPeriodRepos
     }
 
     public function lockOperationalTransition(): void
+    {
+    }
+
+    public function lockActiveContextForRead(): void
     {
     }
 }

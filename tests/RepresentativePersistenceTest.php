@@ -28,7 +28,7 @@ function registerRepresentativePersistenceTests(TestRunner $runner): void
         );
         sort($methods, SORT_STRING);
 
-        assertSameValue(['findById', 'findByPersonId', 'save'], $methods);
+        assertSameValue(['findById', 'findByIdForUpdate', 'findByPersonId', 'save'], $methods);
         assertSameValue(Representative::class, $reflection->getMethod('save')->getReturnType()?->getName());
 
         $source = file_get_contents(
@@ -57,6 +57,25 @@ function registerRepresentativePersistenceTests(TestRunner $runner): void
         assertSameValue(RepresentativeStatus::Active, $byId?->status());
         assertSameValue(null, $repository->findById(new RepresentativeId(999)));
         assertSameValue(null, $repository->findByPersonId(new PersonId(50)));
+    });
+
+    $runner->add('pdo Representative portal row lock requires caller transaction and returns exact identity', function (): void {
+        $pdo = sqliteRepresentativeDatabase();
+        insertRawRepresentative($pdo, 100, 1, 1, null, null, null, null, null);
+        $repository = representativePersistenceRepositoryWithPdo($pdo);
+
+        assertThrows(
+            static fn () => $repository->findByIdForUpdate(new RepresentativeId(100)),
+            RuntimeException::class,
+        );
+        $pdo->beginTransaction();
+        try {
+            assertSameValue(100, $repository->findByIdForUpdate(new RepresentativeId(100))?->id()?->value());
+            assertSameValue(null, $repository->findByIdForUpdate(new RepresentativeId(999)));
+            assertSameValue(true, $pdo->inTransaction());
+        } finally {
+            $pdo->rollBack();
+        }
     });
 
     $runner->add('pdo Representative repository reconstructs partial and absent EmploymentInformation', function (): void {

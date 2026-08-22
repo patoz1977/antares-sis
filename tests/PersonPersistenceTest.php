@@ -30,7 +30,7 @@ function registerPersonPersistenceTests(TestRunner $runner): void
         );
         sort($methods, SORT_STRING);
 
-        assertSameValue(['findById', 'findByIdentification', 'save'], $methods);
+        assertSameValue(['findById', 'findByIdForUpdate', 'findByIdentification', 'save'], $methods);
         assertSameValue(
             Person::class,
             (new ReflectionClass(PersonRepository::class))->getMethod('save')->getReturnType()?->getName(),
@@ -79,6 +79,23 @@ function registerPersonPersistenceTests(TestRunner $runner): void
         assertSameValue(1, $reloaded?->educationLevelId());
         assertSameValue(true, $reloaded?->contactInformation()?->equals($person->contactInformation()));
         assertSameValue(PersonStatus::Active, $reloaded?->status());
+    });
+
+    $runner->add('pdo Person portal row lock requires caller transaction and returns exact identity', function (): void {
+        $pdo = sqlitePersonDatabase();
+        $repository = personPersistenceRepositoryWithPdo($pdo);
+        $persisted = $repository->save(completePersistencePerson(null, 'LOCK-PERSON'));
+        $id = requiredPersistedPersonId($persisted);
+
+        assertThrows(static fn () => $repository->findByIdForUpdate($id), RuntimeException::class);
+        $pdo->beginTransaction();
+        try {
+            assertSameValue($id->value(), $repository->findByIdForUpdate($id)?->id()?->value());
+            assertSameValue(null, $repository->findByIdForUpdate(new PersonId(99999)));
+            assertSameValue(true, $pdo->inTransaction());
+        } finally {
+            $pdo->rollBack();
+        }
     });
 
     $runner->add('pdo Person repository finds existing and missing identities', function (): void {

@@ -90,27 +90,12 @@ final class PdoAcademicPeriodRepository implements AcademicPeriodRepository
 
     public function lockOperationalTransition(): void
     {
-        if (!$this->connection->inTransaction()) {
-            throw new RuntimeException('AcademicPeriod operational lock requires an active transaction.');
-        }
+        $this->lockActiveStatusRow(' FOR UPDATE', 'operational');
+    }
 
-        $sql = 'SELECT s.id FROM statuses s '
-            . 'INNER JOIN status_types st ON st.id = s.status_type_id '
-            . 'WHERE st.code = :statusType AND s.code = :statusCode';
-        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
-            $sql .= ' FOR UPDATE';
-        }
-        $statement = $this->connection->prepare($sql);
-        $statement->execute([
-            ':statusType' => self::STATUS_TYPE,
-            ':statusCode' => AcademicPeriodStatus::Active->value,
-        ]);
-        $rows = $statement->fetchAll(PDO::FETCH_COLUMN);
-        if (count($rows) !== 1 || (int) $rows[0] <= 0) {
-            throw new RuntimeException(
-                'AcademicPeriod operational lock requires exactly one GENERAL_STATUS/ACTIVE row.'
-            );
-        }
+    public function lockActiveContextForRead(): void
+    {
+        $this->lockActiveStatusRow(' LOCK IN SHARE MODE', 'active-context');
     }
 
     private function resolveStatusId(AcademicPeriodStatus $status): int
@@ -132,6 +117,31 @@ final class PdoAcademicPeriodRepository implements AcademicPeriodRepository
         }
 
         return (int) $rows[0];
+    }
+
+    private function lockActiveStatusRow(string $mariaDbLock, string $purpose): void
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException("AcademicPeriod {$purpose} lock requires an active transaction.");
+        }
+
+        $sql = 'SELECT s.id FROM statuses s '
+            . 'INNER JOIN status_types st ON st.id = s.status_type_id '
+            . 'WHERE st.code = :statusType AND s.code = :statusCode';
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= $mariaDbLock;
+        }
+        $statement = $this->connection->prepare($sql);
+        $statement->execute([
+            ':statusType' => self::STATUS_TYPE,
+            ':statusCode' => AcademicPeriodStatus::Active->value,
+        ]);
+        $rows = $statement->fetchAll(PDO::FETCH_COLUMN);
+        if (count($rows) !== 1 || (int) $rows[0] <= 0) {
+            throw new RuntimeException(
+                "AcademicPeriod {$purpose} lock requires exactly one GENERAL_STATUS/ACTIVE row."
+            );
+        }
     }
 
     private function selectSql(): string

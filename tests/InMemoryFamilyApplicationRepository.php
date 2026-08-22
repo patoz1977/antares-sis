@@ -151,6 +151,23 @@ final class InMemoryFamilyApplicationRepository implements FamilyRepository
         return $this->findActiveByStudentId($studentId);
     }
 
+    public function findActiveByRepresentativeAndFamilyForUpdate(
+        RepresentativeId $representativeId,
+        FamilyId $familyId,
+    ): ?Family {
+        $family = $this->findById($familyId);
+        if ($family === null) {
+            return null;
+        }
+        foreach ($family->activeRepresentatives() as $membership) {
+            if ($membership->representativeId()->equals($representativeId)) {
+                return $family;
+            }
+        }
+
+        return null;
+    }
+
     public function save(Family $family): Family
     {
         $this->saveCalls++;

@@ -27,9 +27,35 @@ final class PdoRepresentativeRepository implements RepresentativeRepository
 
     public function findById(RepresentativeId $id): ?Representative
     {
-        $statement = $this->connection->prepare(
-            $this->selectSql() . ' WHERE r.id = :id LIMIT 1'
-        );
+        return $this->findByIdWithLock($id, false);
+    }
+
+    public function findByIdForUpdate(RepresentativeId $id): ?Representative
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('Representative row lock requires an active transaction.');
+        }
+
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $lock = $this->connection->prepare(
+                'SELECT id FROM representatives WHERE id = :id LIMIT 1 FOR UPDATE'
+            );
+            $lock->execute([':id' => $id->value()]);
+            if ($lock->fetchColumn() === false) {
+                return null;
+            }
+        }
+
+        return $this->findByIdWithLock($id, true);
+    }
+
+    private function findByIdWithLock(RepresentativeId $id, bool $forUpdate): ?Representative
+    {
+        $sql = $this->selectSql() . ' WHERE r.id = :id LIMIT 1';
+        if ($forUpdate && $this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= ' LOCK IN SHARE MODE';
+        }
+        $statement = $this->connection->prepare($sql);
         $statement->execute([':id' => $id->value()]);
 
         return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));

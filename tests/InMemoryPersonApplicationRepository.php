@@ -42,6 +42,11 @@ final class InMemoryPersonApplicationRepository implements PersonRepository
         return isset($this->persons[$id->value()]) ? clone $this->persons[$id->value()] : null;
     }
 
+    public function findByIdForUpdate(PersonId $id): ?Person
+    {
+        return $this->findById($id);
+    }
+
     public function findByIdentification(Identification $identification): ?Person
     {
         $expectedKey = $this->identificationKey($identification);

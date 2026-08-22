@@ -15,6 +15,11 @@ interface FamilyRepository
     /** @return list<Family> */
     public function findActiveByRepresentativeId(RepresentativeId $representativeId): array;
 
+    public function findActiveByRepresentativeAndFamilyForUpdate(
+        RepresentativeId $representativeId,
+        FamilyId $familyId,
+    ): ?Family;
+
     public function findActiveByStudentId(StudentId $studentId): ?Family;
 
     public function findActiveByStudentIdForUpdate(StudentId $studentId): ?Family;

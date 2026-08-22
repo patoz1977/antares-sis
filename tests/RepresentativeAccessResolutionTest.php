@@ -251,6 +251,11 @@ final class RepresentativeAccessResolutionTest implements RepresentativeReposito
         return null;
     }
 
+    public function findByIdForUpdate(RepresentativeId $id): ?Representative
+    {
+        return $this->findById($id);
+    }
+
     public function findByPersonId(PersonId $personId): ?Representative
     {
         $this->requestedPersonIds[] = $personId->value();
