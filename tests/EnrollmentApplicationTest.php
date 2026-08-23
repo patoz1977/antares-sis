@@ -85,7 +85,6 @@ function registerEnrollmentApplicationTests(TestRunner $runner): void
         assertSameValue(null, $output->medicalInformation);
         assertSameValue(null, $output->transportInformation);
         assertSameValue(false, $output->isAuthorizedToLeaveAlone);
-        assertSameValue(false, $output->hasSubmissionSnapshot);
         assertSameValue('2026-08-21 14:15:16', $output->startedAt->format('Y-m-d H:i:s'));
         assertSameValue(1, $clock->calls);
         assertSameValue(1, $repository->saveCalls);
@@ -633,7 +632,6 @@ final class E010InMemoryEnrollmentRepository implements EnrollmentRepository
                 $persisted->medicalInformation(),
                 $persisted->transportInformation(),
                 $persisted->isAuthorizedToLeaveAlone(),
-                $persisted->submissionSnapshot(),
                 $persisted->startedAt(),
                 $persisted->submittedAt(),
                 $persisted->completedAt(),
@@ -675,7 +673,6 @@ final class E010InMemoryEnrollmentRepository implements EnrollmentRepository
             $source->medicalInformation(),
             $source->transportInformation(),
             $source->isAuthorizedToLeaveAlone(),
-            $source->submissionSnapshot(),
             $source->startedAt(),
             $source->submittedAt(),
             $source->completedAt(),

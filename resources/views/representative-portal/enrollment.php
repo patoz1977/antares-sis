@@ -50,8 +50,8 @@ $student = $studentOption?->person;
 $studentRole = $studentOption?->student;
 $enrollment = $portal->enrollment;
 $period = $context->academicPeriod;
-$editable = $portal->maintenanceEnabled && !$portal->readOnly;
-$draftEditable = $editable && $enrollment?->status === 'DRAFT';
+$liveDataEditable = $portal->liveDataMaintenanceEnabled;
+$draftEditable = $portal->enrollmentDraftMaintenanceEnabled && $enrollment?->status === 'DRAFT';
 $studentLocation = $studentOption === null
     ? '/representative/enrollment'
     : '/representative/enrollment?student_id=' . $studentOption->student->id;
@@ -164,7 +164,7 @@ $autosaveFeedback = static function (string $section) use ($escape): void {
     <p>Selected Student: <strong><?= $escape($studentOption->displayName) ?></strong></p>
     <?php if ($enrollment === null): ?>
     <p>Enrollment Draft has not been started.</p>
-    <?php if ($portal->maintenanceEnabled): ?>
+    <?php if ($portal->enrollmentDraftMaintenanceEnabled): ?>
     <form method="post" action="/representative/enrollment/open">
         <?php $studentHidden(); ?>
         <button type="submit" class="btn btn-primary">Start Enrollment Draft</button>
@@ -172,8 +172,8 @@ $autosaveFeedback = static function (string $section) use ($escape): void {
     <?php endif; ?>
     <?php else: ?>
     <p>Status: <strong><?= $escape($enrollment->status) ?></strong></p>
-    <?php if ($portal->readOnly): ?>
-    <p role="status">This Enrollment is read-only.</p>
+    <?php if (!$portal->enrollmentDraftMaintenanceEnabled): ?>
+    <p role="status">This Enrollment's annual information is read-only.</p>
     <?php else: ?>
     <p>This Draft can be maintained section by section.</p>
     <?php endif; ?>
@@ -211,7 +211,7 @@ $autosaveFeedback = static function (string $section) use ($escape): void {
         <dt>Document number</dt><dd><?= $escape($representative->documentNumber ?? 'Not supplied') ?></dd>
         <dt>Sex</dt><dd><?= $escape($optionName($formOptions->sexes, $representative->sexId)) ?></dd>
     </dl>
-    <?php if ($editable): ?>
+    <?php if ($liveDataEditable): ?>
     <form method="post" action="/representative/enrollment/representative/personal" class="row g-3" data-enrollment-autosave data-section="representative-personal">
         <?php $hiddenContext(); ?>
         <?php if ($studentOption !== null): ?><input type="hidden" name="student_id" value="<?= $escape($studentOption->student->id) ?>"><?php endif; ?>
@@ -231,7 +231,7 @@ $autosaveFeedback = static function (string $section) use ($escape): void {
 <section class="mb-4" aria-labelledby="representative-contact-heading">
     <h2 id="representative-contact-heading">Representative Contact Information</h2>
     <dl><dt>Email</dt><dd><?= $escape($representative->email ?? 'Not supplied') ?></dd><dt>Mobile phone</dt><dd><?= $escape($representative->mobilePhone ?? 'Not supplied') ?></dd><dt>Landline phone</dt><dd><?= $escape($representative->landlinePhone ?? 'Not supplied') ?></dd></dl>
-    <?php if ($editable): ?>
+    <?php if ($liveDataEditable): ?>
     <form method="post" action="/representative/enrollment/representative/contact" class="row g-3" data-enrollment-autosave data-section="representative-contact">
         <?php $hiddenContext(); ?><?php if ($studentOption !== null): ?><input type="hidden" name="student_id" value="<?= $escape($studentOption->student->id) ?>"><?php endif; ?>
         <div class="col-12"><label class="form-label">Email <input class="form-control" type="email" name="email" value="<?= $escape($field('representative-contact', 'email', $representative->email)) ?>" required></label></div>
@@ -247,7 +247,7 @@ $autosaveFeedback = static function (string $section) use ($escape): void {
     <h2 id="employment-heading">Employment Information</h2>
     <p>This section is optional.</p>
     <dl><dt>Occupation</dt><dd><?= $escape($role->occupation ?? 'Not supplied') ?></dd><dt>Company</dt><dd><?= $escape($role->companyName ?? 'Not supplied') ?></dd><dt>Position</dt><dd><?= $escape($role->position ?? 'Not supplied') ?></dd><dt>Work phone</dt><dd><?= $escape($role->workPhone ?? 'Not supplied') ?></dd><dt>Work email</dt><dd><?= $escape($role->workEmail ?? 'Not supplied') ?></dd></dl>
-    <?php if ($editable): ?>
+    <?php if ($liveDataEditable): ?>
     <form method="post" action="/representative/enrollment/representative/employment" class="row g-3" data-enrollment-autosave data-section="representative-employment">
         <?php $hiddenContext(); ?><?php if ($studentOption !== null): ?><input type="hidden" name="student_id" value="<?= $escape($studentOption->student->id) ?>"><?php endif; ?>
         <div class="col-12 col-md-6"><label class="form-label">Occupation <input class="form-control" name="occupation" value="<?= $escape($field('representative-employment', 'occupation', $role->occupation)) ?>"></label></div>
@@ -273,7 +273,7 @@ $autosaveFeedback = static function (string $section) use ($escape): void {
         <dt>Admission date</dt><dd><?= $escape($studentRole->admissionDate->format('Y-m-d')) ?></dd>
         <dt>Student status</dt><dd><?= $escape($studentRole->status->value) ?></dd>
     </dl>
-    <?php if ($editable): ?>
+    <?php if ($liveDataEditable): ?>
     <form method="post" action="/representative/enrollment/student/personal" class="row g-3" data-enrollment-autosave data-section="student-personal">
         <?php $studentHidden(); ?>
         <div class="col-12 col-md-6"><label class="form-label">First name <input class="form-control" name="first_name" value="<?= $escape($field('student-personal', 'first_name', $student->firstName)) ?>" required></label></div>

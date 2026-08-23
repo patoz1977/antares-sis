@@ -75,8 +75,10 @@ final readonly class GetRepresentativeEnrollmentPortalState
             $enrollment,
             $resources,
         );
-        $maintenanceEnabled = $context->academicPeriod !== null
+        $liveDataMaintenanceEnabled = $context->academicPeriod !== null
             && $context->acknowledgementsSatisfied;
+        $enrollmentDraftMaintenanceEnabled = $liveDataMaintenanceEnabled
+            && ($enrollment === null || $enrollment->status === EnrollmentStatus::Draft->value);
 
         return new RepresentativeEnrollmentPortalState(
             $context,
@@ -85,8 +87,8 @@ final readonly class GetRepresentativeEnrollmentPortalState
             $selectedStudent,
             $enrollment,
             $context->academicPeriod !== null,
-            $maintenanceEnabled,
-            $enrollment !== null && $enrollment->status !== EnrollmentStatus::Draft->value,
+            $liveDataMaintenanceEnabled,
+            $enrollmentDraftMaintenanceEnabled,
             $progress,
         );
     }

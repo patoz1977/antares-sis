@@ -482,19 +482,21 @@ final class RepresentativeEnrollmentController extends Controller
             );
         } catch (InvalidEnrollmentState) {
             try {
-                $readOnly = $studentId !== null && $this->getState->handle($studentId)->readOnly;
+                $annualReadOnly = in_array($section, ['billing', 'medical', 'transport', 'leave-alone'], true)
+                    && $studentId !== null
+                    && !$this->getState->handle($studentId)->enrollmentDraftMaintenanceEnabled;
             } catch (Throwable) {
-                $readOnly = false;
+                $annualReadOnly = false;
             }
 
             return $this->commandFailure(
                 $autosave,
                 $studentId,
                 $values,
-                [$readOnly ? 'This Enrollment is no longer editable.' : 'Review the entered information.'],
+                [$annualReadOnly ? 'This Enrollment is no longer editable.' : 'Review the entered information.'],
                 $section,
-                $readOnly ? 409 : 422,
-                $readOnly,
+                $annualReadOnly ? 409 : 422,
+                $annualReadOnly,
             );
         } catch (EnrollmentAlreadyExists) {
             return $this->commandFailure(
