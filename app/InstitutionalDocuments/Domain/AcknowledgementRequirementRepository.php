@@ -16,6 +16,8 @@ interface AcknowledgementRequirementRepository
 
     public function lockConfigurationScope(AcademicPeriodId $academicPeriodId): void;
 
+    public function lockConfigurationScopeForRead(AcademicPeriodId $academicPeriodId): void;
+
     public function lockForPostUseUpdate(
         AcknowledgementRequirementId $id,
     ): ?AcknowledgementRequirement;

@@ -12,6 +12,8 @@ interface FamilyRepository
 {
     public function findById(FamilyId $id): ?Family;
 
+    public function findByIdForUpdate(FamilyId $id): ?Family;
+
     /** @return list<Family> */
     public function findActiveByRepresentativeId(RepresentativeId $representativeId): array;
 

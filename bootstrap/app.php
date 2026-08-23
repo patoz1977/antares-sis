@@ -35,6 +35,9 @@ use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollme
 use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollmentLeaveAloneAuthorization;
 use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollmentMedicalInformation;
 use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollmentTransportInformation;
+use App\Enrollment\Application\Submission\EnrollmentSubmissionValidator;
+use App\Enrollment\Application\Submission\GetRepresentativeEnrollmentSubmissionReview;
+use App\Enrollment\Application\Submission\SubmitRepresentativeEnrollment;
 use App\Enrollment\Application\Support\EnrollmentDraftInitializer;
 use App\Enrollment\Domain\EnrollmentRepository;
 use App\Enrollment\Http\RepresentativeEnrollmentController;
@@ -134,9 +137,11 @@ use App\Student\Domain\StudentRepository;
 use App\Student\Infrastructure\Persistence\PdoStudentRepository;
 use App\InstitutionalDocuments\Application\ActivateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Application\CheckInstitutionalAcknowledgementSatisfaction;
+use App\InstitutionalDocuments\Application\CheckInstitutionalAcknowledgementSubmissionSatisfaction;
 use App\InstitutionalDocuments\Application\CompleteRepresentativeAcknowledgements;
 use App\InstitutionalDocuments\Application\CreateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Application\Contract\InstitutionalAcknowledgementSatisfaction;
+use App\InstitutionalDocuments\Application\Contract\InstitutionalAcknowledgementSubmissionSatisfaction;
 use App\InstitutionalDocuments\Application\DeactivateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Application\GetAcknowledgementRequirements;
 use App\InstitutionalDocuments\Application\GetRepresentativeAcknowledgementState;
@@ -391,6 +396,10 @@ $container->singleton(
     CheckInstitutionalAcknowledgementSatisfaction::class,
 );
 $container->singleton(
+    InstitutionalAcknowledgementSubmissionSatisfaction::class,
+    CheckInstitutionalAcknowledgementSubmissionSatisfaction::class,
+);
+$container->singleton(
     ResolveRepresentativeAcknowledgementContext::class,
     ResolveRepresentativeAcknowledgementContext::class,
 );
@@ -470,6 +479,15 @@ $container->singleton(
 $container->singleton(
     UpdateRepresentativeEnrollmentLeaveAloneAuthorization::class,
     UpdateRepresentativeEnrollmentLeaveAloneAuthorization::class,
+);
+$container->singleton(EnrollmentSubmissionValidator::class, EnrollmentSubmissionValidator::class);
+$container->singleton(
+    GetRepresentativeEnrollmentSubmissionReview::class,
+    GetRepresentativeEnrollmentSubmissionReview::class,
+);
+$container->singleton(
+    SubmitRepresentativeEnrollment::class,
+    SubmitRepresentativeEnrollment::class,
 );
 $container->singleton(RepresentativeEnrollmentInputMapper::class, RepresentativeEnrollmentInputMapper::class);
 $container->singleton(
