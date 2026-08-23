@@ -74,6 +74,15 @@ final class ApplicationRequirementRepository implements AcknowledgementRequireme
         }
     }
 
+    public function lockConfigurationScopeForRead(AcademicPeriodId $academicPeriodId): void
+    {
+        $this->operationLog[] = 'lock:scope-read:' . $academicPeriodId->value();
+        $this->lockedConfigurationPeriodIds[] = $academicPeriodId->value();
+        if ($this->scopeLockFailure !== null) {
+            throw $this->scopeLockFailure;
+        }
+    }
+
     public function lockForPostUseUpdate(
         AcknowledgementRequirementId $id,
     ): ?AcknowledgementRequirement {

@@ -66,6 +66,32 @@ final class PdoFamilyRepository implements FamilyRepository
         return $row === null ? null : $this->mapFamily($row);
     }
 
+    public function findByIdForUpdate(FamilyId $id): ?Family
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('Family root row lock requires an active transaction.');
+        }
+
+        $sql = 'SELECT id FROM families WHERE id = :id';
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= ' FOR UPDATE';
+        }
+        $statement = $this->connection->prepare($sql);
+        $statement->execute([':id' => $id->value()]);
+        $rows = $statement->fetchAll(PDO::FETCH_COLUMN);
+        if (count($rows) > 1) {
+            throw new RuntimeException('Family identity resolved more than one root row for update.');
+        }
+        if ($rows === []) {
+            return null;
+        }
+        if ($this->persistedPositiveInt($rows[0], 'Locked Family id') !== $id->value()) {
+            throw new RuntimeException('Family root row lock returned an incoherent identity.');
+        }
+
+        return $this->findById($id);
+    }
+
     public function findActiveByRepresentativeId(RepresentativeId $representativeId): array
     {
         $statement = $this->connection->prepare(

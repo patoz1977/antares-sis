@@ -54,23 +54,16 @@ final class PdoAcknowledgementRequirementRepository implements AcknowledgementRe
 
     public function lockConfigurationScope(AcademicPeriodId $academicPeriodId): void
     {
-        if (!$this->connection->inTransaction()) {
-            throw new RuntimeException('Acknowledgement Requirement scope locking requires an active transaction.');
-        }
+        $this->lockConfigurationPeriod($academicPeriodId, ' FOR UPDATE', 'configuration');
+    }
 
-        $sql = 'SELECT id FROM academic_periods WHERE id = :academicPeriodId';
-        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
-            $sql .= ' FOR UPDATE';
-        }
-        $statement = $this->connection->prepare($sql);
-        $statement->execute([':academicPeriodId' => $academicPeriodId->value()]);
-        $rows = $statement->fetchAll(PDO::FETCH_COLUMN);
-
-        if (count($rows) !== 1 || (int) $rows[0] !== $academicPeriodId->value()) {
-            throw new RuntimeException(
-                'Acknowledgement Requirement configuration scope must resolve one persisted AcademicPeriod.'
-            );
-        }
+    public function lockConfigurationScopeForRead(AcademicPeriodId $academicPeriodId): void
+    {
+        $this->lockConfigurationPeriod(
+            $academicPeriodId,
+            ' LOCK IN SHARE MODE',
+            'configuration read',
+        );
     }
 
     public function lockForPostUseUpdate(
@@ -303,6 +296,32 @@ final class PdoAcknowledgementRequirementRepository implements AcknowledgementRe
             . 'FROM acknowledgement_requirements ar '
             . 'INNER JOIN statuses s ON s.id = ar.status_id '
             . 'INNER JOIN status_types st ON st.id = s.status_type_id';
+    }
+
+    private function lockConfigurationPeriod(
+        AcademicPeriodId $academicPeriodId,
+        string $mysqlLock,
+        string $operation,
+    ): void {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException(
+                'Acknowledgement Requirement ' . $operation . ' scope locking requires an active transaction.'
+            );
+        }
+
+        $sql = 'SELECT id FROM academic_periods WHERE id = :academicPeriodId';
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= $mysqlLock;
+        }
+        $statement = $this->connection->prepare($sql);
+        $statement->execute([':academicPeriodId' => $academicPeriodId->value()]);
+        $rows = $statement->fetchAll(PDO::FETCH_COLUMN);
+
+        if (count($rows) !== 1 || (int) $rows[0] !== $academicPeriodId->value()) {
+            throw new RuntimeException(
+                'Acknowledgement Requirement configuration scope must resolve one persisted AcademicPeriod.'
+            );
+        }
     }
 
     /**

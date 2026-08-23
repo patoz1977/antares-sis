@@ -10,11 +10,11 @@ use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\RepresentativeId;
 use App\Family\Domain\ValueObject\StudentId;
 
-final readonly class AlwaysActiveStudentFamilyRepository implements FamilyRepository
+final readonly class E012TracingFamilyRepository implements FamilyRepository
 {
     public function __construct(
         private FamilyRepository $delegate,
-        private int $activeFamilyId,
+        private E012SubmissionTrace $trace,
     ) {
     }
 
@@ -25,6 +25,8 @@ final readonly class AlwaysActiveStudentFamilyRepository implements FamilyReposi
 
     public function findByIdForUpdate(FamilyId $id): ?Family
     {
+        $this->trace->events[] = 'family-root-lock';
+
         return $this->delegate->findByIdForUpdate($id);
     }
 
@@ -33,21 +35,25 @@ final readonly class AlwaysActiveStudentFamilyRepository implements FamilyReposi
         return $this->delegate->findActiveByRepresentativeId($representativeId);
     }
 
-    public function findActiveByStudentId(StudentId $studentId): ?Family
-    {
-        return $this->delegate->findById(new FamilyId($this->activeFamilyId));
-    }
-
-    public function findActiveByStudentIdForUpdate(StudentId $studentId): ?Family
-    {
-        return $this->findActiveByStudentId($studentId);
-    }
-
     public function findActiveByRepresentativeAndFamilyForUpdate(
         RepresentativeId $representativeId,
         FamilyId $familyId,
     ): ?Family {
-        return $this->delegate->findById($familyId);
+        $this->trace->events[] = 'representative-membership-lock';
+
+        return $this->delegate->findActiveByRepresentativeAndFamilyForUpdate($representativeId, $familyId);
+    }
+
+    public function findActiveByStudentId(StudentId $studentId): ?Family
+    {
+        return $this->delegate->findActiveByStudentId($studentId);
+    }
+
+    public function findActiveByStudentIdForUpdate(StudentId $studentId): ?Family
+    {
+        $this->trace->events[] = 'student-membership-lock';
+
+        return $this->delegate->findActiveByStudentIdForUpdate($studentId);
     }
 
     public function save(Family $family): Family

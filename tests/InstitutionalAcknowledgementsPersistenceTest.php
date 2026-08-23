@@ -31,7 +31,8 @@ function registerInstitutionalAcknowledgementsPersistenceTests(TestRunner $runne
         assertSameValue(
             [
                 'findByAcademicPeriodId', 'findById', 'hasAcknowledgements',
-                'lockConfigurationScope', 'lockForCompletion', 'lockForPostUseUpdate', 'save',
+                'lockConfigurationScope', 'lockConfigurationScopeForRead',
+                'lockForCompletion', 'lockForPostUseUpdate', 'save',
             ],
             institutionalPublicMethods(AcknowledgementRequirementRepository::class),
         );
@@ -187,6 +188,32 @@ function registerInstitutionalAcknowledgementsPersistenceTests(TestRunner $runne
 
         assertSameValue(false, $pdo->inTransaction());
         assertSameValue(0, (int) $pdo->query('SELECT COUNT(*) FROM acknowledgement_requirements')->fetchColumn());
+    });
+
+    $runner->add('Requirement shared configuration scope lock preserves caller transaction and exact period', function (): void {
+        $pdo = sqliteInstitutionalAcknowledgementsDatabase();
+        $repository = institutionalRequirementRepository($pdo);
+
+        assertThrows(
+            static fn () => $repository->lockConfigurationScopeForRead(new AcademicPeriodId(1)),
+            RuntimeException::class,
+        );
+        $pdo->beginTransaction();
+        $repository->lockConfigurationScopeForRead(new AcademicPeriodId(1));
+        assertSameValue(true, $pdo->inTransaction());
+        assertThrows(
+            static fn () => $repository->lockConfigurationScopeForRead(new AcademicPeriodId(999)),
+            RuntimeException::class,
+        );
+        assertSameValue(true, $pdo->inTransaction());
+        $pdo->rollBack();
+
+        $source = (string) file_get_contents(
+            dirname(__DIR__)
+            . '/app/InstitutionalDocuments/Infrastructure/Persistence/PdoAcknowledgementRequirementRepository.php'
+        );
+        assertSameValue(true, str_contains($source, ' LOCK IN SHARE MODE'));
+        assertSameValue(true, str_contains($source, "' FOR UPDATE'"));
     });
 
     $runner->add('Requirement Completion locking returns fresh history in deterministic identity order', function (): void {

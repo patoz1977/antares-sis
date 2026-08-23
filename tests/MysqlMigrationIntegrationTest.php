@@ -44,6 +44,7 @@ use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\InstitutionalDocuments\Domain\AcknowledgementRequirementStatus;
 use App\InstitutionalDocuments\Application\ActivateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Application\CheckInstitutionalAcknowledgementSatisfaction;
+use App\InstitutionalDocuments\Application\CheckInstitutionalAcknowledgementSubmissionSatisfaction;
 use App\InstitutionalDocuments\Application\CompleteRepresentativeAcknowledgements;
 use App\InstitutionalDocuments\Application\CreateAcknowledgementRequirement;
 use App\InstitutionalDocuments\Application\DeactivateAcknowledgementRequirement;
@@ -142,6 +143,13 @@ use App\Enrollment\Application\Dto\UpdateEnrollmentTransportInformationInput;
 use App\Enrollment\Application\Exception\EnrollmentFamilyContextUnavailable;
 use App\Enrollment\Application\StartEnrollmentDraft;
 use App\Enrollment\Application\UpdateEnrollmentTransportInformation;
+use App\Enrollment\Application\Submission\Dto\SubmitRepresentativeEnrollmentInput;
+use App\Enrollment\Application\Submission\EnrollmentSubmissionValidator;
+use App\Enrollment\Application\Submission\Exception\EnrollmentSubmissionContextUnavailable;
+use App\Enrollment\Application\Submission\Exception\EnrollmentSubmissionNotReady;
+use App\Enrollment\Application\Submission\SubmitRepresentativeEnrollment;
+use App\Enrollment\Domain\EnrollmentRepository;
+use App\Enrollment\Domain\Exception\InvalidEnrollmentState;
 use Core\Database\ConnectionFactory;
 use Core\Database\ConnectionManager;
 use Core\Database\DatabaseConfig;
@@ -1170,6 +1178,11 @@ function runMariaDbEnrollmentActiveFamilyCaptureScenario(
             return $this->delegate->findById($id);
         }
 
+        public function findByIdForUpdate(FamilyId $id): ?Family
+        {
+            return $this->delegate->findByIdForUpdate($id);
+        }
+
         public function findActiveByRepresentativeId(FamilyRepresentativeReference $representativeId): array
         {
             return $this->delegate->findActiveByRepresentativeId($representativeId);
@@ -1686,6 +1699,614 @@ function runMariaDbRepresentativeEnrollmentPortalConcurrencyScenario(
             $connectionA->rollBack();
         }
     }
+}
+
+function runMariaDbEnrollmentSubmissionApplicationScenario(
+    ConnectionManager $managerA,
+    ConnectionManager $managerB,
+    PDO $connectionA,
+    PDO $connectionB,
+    SessionManager $session,
+    int $representativeUserId,
+    int $representativePersonId,
+    int $representativeId,
+    int $studentId,
+    int $familyId,
+    int $otherFamilyId,
+    int $relationshipTypeId,
+): void {
+    $familiesA = new PdoFamilyRepository($managerA);
+    $familiesB = new PdoFamilyRepository($managerB);
+    $personsA = new PdoPersonRepository($managerA);
+    $representativesA = new PdoRepresentativeRepository($managerA);
+    $studentsA = new PdoStudentRepository($managerA);
+    $periodsA = new PdoAcademicPeriodRepository($managerA);
+    $requirementsA = new PdoAcknowledgementRequirementRepository($managerA);
+    $completionsA = new PdoRepresentativeAcknowledgementCompletionRepository($managerA);
+    $enrollmentsA = new PdoEnrollmentRepository($managerA);
+    $enrollmentsB = new PdoEnrollmentRepository($managerB);
+    $transactionsA = new PdoTransactionRunner($managerA);
+    $transactionsB = new PdoTransactionRunner($managerB);
+
+    $representativePerson = $personsA->findById(
+        new \App\Person\Domain\ValueObject\PersonId($representativePersonId)
+    ) ?? throw new RuntimeException('E012 Submission Representative Person fixture is unavailable.');
+    $representativePerson->updateContactInformation(new ContactInformation(
+        'submission-representative@example.test',
+        'submission mobile',
+        null,
+    ));
+    $personsA->save($representativePerson);
+
+    $familyReference = new FamilyId($familyId);
+    $family = $familiesA->findById($familyReference)
+        ?? throw new RuntimeException('E012 Submission Family fixture is unavailable.');
+    $representativeReference = new FamilyRepresentativeReference($representativeId);
+    $hasRepresentative = false;
+    foreach ($family->activeRepresentatives() as $membership) {
+        $hasRepresentative = $hasRepresentative
+            || $membership->representativeId()->equals($representativeReference);
+    }
+    if (!$hasRepresentative) {
+        $family->addRepresentative(
+            $representativeReference,
+            new RelationshipTypeId($relationshipTypeId),
+            new DateTimeImmutable('2026-08-22 08:00:00', new DateTimeZone('UTC')),
+        );
+        $family = $familiesA->save($family);
+    }
+
+    $studentReference = new FamilyStudentReference($studentId);
+    $hasAddress = false;
+    foreach ($family->studentAddressAssignments() as $assignment) {
+        $hasAddress = $hasAddress || ($assignment->isActive() && $assignment->studentId()->equals($studentReference));
+    }
+    if (!$hasAddress) {
+        $family->addAddress(
+            new AddressLabel('Submission address'),
+            new Address('Submission current street', null, null, null, null, null),
+        );
+        $family = $familiesA->save($family);
+        $addressId = null;
+        foreach ($family->activeAddresses() as $address) {
+            if ($address->label()->value() === 'Submission address') {
+                $addressId = $address->id();
+            }
+        }
+        if ($addressId === null) {
+            throw new RuntimeException('E012 Submission Address fixture was not generated.');
+        }
+        $family->assignAddressToStudent(
+            $studentReference,
+            $addressId,
+            new DateTimeImmutable('2026-08-22 08:01:00', new DateTimeZone('UTC')),
+        );
+        $family = $familiesA->save($family);
+    }
+
+    $hasEmergency = false;
+    foreach ($family->emergencyContactAssignments() as $assignment) {
+        $hasEmergency = $hasEmergency
+            || ($assignment->isActive() && $assignment->studentId()->equals($studentReference));
+    }
+    if (!$hasEmergency) {
+        $family->addEmergencyContact(
+            new FamilyResourceName('Submission emergency'),
+            new RelationshipTypeId($relationshipTypeId),
+            new EmergencyContactInformation('emergency mobile', null, null, null),
+        );
+        $family = $familiesA->save($family);
+        $emergencyId = null;
+        foreach ($family->activeEmergencyContacts() as $contact) {
+            if ($contact->names()->value() === 'Submission emergency') {
+                $emergencyId = $contact->id();
+            }
+        }
+        if ($emergencyId === null) {
+            throw new RuntimeException('E012 Submission Emergency Contact fixture was not generated.');
+        }
+        $family->assignEmergencyContactToStudent(
+            $studentReference,
+            $emergencyId,
+            new EmergencyContactPriority(1),
+            new DateTimeImmutable('2026-08-22 08:02:00', new DateTimeZone('UTC')),
+        );
+        $family = $familiesA->save($family);
+    }
+
+    $hasPickup = false;
+    foreach ($family->authorizedPickupAssignments() as $assignment) {
+        $hasPickup = $hasPickup
+            || ($assignment->isActive() && $assignment->studentId()->equals($studentReference));
+    }
+    if (!$hasPickup) {
+        $family->addAuthorizedPickup(
+            new FamilyResourceName('Submission pickup'),
+            new RelationshipTypeId($relationshipTypeId),
+            new AuthorizedPickupInformation('pickup mobile', null, null),
+            null,
+        );
+        $family = $familiesA->save($family);
+        $pickupId = null;
+        foreach ($family->activeAuthorizedPickups() as $pickup) {
+            if ($pickup->names()->value() === 'Submission pickup') {
+                $pickupId = $pickup->id();
+            }
+        }
+        if ($pickupId === null) {
+            throw new RuntimeException('E012 Submission Authorized Pickup fixture was not generated.');
+        }
+        $family->assignAuthorizedPickupToStudent(
+            $studentReference,
+            $pickupId,
+            new DateTimeImmutable('2026-08-22 08:03:00', new DateTimeZone('UTC')),
+        );
+        $family = $familiesA->save($family);
+    }
+
+    $inactiveStatusId = (int) $connectionA->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'INACTIVE'"
+    )->fetchColumn();
+    $insertPeriod = $connectionA->prepare(
+        'INSERT INTO academic_periods (code, name, starts_on, ends_on, status_id) '
+        . 'VALUES (:code, :name, :startsOn, :endsOn, :statusId)'
+    );
+    $insertPeriod->execute([
+        ':code' => 'E012_SUBMIT_ACTIVE',
+        ':name' => 'E012 Submission Active',
+        ':startsOn' => '2026-08-01',
+        ':endsOn' => '2027-07-31',
+        ':statusId' => $inactiveStatusId,
+    ]);
+    $periodId = (int) $connectionA->lastInsertId();
+    $insertPeriod->execute([
+        ':code' => 'E012_SUBMIT_ALTERNATE',
+        ':name' => 'E012 Submission Alternate',
+        ':startsOn' => '2027-08-01',
+        ':endsOn' => '2028-07-31',
+        ':statusId' => $inactiveStatusId,
+    ]);
+    $alternatePeriodId = (int) $connectionA->lastInsertId();
+    assertIntegration(
+        $periodId > 0 && $alternatePeriodId > 0,
+        'E012 Submission AcademicPeriod fixtures were not generated.'
+    );
+    (new ActivateAcademicPeriod($periodsA, $transactionsA))->handle($periodId);
+
+    $gradeId = (int) $connectionA->query('SELECT id FROM grades ORDER BY id LIMIT 1')->fetchColumn();
+    $identificationTypeId = (int) $connectionA->query(
+        'SELECT id FROM document_types ORDER BY id LIMIT 1'
+    )->fetchColumn();
+    $draft = EnrollmentAggregate::startDraft(
+        new EnrollmentStudentId($studentId),
+        new EnrollmentFamilyId($familyId),
+        new EnrollmentAcademicPeriodId($periodId),
+        new DateTimeImmutable('2026-08-23 09:00:00', new DateTimeZone('UTC')),
+        new EnrollmentAcademicPlacement(new EnrollmentGradeId($gradeId), null),
+        new EnrollmentBillingInformation(
+            new EnrollmentIdentificationTypeId($identificationTypeId),
+            'E012-BILLING',
+            'Submission Representative',
+            'Submission billing address',
+            'submission-billing@example.test',
+            'billing phone',
+        ),
+        new EnrollmentMedicalInformation(
+            false, null, false, null, false, null, false, null, false, null,
+            null, null, null,
+        ),
+        new EnrollmentTransportInformation(false),
+        false,
+    );
+    $persistedDraft = $enrollmentsA->save($draft);
+    $enrollmentId = $persistedDraft->id()?->value() ?? 0;
+    assertIntegration($enrollmentId > 0, 'E012 Submission Draft identity was not generated.');
+
+    $session->regenerateForUser($representativeUserId);
+    $familySession = new RepresentativeFamilyContextSession($session);
+    $familySession->select($familyId);
+
+    $resolveFor = static function (
+        ConnectionManager $manager,
+        SessionManager $session,
+    ): ResolveFamilyContext {
+        $representative = new GetAuthenticatedRepresentative(
+            new GetAuthenticatedUser($session, new PdoUserRepository($manager)),
+            new PdoRepresentativeRepository($manager),
+        );
+
+        return new ResolveFamilyContext(
+            new GetAuthorizedFamilies($representative, new PdoFamilyRepository($manager)),
+            new RepresentativeFamilyContextSession($session),
+        );
+    };
+    $clock = static function (string $instant): Clock {
+        return new class(new DateTimeImmutable($instant, new DateTimeZone('UTC'))) implements Clock {
+            public int $calls = 0;
+
+            public function __construct(private readonly DateTimeImmutable $instant)
+            {
+            }
+
+            public function now(): DateTimeImmutable
+            {
+                ++$this->calls;
+
+                return $this->instant;
+            }
+        };
+    };
+    $buildSubmit = static function (
+        ConnectionManager $manager,
+        ResolveFamilyContext $resolve,
+        Clock $clock,
+        ?EnrollmentRepository $enrollments = null,
+    ): SubmitRepresentativeEnrollment {
+        return new SubmitRepresentativeEnrollment(
+            $resolve,
+            new PdoAcademicPeriodRepository($manager),
+            new CheckInstitutionalAcknowledgementSubmissionSatisfaction(
+                new PdoAcknowledgementRequirementRepository($manager),
+                new PdoRepresentativeAcknowledgementCompletionRepository($manager),
+            ),
+            new PdoFamilyRepository($manager),
+            new PdoStudentRepository($manager),
+            new PdoPersonRepository($manager),
+            $enrollments ?? new PdoEnrollmentRepository($manager),
+            new EnrollmentSubmissionValidator(),
+            new PdoTransactionRunner($manager),
+            $clock,
+        );
+    };
+    $input = new SubmitRepresentativeEnrollmentInput($familyId, $periodId, $studentId);
+    $firstClock = $clock('2026-08-23 10:11:12.987654');
+    $first = $buildSubmit($managerA, $resolveFor($managerA, $session), $firstClock)->handle($input);
+    assertIntegration(
+        $first->id === $enrollmentId
+        && $first->status === 'SUBMITTED'
+        && $first->submittedAt?->format('Y-m-d H:i:s') === '2026-08-23 10:11:12'
+        && $first->completedAt === null
+        && $first->cancelledAt === null
+        && $firstClock->calls === 1,
+        'E012 first Submission did not persist the exact lifecycle transition.'
+    );
+
+    $requirement = (new CreateAcknowledgementRequirement(
+        $requirementsA,
+        $transactionsA,
+    ))->handle(new CreateAcknowledgementRequirementInput(
+        $periodId,
+        'E012 current acknowledgement',
+        '/e012/current-acknowledgement',
+        null,
+        'ACTIVE',
+    ));
+    $reopened = $enrollmentsA->findById(new EnrollmentAggregateId($enrollmentId))
+        ?? throw new RuntimeException('E012 submitted Enrollment disappeared before Requirement-first test.');
+    $reopened->reopen();
+    $enrollmentsA->save($reopened);
+    $blockedClock = $clock('2026-08-23 10:12:13');
+    $requirementFirstRejected = false;
+    try {
+        $buildSubmit($managerA, $resolveFor($managerA, $session), $blockedClock)->handle($input);
+    } catch (EnrollmentSubmissionNotReady $exception) {
+        foreach ($exception->validation->requirements as $item) {
+            $requirementFirstRejected = $requirementFirstRejected
+                || ($item->code === 'ACKNOWLEDGEMENTS' && !$item->satisfied);
+        }
+    }
+    assertIntegration(
+        $requirementFirstRejected && $blockedClock->calls === 0,
+        'E012 Requirement-first stable evaluation did not reject pending acknowledgements before Clock.'
+    );
+    (new CompleteRepresentativeAcknowledgements(
+        $requirementsA,
+        $completionsA,
+        $transactionsA,
+    ))->handle(new CompleteRepresentativeAcknowledgementsInput(
+        $representativeId,
+        $periodId,
+        [$requirement->id],
+        new DateTimeImmutable('2026-08-23 10:13:14', new DateTimeZone('UTC')),
+    ));
+    $resubmitClock = $clock('2026-08-23 10:14:15');
+    $resubmitted = $buildSubmit($managerA, $resolveFor($managerA, $session), $resubmitClock)->handle($input);
+    assertIntegration(
+        $resubmitted->id === $enrollmentId
+        && $resubmitted->submittedAt?->format('Y-m-d H:i:s') === '2026-08-23 10:14:15'
+        && $resubmitClock->calls === 1,
+        'E012 Resubmission did not preserve identity or replace SubmittedAt after Completion.'
+    );
+
+    $annualRejected = false;
+    try {
+        (new UpdateEnrollmentTransportInformation($enrollmentsA, $transactionsA))->handle(
+            new UpdateEnrollmentTransportInformationInput(
+                $enrollmentId,
+                $studentId,
+                $familyId,
+                $periodId,
+                true,
+            )
+        );
+    } catch (InvalidEnrollmentState) {
+        $annualRejected = true;
+    }
+    assertIntegration($annualRejected, 'E012 post-Submission annual mutation did not remain Draft-only.');
+
+    $representativePerson = $personsA->findById(
+        new \App\Person\Domain\ValueObject\PersonId($representativePersonId)
+    ) ?? throw new RuntimeException('E012 live Contact fixture disappeared after Submission.');
+    $representativePerson->updateContactInformation(new ContactInformation(
+        'submission-updated@example.test',
+        'submission updated mobile',
+        null,
+    ));
+    $updatedRepresentativePerson = $personsA->save($representativePerson);
+    $family = $familiesA->findById($familyReference)
+        ?? throw new RuntimeException('E012 live Family fixture disappeared after Submission.');
+    $addressToUpdate = null;
+    foreach ($family->activeAddresses() as $address) {
+        if ($address->label()->value() === 'Submission address') {
+            $addressToUpdate = $address;
+        }
+    }
+    if ($addressToUpdate !== null && $addressToUpdate->id() !== null) {
+        $family->updateAddress(
+            $addressToUpdate->id(),
+            new AddressLabel('Submission address updated'),
+            new Address('Submission updated street', null, null, null, null, null),
+        );
+        $family = $familiesA->save($family);
+    }
+    assertIntegration(
+        $updatedRepresentativePerson->contactInformation()?->email() === 'submission-updated@example.test'
+        && $family->id()?->value() === $familyId
+        && $enrollmentsA->findById(new EnrollmentAggregateId($enrollmentId))?->status()
+            === EnrollmentAggregateStatus::Submitted,
+        'E012 live Contact or Family Resource mutation after Submission was not preserved independently.'
+    );
+
+    $reopened = $enrollmentsA->findById(new EnrollmentAggregateId($enrollmentId))
+        ?? throw new RuntimeException('E012 Enrollment disappeared before autosave-first test.');
+    $reopened->reopen();
+    $enrollmentsA->save($reopened);
+    (new UpdateEnrollmentTransportInformation($enrollmentsA, $transactionsA))->handle(
+        new UpdateEnrollmentTransportInformationInput(
+            $enrollmentId,
+            $studentId,
+            $familyId,
+            $periodId,
+            true,
+        )
+    );
+    $autosaveFirst = $buildSubmit(
+        $managerA,
+        $resolveFor($managerA, $session),
+        $clock('2026-08-23 10:15:16'),
+    )->handle($input);
+    assertIntegration(
+        $autosaveFirst->transportInformation?->requiresInstitutionalTransport === true,
+        'E012 annual autosave-first state was not observed by Submission.'
+    );
+
+    $reopened = $enrollmentsA->findById(new EnrollmentAggregateId($enrollmentId))
+        ?? throw new RuntimeException('E012 Enrollment disappeared before rollback test.');
+    $reopened->reopen();
+    $enrollmentsA->save($reopened);
+    $rollbackFailure = new RuntimeException('simulated E012 post-transition persistence failure');
+    $failingEnrollments = new class($enrollmentsA, $rollbackFailure) implements EnrollmentRepository {
+        public function __construct(
+            private readonly EnrollmentRepository $delegate,
+            private readonly RuntimeException $failure,
+        ) {
+        }
+
+        public function findById(EnrollmentAggregateId $id): ?EnrollmentAggregate
+        {
+            return $this->delegate->findById($id);
+        }
+
+        public function findByIdForUpdate(EnrollmentAggregateId $id): ?EnrollmentAggregate
+        {
+            return $this->delegate->findByIdForUpdate($id);
+        }
+
+        public function findByStudentAndAcademicPeriod(
+            EnrollmentStudentId $studentId,
+            EnrollmentAcademicPeriodId $academicPeriodId,
+        ): ?EnrollmentAggregate {
+            return $this->delegate->findByStudentAndAcademicPeriod($studentId, $academicPeriodId);
+        }
+
+        public function save(EnrollmentAggregate $enrollment): EnrollmentAggregate
+        {
+            $this->delegate->save($enrollment);
+            throw $this->failure;
+        }
+    };
+    $caughtRollbackFailure = null;
+    try {
+        $buildSubmit(
+            $managerA,
+            $resolveFor($managerA, $session),
+            $clock('2026-08-23 10:16:17'),
+            $failingEnrollments,
+        )->handle($input);
+    } catch (Throwable $exception) {
+        $caughtRollbackFailure = $exception;
+    }
+    assertIntegration(
+        $caughtRollbackFailure === $rollbackFailure
+        && $enrollmentsA->findById(new EnrollmentAggregateId($enrollmentId))?->status()
+            === EnrollmentAggregateStatus::Draft
+        && !$connectionA->inTransaction(),
+        'E012 rollback after Domain transition did not restore exact Draft state.'
+    );
+
+    $connectionB->exec('SET innodb_lock_wait_timeout = 1');
+    $competingClock = $clock('2026-08-23 10:16:18');
+    $competingSubmit = $buildSubmit(
+        $managerB,
+        $resolveFor($managerB, $session),
+        $competingClock,
+        $enrollmentsB,
+    );
+    $competingBlocked = false;
+    $afterEnrollmentLock = function () use (
+        &$competingBlocked,
+        $competingSubmit,
+        $input,
+    ): void {
+        try {
+            $competingSubmit->handle($input);
+        } catch (PDOException $exception) {
+            if (!isExpectedMariaDbLockException($exception)) {
+                throw new RuntimeException(
+                    'E012 concurrent duplicate Submission failed unexpectedly.',
+                    previous: $exception,
+                );
+            }
+            $competingBlocked = true;
+        }
+    };
+    $interceptingEnrollments = new class($enrollmentsA, $afterEnrollmentLock) implements EnrollmentRepository {
+        private bool $called = false;
+
+        public function __construct(
+            private readonly EnrollmentRepository $delegate,
+            private readonly Closure $afterLock,
+        ) {
+        }
+
+        public function findById(EnrollmentAggregateId $id): ?EnrollmentAggregate
+        {
+            return $this->delegate->findById($id);
+        }
+
+        public function findByIdForUpdate(EnrollmentAggregateId $id): ?EnrollmentAggregate
+        {
+            $enrollment = $this->delegate->findByIdForUpdate($id);
+            if (!$this->called) {
+                $this->called = true;
+                ($this->afterLock)();
+            }
+
+            return $enrollment;
+        }
+
+        public function findByStudentAndAcademicPeriod(
+            EnrollmentStudentId $studentId,
+            EnrollmentAcademicPeriodId $academicPeriodId,
+        ): ?EnrollmentAggregate {
+            return $this->delegate->findByStudentAndAcademicPeriod($studentId, $academicPeriodId);
+        }
+
+        public function save(EnrollmentAggregate $enrollment): EnrollmentAggregate
+        {
+            return $this->delegate->save($enrollment);
+        }
+    };
+    $winningClock = $clock('2026-08-23 10:16:19');
+    $winningSubmission = $buildSubmit(
+        $managerA,
+        $resolveFor($managerA, $session),
+        $winningClock,
+        $interceptingEnrollments,
+    )->handle($input);
+    $duplicateRejectedAfterCommit = false;
+    try {
+        $competingSubmit->handle($input);
+    } catch (EnrollmentSubmissionNotReady) {
+        $duplicateRejectedAfterCommit = true;
+    }
+    assertIntegration(
+        $competingBlocked
+        && $winningSubmission->status === 'SUBMITTED'
+        && $winningClock->calls === 1
+        && $competingClock->calls === 0
+        && $duplicateRejectedAfterCommit,
+        'E012 concurrent duplicate Submission did not serialize to one transition and one rejection.'
+    );
+
+    $connectionA->beginTransaction();
+    $familiesA->findByIdForUpdate($familyReference);
+    $connectionB->exec('SET innodb_lock_wait_timeout = 1');
+    $sameFamilyBlocked = false;
+    try {
+        $connectionB->beginTransaction();
+        $familiesB->findByIdForUpdate($familyReference);
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException('E012 same-Family root contention failed unexpectedly.', previous: $exception);
+        }
+        $sameFamilyBlocked = true;
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+        $connectionA->rollBack();
+    }
+    $connectionA->beginTransaction();
+    $familiesA->findByIdForUpdate($familyReference);
+    $connectionB->beginTransaction();
+    $otherFamily = $familiesB->findByIdForUpdate(new FamilyId($otherFamilyId));
+    $connectionB->rollBack();
+    $connectionA->rollBack();
+    assertIntegration(
+        $sameFamilyBlocked && $otherFamily?->id()?->value() === $otherFamilyId,
+        'E012 Family root lock either failed same-Family serialization or caused global blocking.'
+    );
+
+    $connectionA->beginTransaction();
+    $requirementsA->lockConfigurationScopeForRead(new AcknowledgementAcademicPeriodId($periodId));
+    $connectionB->beginTransaction();
+    (new PdoAcknowledgementRequirementRepository($managerB))->lockConfigurationScopeForRead(
+        new AcknowledgementAcademicPeriodId($periodId)
+    );
+    $connectionB->rollBack();
+    $connectionB->exec('SET innodb_lock_wait_timeout = 1');
+    $ackWriterBlocked = false;
+    try {
+        $connectionB->beginTransaction();
+        (new PdoAcknowledgementRequirementRepository($managerB))->lockConfigurationScope(
+            new AcknowledgementAcademicPeriodId($periodId)
+        );
+    } catch (PDOException $exception) {
+        if (!isExpectedMariaDbLockException($exception)) {
+            throw new RuntimeException('E012 acknowledgement writer contention failed unexpectedly.', previous: $exception);
+        }
+        $ackWriterBlocked = true;
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+        $connectionA->rollBack();
+    }
+    assertIntegration($ackWriterBlocked, 'E012 shared acknowledgement lock did not exclude configuration writer.');
+
+    (new ActivateAcademicPeriod($periodsA, $transactionsA))->handle($alternatePeriodId);
+    $staleClock = $clock('2026-08-23 10:17:18');
+    $stalePeriodRejected = false;
+    try {
+        $buildSubmit($managerA, $resolveFor($managerA, $session), $staleClock)->handle($input);
+    } catch (EnrollmentSubmissionContextUnavailable) {
+        $stalePeriodRejected = true;
+    }
+    assertIntegration(
+        $stalePeriodRejected && $staleClock->calls === 0,
+        'E012 period-switch-first did not reject the stale expected AcademicPeriod.'
+    );
+    (new ActivateAcademicPeriod($periodsA, $transactionsA))->handle($periodId);
+
+    $connectionB->beginTransaction();
+    $releasedEnrollment = $enrollmentsB->findByIdForUpdate(new EnrollmentAggregateId($enrollmentId));
+    $connectionB->rollBack();
+    assertIntegration(
+        $releasedEnrollment?->id()?->value() === $enrollmentId,
+        'E012 rollback did not release the Enrollment root lock.'
+    );
 }
 
 $requiredNonEmptyEnvironment = [
@@ -4118,6 +4739,11 @@ try {
             return $this->delegate->findById($id);
         }
 
+        public function findByIdForUpdate(FamilyId $id): ?Family
+        {
+            return $this->delegate->findByIdForUpdate($id);
+        }
+
         public function findActiveByRepresentativeId(
             FamilyRepresentativeReference $representativeId,
         ): array {
@@ -5994,6 +6620,31 @@ try {
         $operationalPeriodBId,
         $operationalPeriodAId,
     );
+    $submissionFamily = $familyRepository->findActiveByStudentId(
+        new FamilyStudentReference($generatedStudentId->value())
+    );
+    $submissionFamilyId = $submissionFamily?->id()?->value() ?? 0;
+    assertIntegration(
+        $submissionFamilyId > 0,
+        'E012 Submission could not resolve the Student current active Family after E010 regression.'
+    );
+    $submissionOtherFamilyId = $submissionFamilyId === $generatedFamilyId->value()
+        ? $phase4FamilyAId->value()
+        : $generatedFamilyId->value();
+    runMariaDbEnrollmentSubmissionApplicationScenario(
+        $managerA,
+        $managerB,
+        $connectionA,
+        $connectionB,
+        $authenticationSession,
+        $generatedRepresentativeUserId,
+        $representativeUserPersonId->value(),
+        $representativeUserRoleId->value(),
+        $generatedStudentId->value(),
+        $submissionFamilyId,
+        $submissionOtherFamilyId,
+        $generatedRelationshipTypeId,
+    );
 
     echo 'MariaDB version: ' . $mariaDbVersion . "\n";
     echo 'Physical inventory: ' . count($actualTables) . ' tables including migrations metadata; '
@@ -6039,6 +6690,11 @@ try {
     echo "PASS MySQL E011 Person and Representative same-row serialization cross-root isolation and rollback release\n";
     echo "PASS MySQL E011 FamilyRepresentative and FamilyStudent portal-first revocation-first serialization\n";
     echo "PASS MySQL E011 ActivePeriod shared portal locks lifecycle exclusion and stale-page rejection\n";
+    echo "PASS MySQL E012 Submission first transition Resubmission stable validation and persisted verification\n";
+    echo "PASS MySQL E012 zero-Requirement Submission Requirement-first Completion and shared configuration locking\n";
+    echo "PASS MySQL E012 annual autosave-first post-Submission annual rejection and live-data mutability\n";
+    echo "PASS MySQL E012 Family root same-Family serialization cross-Family isolation rollback and lock release\n";
+    echo "PASS MySQL E012 stale ActivePeriod rejection with accumulated E009 E010 E011 concurrency regression\n";
     echo "PASS MySQL Academic Core Grade Section references and next ACTIVE Grade ordering\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {

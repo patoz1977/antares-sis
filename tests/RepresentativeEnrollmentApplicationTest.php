@@ -372,6 +372,10 @@ function e011PortalFixture(
         'families' => $families,
         'enrollments' => $enrollments,
         'transactions' => $transactions,
+        'resolveFamilyContext' => $access['resolve'],
+        'periods' => $acknowledgements['periods'],
+        'requirements' => $acknowledgements['requirements'],
+        'completions' => $acknowledgements['completions'],
     ];
 }
 
