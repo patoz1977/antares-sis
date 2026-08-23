@@ -24,6 +24,11 @@ final readonly class ThrowAfterFamilySaveRepository implements FamilyRepository
         return $this->delegate->findById($id);
     }
 
+    public function findByIdForUpdate(FamilyId $id): ?Family
+    {
+        return $this->delegate->findByIdForUpdate($id);
+    }
+
     public function findActiveByRepresentativeId(RepresentativeId $representativeId): array
     {
         return $this->delegate->findActiveByRepresentativeId($representativeId);

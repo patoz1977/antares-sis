@@ -43,6 +43,7 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
                 'findActiveByStudentId',
                 'findActiveByStudentIdForUpdate',
                 'findById',
+                'findByIdForUpdate',
                 'save',
             ],
             $methods,
@@ -84,6 +85,28 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
         ));
         assertSameValue(FamilyStatus::Inactive, $inactive?->status());
         assertSameValue(null, $repository->findById(new FamilyId(999)));
+    });
+
+    $runner->add('pdo Family root lock requires caller transaction and remains exact', function (): void {
+        $pdo = sqliteFamilyDatabase();
+        insertRawFamily($pdo, 102, 1, 'Family Lock A', 1, '2026-01-01 00:00:00');
+        insertRawFamily($pdo, 103, 1, 'Family Lock B', 2, '2026-01-01 00:00:00');
+        $repository = familyPersistenceRepositoryWithPdo($pdo);
+
+        assertThrows(
+            static fn (): ?Family => $repository->findByIdForUpdate(new FamilyId(102)),
+            RuntimeException::class,
+        );
+        $pdo->beginTransaction();
+        assertSameValue(102, $repository->findByIdForUpdate(new FamilyId(102))?->id()?->value());
+        assertSameValue(103, $repository->findByIdForUpdate(new FamilyId(103))?->id()?->value());
+        assertSameValue(null, $repository->findByIdForUpdate(new FamilyId(999)));
+        assertSameValue(true, $pdo->inTransaction());
+        $pdo->rollBack();
+
+        $source = familyPersistenceSource('app/Family/Infrastructure/Persistence/PdoFamilyRepository.php');
+        assertSameValue(true, str_contains($source, 'SELECT id FROM families WHERE id = :id'));
+        assertSameValue(true, str_contains($source, "\$sql .= ' FOR UPDATE'"));
     });
 
     $runner->add('pdo Family repository rejects wrong or unsupported GENERAL_STATUS', function (): void {

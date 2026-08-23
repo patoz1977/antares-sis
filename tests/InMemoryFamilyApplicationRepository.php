@@ -106,6 +106,11 @@ final class InMemoryFamilyApplicationRepository implements FamilyRepository
             : null;
     }
 
+    public function findByIdForUpdate(FamilyId $id): ?Family
+    {
+        return $this->findById($id);
+    }
+
     public function findActiveByRepresentativeId(RepresentativeId $representativeId): array
     {
         $matches = [];

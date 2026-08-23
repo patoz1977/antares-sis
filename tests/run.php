@@ -53,6 +53,7 @@ require __DIR__ . '/EnrollmentDomainTest.php';
 require __DIR__ . '/EnrollmentPersistenceTest.php';
 require __DIR__ . '/EnrollmentApplicationTest.php';
 require __DIR__ . '/RepresentativeEnrollmentApplicationTest.php';
+require __DIR__ . '/EnrollmentSubmissionApplicationTest.php';
 require __DIR__ . '/RepresentativeEnrollmentDeliveryTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
@@ -100,6 +101,7 @@ require __DIR__ . '/SchemaBaselineTest.php';
 \Tests\registerEnrollmentPersistenceTests($runner);
 \Tests\registerEnrollmentApplicationTests($runner);
 \Tests\registerRepresentativeEnrollmentApplicationTests($runner);
+\Tests\registerEnrollmentSubmissionApplicationTests($runner);
 \Tests\registerRepresentativeEnrollmentDeliveryTests($runner);
 \Tests\registerSchemaBaselineTests($runner);
 

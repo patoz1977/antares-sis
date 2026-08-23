@@ -376,7 +376,7 @@ function registerEnrollmentApplicationTests(TestRunner $runner): void
         }
         foreach (['PDO', 'SELECT ', 'INSERT ', 'UPDATE ', 'DELETE ', 'Request', 'Response',
             'SessionManager', 'Controller', 'Infrastructure\\',
-            'SubmissionService', 'submit(', 'reopen(', 'complete(', 'cancel(']
+            'SubmissionService', 'reopen(', 'complete(', 'cancel(']
             as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden), $forbidden);
         }
@@ -736,6 +736,11 @@ final class E010FamilyRepository implements FamilyRepository
     public function findById(FamilyId $id): ?Family
     {
         return $this->family?->id()?->equals($id) === true ? $this->family : null;
+    }
+
+    public function findByIdForUpdate(FamilyId $id): ?Family
+    {
+        return $this->findById($id);
     }
 
     public function findActiveByRepresentativeId(RepresentativeId $representativeId): array

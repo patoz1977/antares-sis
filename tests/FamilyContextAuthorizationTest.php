@@ -501,6 +501,11 @@ function familyContextRepositoryReturning(array $results): FamilyRepository
             return null;
         }
 
+        public function findByIdForUpdate(FamilyId $id): ?Family
+        {
+            return null;
+        }
+
         public function findActiveByRepresentativeId(FamilyRepresentativeId $representativeId): array
         {
             return $this->results;
