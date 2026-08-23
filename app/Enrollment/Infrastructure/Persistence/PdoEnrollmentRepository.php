@@ -7,26 +7,16 @@ namespace App\Enrollment\Infrastructure\Persistence;
 use App\Enrollment\Domain\Enrollment;
 use App\Enrollment\Domain\EnrollmentRepository;
 use App\Enrollment\Domain\EnrollmentStatus;
-use App\Enrollment\Domain\EnrollmentSubmissionSnapshot;
-use App\Enrollment\Domain\SubmittedAddressSnapshot;
-use App\Enrollment\Domain\SubmittedAuthorizedPickupSnapshot;
-use App\Enrollment\Domain\SubmittedEmergencyContactSnapshot;
 use App\Enrollment\Domain\ValueObject\AcademicPeriodId;
 use App\Enrollment\Domain\ValueObject\AcademicPlacement;
 use App\Enrollment\Domain\ValueObject\BillingInformation;
 use App\Enrollment\Domain\ValueObject\EnrollmentId;
-use App\Enrollment\Domain\ValueObject\EnrollmentSubmissionSnapshotId;
 use App\Enrollment\Domain\ValueObject\FamilyId;
-use App\Enrollment\Domain\ValueObject\Geolocation;
 use App\Enrollment\Domain\ValueObject\GradeId;
 use App\Enrollment\Domain\ValueObject\IdentificationTypeId;
 use App\Enrollment\Domain\ValueObject\MedicalInformation;
-use App\Enrollment\Domain\ValueObject\RepresentativeId;
 use App\Enrollment\Domain\ValueObject\SectionId;
 use App\Enrollment\Domain\ValueObject\StudentId;
-use App\Enrollment\Domain\ValueObject\SubmittedAddressSnapshotId;
-use App\Enrollment\Domain\ValueObject\SubmittedAuthorizedPickupSnapshotId;
-use App\Enrollment\Domain\ValueObject\SubmittedEmergencyContactSnapshotId;
 use App\Enrollment\Domain\ValueObject\TransportInformation;
 use Core\Database\ConnectionManager;
 use DateTimeImmutable;
@@ -133,11 +123,6 @@ final class PdoEnrollmentRepository implements EnrollmentRepository
 
     private function insertEnrollment(Enrollment $enrollment, int $statusId): Enrollment
     {
-        $snapshot = $enrollment->submissionSnapshot();
-        if ($snapshot !== null && $snapshot->id() !== null) {
-            throw new RuntimeException('A new Enrollment cannot contain a persisted submission snapshot.');
-        }
-
         $statement = $this->connection->prepare(
             'INSERT INTO enrollments ('
             . 'student_id, family_id, academic_period_id, status_id, grade_id, section_id, '
@@ -168,9 +153,6 @@ final class PdoEnrollmentRepository implements EnrollmentRepository
         $this->requireSingleRow($statement, 'Enrollment insert');
 
         $enrollmentId = new EnrollmentId($this->generatedId('Enrollment'));
-        if ($snapshot !== null) {
-            $this->insertSnapshot($enrollmentId, $snapshot);
-        }
 
         return $this->requireEnrollment($enrollmentId, 'Inserted Enrollment could not be reconstructed.');
     }
@@ -187,19 +169,6 @@ final class PdoEnrollmentRepository implements EnrollmentRepository
             throw new RuntimeException('Enrollment update failed because the persisted row disappeared.');
         }
         $this->assertImmutableRootState($row, $enrollment);
-
-        $persistedSnapshot = $this->findSnapshot($enrollmentId);
-        $requestedSnapshot = $enrollment->submissionSnapshot();
-        if ($requestedSnapshot === null && $persistedSnapshot !== null) {
-            throw new RuntimeException('A persisted Enrollment snapshot cannot be removed through save.');
-        }
-        if ($requestedSnapshot !== null && $requestedSnapshot->id() !== null) {
-            if ($persistedSnapshot === null
-                || !$this->sameSnapshotState($persistedSnapshot, $requestedSnapshot, true)
-            ) {
-                throw new RuntimeException('A persisted Enrollment snapshot is immutable or belongs elsewhere.');
-            }
-        }
 
         $statement = $this->connection->prepare(
             'UPDATE enrollments SET status_id = :statusId, grade_id = :gradeId, section_id = :sectionId, '
@@ -226,149 +195,7 @@ final class PdoEnrollmentRepository implements EnrollmentRepository
             throw new RuntimeException('Enrollment update did not affect zero or one row.');
         }
 
-        if ($requestedSnapshot !== null && $requestedSnapshot->id() === null) {
-            if ($persistedSnapshot !== null) {
-                $this->deleteSnapshot($persistedSnapshot);
-            }
-            $this->insertSnapshot($enrollmentId, $requestedSnapshot);
-        }
-
         return $this->requireEnrollment($enrollmentId, 'Updated Enrollment could not be reconstructed.');
-    }
-
-    private function insertSnapshot(
-        EnrollmentId $enrollmentId,
-        EnrollmentSubmissionSnapshot $snapshot,
-    ): void {
-        if ($snapshot->id() !== null
-            || $snapshot->address()->id() !== null
-            || array_filter($snapshot->emergencyContacts(), static fn ($child): bool => $child->id() !== null) !== []
-            || array_filter($snapshot->authorizedPickups(), static fn ($child): bool => $child->id() !== null) !== []
-        ) {
-            throw new RuntimeException('A new submission snapshot and every child must be unpersisted.');
-        }
-
-        $statement = $this->connection->prepare(
-            'INSERT INTO enrollment_submission_snapshots '
-            . '(enrollment_id, created_by_representative_id, created_at) '
-            . 'VALUES (:enrollmentId, :representativeId, :createdAt)'
-        );
-        $statement->execute([
-            ':enrollmentId' => $enrollmentId->value(),
-            ':representativeId' => $snapshot->createdByRepresentativeId()->value(),
-            ':createdAt' => $this->formatTimestamp($snapshot->createdAt()),
-        ]);
-        $this->requireSingleRow($statement, 'Enrollment submission snapshot insert');
-        $snapshotId = new EnrollmentSubmissionSnapshotId($this->generatedId('Enrollment submission snapshot'));
-
-        $this->insertAddress($snapshotId, $snapshot->address());
-        foreach ($snapshot->emergencyContacts() as $contact) {
-            $this->insertEmergencyContact($snapshotId, $contact);
-        }
-        foreach ($snapshot->authorizedPickups() as $pickup) {
-            $this->insertAuthorizedPickup($snapshotId, $pickup);
-        }
-    }
-
-    private function insertAddress(
-        EnrollmentSubmissionSnapshotId $snapshotId,
-        SubmittedAddressSnapshot $address,
-    ): void {
-        $geolocation = $address->geolocation();
-        $statement = $this->connection->prepare(
-            'INSERT INTO snapshot_addresses ('
-            . 'enrollment_submission_snapshot_id, label, main_street, street_number, secondary_street, '
-            . 'sector, reference, latitude, longitude'
-            . ') VALUES ('
-            . ':snapshotId, :label, :mainStreet, :streetNumber, :secondaryStreet, '
-            . ':sector, :reference, :latitude, :longitude'
-            . ')'
-        );
-        $statement->execute([
-            ':snapshotId' => $snapshotId->value(),
-            ':label' => $address->label(),
-            ':mainStreet' => $address->mainStreet(),
-            ':streetNumber' => $address->streetNumber(),
-            ':secondaryStreet' => $address->secondaryStreet(),
-            ':sector' => $address->sector(),
-            ':reference' => $address->reference(),
-            ':latitude' => $geolocation?->latitude(),
-            ':longitude' => $geolocation?->longitude(),
-        ]);
-        $this->requireSingleRow($statement, 'Submitted address snapshot insert');
-        $this->generatedId('Submitted address snapshot');
-    }
-
-    private function insertEmergencyContact(
-        EnrollmentSubmissionSnapshotId $snapshotId,
-        SubmittedEmergencyContactSnapshot $contact,
-    ): void {
-        $statement = $this->connection->prepare(
-            'INSERT INTO snapshot_emergency_contacts ('
-            . 'enrollment_submission_snapshot_id, names, relationship_type_code, relationship_type_name, '
-            . 'mobile_phone, phone, email, observations, priority, sort_order'
-            . ') VALUES ('
-            . ':snapshotId, :names, :relationshipTypeCode, :relationshipTypeName, '
-            . ':mobilePhone, :phone, :email, :observations, :priority, :sortOrder'
-            . ')'
-        );
-        $statement->execute([
-            ':snapshotId' => $snapshotId->value(),
-            ':names' => $contact->names(),
-            ':relationshipTypeCode' => $contact->relationshipTypeCode(),
-            ':relationshipTypeName' => $contact->relationshipTypeName(),
-            ':mobilePhone' => $contact->mobilePhone(),
-            ':phone' => $contact->phone(),
-            ':email' => $contact->email(),
-            ':observations' => $contact->observations(),
-            ':priority' => $contact->priority(),
-            ':sortOrder' => $contact->sortOrder(),
-        ]);
-        $this->requireSingleRow($statement, 'Submitted emergency contact snapshot insert');
-        $this->generatedId('Submitted emergency contact snapshot');
-    }
-
-    private function insertAuthorizedPickup(
-        EnrollmentSubmissionSnapshotId $snapshotId,
-        SubmittedAuthorizedPickupSnapshot $pickup,
-    ): void {
-        $statement = $this->connection->prepare(
-            'INSERT INTO snapshot_authorized_pickups ('
-            . 'enrollment_submission_snapshot_id, names, relationship_type_code, relationship_type_name, '
-            . 'mobile_phone, phone, document_type_code, document_type_name, document_number, observations'
-            . ') VALUES ('
-            . ':snapshotId, :names, :relationshipTypeCode, :relationshipTypeName, '
-            . ':mobilePhone, :phone, :documentTypeCode, :documentTypeName, :documentNumber, :observations'
-            . ')'
-        );
-        $statement->execute([
-            ':snapshotId' => $snapshotId->value(),
-            ':names' => $pickup->names(),
-            ':relationshipTypeCode' => $pickup->relationshipTypeCode(),
-            ':relationshipTypeName' => $pickup->relationshipTypeName(),
-            ':mobilePhone' => $pickup->mobilePhone(),
-            ':phone' => $pickup->phone(),
-            ':documentTypeCode' => $pickup->documentTypeCode(),
-            ':documentTypeName' => $pickup->documentTypeName(),
-            ':documentNumber' => $pickup->documentNumber(),
-            ':observations' => $pickup->observations(),
-        ]);
-        $this->requireSingleRow($statement, 'Submitted authorized pickup snapshot insert');
-        $this->generatedId('Submitted authorized pickup snapshot');
-    }
-
-    private function deleteSnapshot(EnrollmentSubmissionSnapshot $snapshot): void
-    {
-        $snapshotId = $snapshot->id();
-        if ($snapshotId === null) {
-            throw new RuntimeException('Only a persisted submission snapshot can be replaced.');
-        }
-
-        $statement = $this->connection->prepare(
-            'DELETE FROM enrollment_submission_snapshots WHERE id = :id'
-        );
-        $statement->execute([':id' => $snapshotId->value()]);
-        $this->requireSingleRow($statement, 'Enrollment submission snapshot replacement delete');
     }
 
     private function mapUniqueEnrollment(PDOStatement $statement, string $multipleMessage): ?Enrollment
@@ -407,7 +234,6 @@ final class PdoEnrollmentRepository implements EnrollmentRepository
                 ? null
                 : new TransportInformation($this->boolean($row['requires_institutional_transport'], 'Transport flag')),
             $this->boolean($row['is_authorized_to_leave_alone'], 'Leave-alone flag'),
-            $this->findSnapshot($id),
             $this->parseTimestamp($row['started_at'], 'Enrollment started_at'),
             $this->nullableTimestamp($row['submitted_at'], 'Enrollment submitted_at'),
             $this->nullableTimestamp($row['completed_at'], 'Enrollment completed_at'),
@@ -504,165 +330,6 @@ final class PdoEnrollmentRepository implements EnrollmentRepository
             $this->nullableString($row['pediatrician_phone'], 'Pediatrician phone'),
             $this->nullableString($row['medical_observations'], 'Medical observations'),
         );
-    }
-
-    private function findSnapshot(EnrollmentId $enrollmentId): ?EnrollmentSubmissionSnapshot
-    {
-        $statement = $this->connection->prepare(
-            'SELECT id, enrollment_id, created_by_representative_id, created_at '
-            . 'FROM enrollment_submission_snapshots WHERE enrollment_id = :enrollmentId'
-        );
-        $statement->execute([':enrollmentId' => $enrollmentId->value()]);
-        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
-        if (count($rows) > 1) {
-            throw new RuntimeException('Enrollment has more than one persisted submission snapshot.');
-        }
-        if ($rows === []) {
-            return null;
-        }
-
-        $row = $rows[0];
-        if ($this->positiveInt($row['enrollment_id'], 'Snapshot Enrollment id') !== $enrollmentId->value()) {
-            throw new RuntimeException('Submission snapshot does not belong to the requested Enrollment.');
-        }
-        $snapshotId = new EnrollmentSubmissionSnapshotId(
-            $this->positiveInt($row['id'], 'Enrollment submission snapshot id'),
-        );
-
-        return EnrollmentSubmissionSnapshot::reconstitute(
-            $snapshotId,
-            new RepresentativeId($this->positiveInt(
-                $row['created_by_representative_id'],
-                'Snapshot Representative id',
-            )),
-            $this->parseTimestamp($row['created_at'], 'Enrollment submission snapshot created_at'),
-            $this->findSnapshotAddress($snapshotId),
-            $this->findEmergencyContacts($snapshotId),
-            $this->findAuthorizedPickups($snapshotId),
-        );
-    }
-
-    private function findSnapshotAddress(
-        EnrollmentSubmissionSnapshotId $snapshotId,
-    ): SubmittedAddressSnapshot {
-        $statement = $this->connection->prepare(
-            'SELECT id, enrollment_submission_snapshot_id, label, main_street, street_number, '
-            . 'secondary_street, sector, reference, latitude, longitude '
-            . 'FROM snapshot_addresses WHERE enrollment_submission_snapshot_id = :snapshotId'
-        );
-        $statement->execute([':snapshotId' => $snapshotId->value()]);
-        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
-        if (count($rows) !== 1) {
-            throw new RuntimeException('A persisted submission snapshot requires exactly one address.');
-        }
-
-        $row = $rows[0];
-        $this->assertSnapshotOwnership($row, $snapshotId, 'Submitted address');
-        $latitude = $row['latitude'];
-        $longitude = $row['longitude'];
-        if (($latitude === null) !== ($longitude === null)) {
-            throw new RuntimeException('Submitted address has a partial persisted geolocation.');
-        }
-
-        return SubmittedAddressSnapshot::reconstitute(
-            new SubmittedAddressSnapshotId($this->positiveInt($row['id'], 'Submitted address id')),
-            $this->string($row['label'], 'Submitted address label'),
-            $this->string($row['main_street'], 'Submitted address main street'),
-            $this->nullableString($row['street_number'], 'Submitted address street number'),
-            $this->nullableString($row['secondary_street'], 'Submitted address secondary street'),
-            $this->nullableString($row['sector'], 'Submitted address sector'),
-            $this->nullableString($row['reference'], 'Submitted address reference'),
-            $latitude === null
-                ? null
-                : new Geolocation(
-                    $this->decimalString($latitude, 'Submitted address latitude'),
-                    $this->decimalString($longitude, 'Submitted address longitude'),
-                ),
-        );
-    }
-
-    /** @return list<SubmittedEmergencyContactSnapshot> */
-    private function findEmergencyContacts(EnrollmentSubmissionSnapshotId $snapshotId): array
-    {
-        $statement = $this->connection->prepare(
-            'SELECT id, enrollment_submission_snapshot_id, names, relationship_type_code, '
-            . 'relationship_type_name, mobile_phone, phone, email, observations, priority, sort_order '
-            . 'FROM snapshot_emergency_contacts '
-            . 'WHERE enrollment_submission_snapshot_id = :snapshotId ORDER BY sort_order ASC, id ASC'
-        );
-        $statement->execute([':snapshotId' => $snapshotId->value()]);
-        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
-        if ($rows === []) {
-            throw new RuntimeException('A persisted submission snapshot requires at least one emergency contact.');
-        }
-
-        return array_map(function (array $row) use ($snapshotId): SubmittedEmergencyContactSnapshot {
-            $this->assertSnapshotOwnership($row, $snapshotId, 'Submitted emergency contact');
-
-            return SubmittedEmergencyContactSnapshot::reconstitute(
-                new SubmittedEmergencyContactSnapshotId($this->positiveInt(
-                    $row['id'],
-                    'Submitted emergency contact id',
-                )),
-                $this->string($row['names'], 'Submitted emergency contact names'),
-                $this->string($row['relationship_type_code'], 'Submitted emergency relationship code'),
-                $this->string($row['relationship_type_name'], 'Submitted emergency relationship name'),
-                $this->string($row['mobile_phone'], 'Submitted emergency mobile phone'),
-                $this->nullableString($row['phone'], 'Submitted emergency phone'),
-                $this->nullableString($row['email'], 'Submitted emergency email'),
-                $this->nullableString($row['observations'], 'Submitted emergency observations'),
-                $row['priority'] === null
-                    ? null
-                    : $this->positiveInt($row['priority'], 'Submitted emergency priority'),
-                $this->positiveInt($row['sort_order'], 'Submitted emergency sort order'),
-            );
-        }, $rows);
-    }
-
-    /** @return list<SubmittedAuthorizedPickupSnapshot> */
-    private function findAuthorizedPickups(EnrollmentSubmissionSnapshotId $snapshotId): array
-    {
-        $statement = $this->connection->prepare(
-            'SELECT id, enrollment_submission_snapshot_id, names, relationship_type_code, '
-            . 'relationship_type_name, mobile_phone, phone, document_type_code, document_type_name, '
-            . 'document_number, observations FROM snapshot_authorized_pickups '
-            . 'WHERE enrollment_submission_snapshot_id = :snapshotId ORDER BY id ASC'
-        );
-        $statement->execute([':snapshotId' => $snapshotId->value()]);
-
-        return array_map(function (array $row) use ($snapshotId): SubmittedAuthorizedPickupSnapshot {
-            $this->assertSnapshotOwnership($row, $snapshotId, 'Submitted authorized pickup');
-
-            return SubmittedAuthorizedPickupSnapshot::reconstitute(
-                new SubmittedAuthorizedPickupSnapshotId($this->positiveInt(
-                    $row['id'],
-                    'Submitted authorized pickup id',
-                )),
-                $this->string($row['names'], 'Submitted authorized pickup names'),
-                $this->string($row['relationship_type_code'], 'Submitted pickup relationship code'),
-                $this->string($row['relationship_type_name'], 'Submitted pickup relationship name'),
-                $this->string($row['mobile_phone'], 'Submitted pickup mobile phone'),
-                $this->nullableString($row['phone'], 'Submitted pickup phone'),
-                $this->string($row['document_type_code'], 'Submitted pickup document type code'),
-                $this->string($row['document_type_name'], 'Submitted pickup document type name'),
-                $this->string($row['document_number'], 'Submitted pickup document number'),
-                $this->nullableString($row['observations'], 'Submitted pickup observations'),
-            );
-        }, $statement->fetchAll(PDO::FETCH_ASSOC));
-    }
-
-    /** @param array<string, mixed> $row */
-    private function assertSnapshotOwnership(
-        array $row,
-        EnrollmentSubmissionSnapshotId $snapshotId,
-        string $entity,
-    ): void {
-        if ($this->positiveInt(
-            $row['enrollment_submission_snapshot_id'],
-            $entity . ' snapshot id',
-        ) !== $snapshotId->value()) {
-            throw new RuntimeException($entity . ' belongs to another submission snapshot.');
-        }
     }
 
     private function selectSql(): string
@@ -805,8 +472,7 @@ final class PdoEnrollmentRepository implements EnrollmentRepository
             && $this->sameTimestamp($persisted->startedAt(), $requested->startedAt())
             && $this->sameNullableTimestamp($persisted->submittedAt(), $requested->submittedAt())
             && $this->sameNullableTimestamp($persisted->completedAt(), $requested->completedAt())
-            && $this->sameNullableTimestamp($persisted->cancelledAt(), $requested->cancelledAt())
-            && $this->sameOptionalSnapshot($persisted->submissionSnapshot(), $requested->submissionSnapshot());
+            && $this->sameNullableTimestamp($persisted->cancelledAt(), $requested->cancelledAt());
     }
 
     private function sameOptionalPlacement(?AcademicPlacement $left, ?AcademicPlacement $right): bool
@@ -846,121 +512,6 @@ final class PdoEnrollmentRepository implements EnrollmentRepository
             || ($left !== null
                 && $right !== null
                 && $left->requiresInstitutionalTransport() === $right->requiresInstitutionalTransport());
-    }
-
-    private function sameOptionalSnapshot(
-        ?EnrollmentSubmissionSnapshot $persisted,
-        ?EnrollmentSubmissionSnapshot $requested,
-    ): bool {
-        if ($persisted === null || $requested === null) {
-            return $persisted === null && $requested === null;
-        }
-
-        return $this->sameSnapshotState($persisted, $requested, $requested->id() !== null);
-    }
-
-    private function sameSnapshotState(
-        EnrollmentSubmissionSnapshot $left,
-        EnrollmentSubmissionSnapshot $right,
-        bool $compareIdentities,
-    ): bool {
-        if ($compareIdentities && !$this->sameRequiredIdentity($left->id()?->value(), $right->id()?->value())) {
-            return false;
-        }
-        if (!$left->createdByRepresentativeId()->equals($right->createdByRepresentativeId())
-            || !$this->sameTimestamp($left->createdAt(), $right->createdAt())
-            || !$this->sameAddress($left->address(), $right->address(), $compareIdentities)
-        ) {
-            return false;
-        }
-
-        $leftEmergency = $left->emergencyContacts();
-        $rightEmergency = $right->emergencyContacts();
-        if (count($leftEmergency) !== count($rightEmergency)) {
-            return false;
-        }
-        foreach ($leftEmergency as $index => $contact) {
-            if (!$this->sameEmergencyContact($contact, $rightEmergency[$index], $compareIdentities)) {
-                return false;
-            }
-        }
-
-        return $this->pickupStates($left->authorizedPickups(), $compareIdentities)
-            === $this->pickupStates($right->authorizedPickups(), $compareIdentities);
-    }
-
-    private function sameAddress(
-        SubmittedAddressSnapshot $left,
-        SubmittedAddressSnapshot $right,
-        bool $compareIdentities,
-    ): bool {
-        if ($compareIdentities && !$this->sameRequiredIdentity($left->id()?->value(), $right->id()?->value())) {
-            return false;
-        }
-
-        $leftGeo = $left->geolocation();
-        $rightGeo = $right->geolocation();
-
-        return $left->label() === $right->label()
-            && $left->mainStreet() === $right->mainStreet()
-            && $left->streetNumber() === $right->streetNumber()
-            && $left->secondaryStreet() === $right->secondaryStreet()
-            && $left->sector() === $right->sector()
-            && $left->reference() === $right->reference()
-            && (($leftGeo === null && $rightGeo === null)
-                || ($leftGeo !== null && $rightGeo !== null && $leftGeo->equals($rightGeo)));
-    }
-
-    private function sameEmergencyContact(
-        SubmittedEmergencyContactSnapshot $left,
-        SubmittedEmergencyContactSnapshot $right,
-        bool $compareIdentities,
-    ): bool {
-        if ($compareIdentities && !$this->sameRequiredIdentity($left->id()?->value(), $right->id()?->value())) {
-            return false;
-        }
-
-        return $left->names() === $right->names()
-            && $left->relationshipTypeCode() === $right->relationshipTypeCode()
-            && $left->relationshipTypeName() === $right->relationshipTypeName()
-            && $left->mobilePhone() === $right->mobilePhone()
-            && $left->phone() === $right->phone()
-            && $left->email() === $right->email()
-            && $left->observations() === $right->observations()
-            && $left->priority() === $right->priority()
-            && $left->sortOrder() === $right->sortOrder();
-    }
-
-    /**
-     * @param list<SubmittedAuthorizedPickupSnapshot> $pickups
-     * @return list<string>
-     */
-    private function pickupStates(array $pickups, bool $includeIdentity): array
-    {
-        $states = array_map(static function (
-            SubmittedAuthorizedPickupSnapshot $pickup,
-        ) use ($includeIdentity): string {
-            return json_encode([
-                $includeIdentity ? $pickup->id()?->value() : null,
-                $pickup->names(),
-                $pickup->relationshipTypeCode(),
-                $pickup->relationshipTypeName(),
-                $pickup->mobilePhone(),
-                $pickup->phone(),
-                $pickup->documentTypeCode(),
-                $pickup->documentTypeName(),
-                $pickup->documentNumber(),
-                $pickup->observations(),
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
-        }, $pickups);
-        sort($states, SORT_STRING);
-
-        return $states;
-    }
-
-    private function sameRequiredIdentity(?int $left, ?int $right): bool
-    {
-        return $left !== null && $right !== null && $left === $right;
     }
 
     private function sameTimestamp(DateTimeImmutable $left, DateTimeImmutable $right): bool
@@ -1048,15 +599,6 @@ final class PdoEnrollmentRepository implements EnrollmentRepository
     private function nullableString(mixed $value, string $label): ?string
     {
         return $value === null ? null : $this->string($value, $label);
-    }
-
-    private function decimalString(mixed $value, string $label): string
-    {
-        if (is_string($value) || is_int($value) || is_float($value)) {
-            return (string) $value;
-        }
-
-        throw new RuntimeException($label . ' must be a persisted decimal value.');
     }
 
     private function requireSingleRow(PDOStatement $statement, string $operation): void

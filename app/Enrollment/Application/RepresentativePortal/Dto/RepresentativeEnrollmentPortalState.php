@@ -17,8 +17,8 @@ final readonly class RepresentativeEnrollmentPortalState
         public ?RepresentativeEnrollmentStudentOption $selectedStudent,
         public ?EnrollmentOutput $enrollment,
         public bool $enrollmentAvailable,
-        public bool $maintenanceEnabled,
-        public bool $readOnly,
+        public bool $liveDataMaintenanceEnabled,
+        public bool $enrollmentDraftMaintenanceEnabled,
         public RepresentativeEnrollmentProgress $progress,
     ) {
     }

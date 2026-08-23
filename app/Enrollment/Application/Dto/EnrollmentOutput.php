@@ -23,7 +23,6 @@ final readonly class EnrollmentOutput
         public ?DateTimeImmutable $submittedAt,
         public ?DateTimeImmutable $completedAt,
         public ?DateTimeImmutable $cancelledAt,
-        public bool $hasSubmissionSnapshot,
     ) {
     }
 }

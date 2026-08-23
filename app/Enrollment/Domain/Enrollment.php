@@ -28,7 +28,6 @@ final class Enrollment
         private ?MedicalInformation $medicalInformation,
         private ?TransportInformation $transportInformation,
         private bool $isAuthorizedToLeaveAlone,
-        private ?EnrollmentSubmissionSnapshot $submissionSnapshot,
         private readonly DateTimeImmutable $startedAt,
         private ?DateTimeImmutable $submittedAt,
         private ?DateTimeImmutable $completedAt,
@@ -58,7 +57,6 @@ final class Enrollment
             $medicalInformation,
             $transportInformation,
             $isAuthorizedToLeaveAlone,
-            null,
             $startedAt,
             null,
             null,
@@ -77,7 +75,6 @@ final class Enrollment
         ?MedicalInformation $medicalInformation,
         ?TransportInformation $transportInformation,
         bool $isAuthorizedToLeaveAlone,
-        ?EnrollmentSubmissionSnapshot $submissionSnapshot,
         DateTimeImmutable $startedAt,
         ?DateTimeImmutable $submittedAt,
         ?DateTimeImmutable $completedAt,
@@ -85,16 +82,11 @@ final class Enrollment
     ): self {
         self::assertPersistedState(
             $status,
-            $submissionSnapshot,
             $startedAt,
             $submittedAt,
             $completedAt,
             $cancelledAt,
         );
-
-        if ($submissionSnapshot !== null && $submissionSnapshot->id() === null) {
-            throw new InvalidEnrollmentState('A reconstituted Enrollment requires a persisted snapshot identity.');
-        }
 
         return new self(
             $id,
@@ -107,7 +99,6 @@ final class Enrollment
             $medicalInformation,
             $transportInformation,
             $isAuthorizedToLeaveAlone,
-            $submissionSnapshot,
             $startedAt,
             $submittedAt,
             $completedAt,
@@ -165,11 +156,6 @@ final class Enrollment
         return $this->isAuthorizedToLeaveAlone;
     }
 
-    public function submissionSnapshot(): ?EnrollmentSubmissionSnapshot
-    {
-        return $this->submissionSnapshot;
-    }
-
     public function startedAt(): DateTimeImmutable
     {
         return $this->startedAt;
@@ -220,17 +206,14 @@ final class Enrollment
         $this->isAuthorizedToLeaveAlone = $isAuthorized;
     }
 
-    public function submit(
-        EnrollmentSubmissionSnapshot $submissionSnapshot,
-        DateTimeImmutable $submittedAt,
-    ): void {
+    public function submit(DateTimeImmutable $submittedAt): void
+    {
         $this->assertDraft();
         $this->assertNotBeforeStartedAt($submittedAt, 'SubmittedAt');
         if ($this->submittedAt !== null && $submittedAt < $this->submittedAt) {
             throw new InvalidEnrollmentState('A resubmission cannot precede the previous submission.');
         }
 
-        $this->submissionSnapshot = $submissionSnapshot;
         $this->submittedAt = $submittedAt;
         $this->completedAt = null;
         $this->cancelledAt = null;
@@ -290,7 +273,6 @@ final class Enrollment
 
     private static function assertPersistedState(
         EnrollmentStatus $status,
-        ?EnrollmentSubmissionSnapshot $snapshot,
         DateTimeImmutable $startedAt,
         ?DateTimeImmutable $submittedAt,
         ?DateTimeImmutable $completedAt,
@@ -302,21 +284,16 @@ final class Enrollment
             }
         }
 
-        $hasSubmissionHistory = $submittedAt !== null && $snapshot !== null;
-        if (($submittedAt === null) !== ($snapshot === null)) {
-            throw new InvalidEnrollmentState('SubmittedAt and the submission snapshot must be present together.');
-        }
-
         if ($status === EnrollmentStatus::Draft
             && ($completedAt !== null || $cancelledAt !== null)) {
             throw new InvalidEnrollmentState('A Draft Enrollment cannot have completion or cancellation timestamps.');
         }
         if ($status === EnrollmentStatus::Submitted
-            && (!$hasSubmissionHistory || $completedAt !== null || $cancelledAt !== null)) {
+            && ($submittedAt === null || $completedAt !== null || $cancelledAt !== null)) {
             throw new InvalidEnrollmentState('A Submitted Enrollment requires only submission history.');
         }
         if ($status === EnrollmentStatus::Completed
-            && (!$hasSubmissionHistory || $completedAt === null || $cancelledAt !== null)) {
+            && ($submittedAt === null || $completedAt === null || $cancelledAt !== null)) {
             throw new InvalidEnrollmentState('A Completed Enrollment requires submission and completion history.');
         }
         if ($status === EnrollmentStatus::Cancelled

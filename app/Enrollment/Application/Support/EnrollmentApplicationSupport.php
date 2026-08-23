@@ -106,7 +106,6 @@ final class EnrollmentApplicationSupport
             self::nullableUtcSecond($enrollment->submittedAt()),
             self::nullableUtcSecond($enrollment->completedAt()),
             self::nullableUtcSecond($enrollment->cancelledAt()),
-            $enrollment->submissionSnapshot() !== null,
         );
     }
 
@@ -141,8 +140,7 @@ final class EnrollmentApplicationSupport
             && self::sameTimestamp($persisted->startedAt(), $expected->startedAt())
             && self::sameNullableTimestamp($persisted->submittedAt(), $expected->submittedAt())
             && self::sameNullableTimestamp($persisted->completedAt(), $expected->completedAt())
-            && self::sameNullableTimestamp($persisted->cancelledAt(), $expected->cancelledAt())
-            && ($persisted->submissionSnapshot() === null) === ($expected->submissionSnapshot() === null);
+            && self::sameNullableTimestamp($persisted->cancelledAt(), $expected->cancelledAt());
     }
 
     private static function optionalEquals(?object $left, ?object $right): bool
