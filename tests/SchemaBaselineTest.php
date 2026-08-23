@@ -15,16 +15,14 @@ use Tests\Support\TestRunner;
 
 function registerSchemaBaselineTests(TestRunner $runner): void
 {
-    $runner->add('migration baseline declares the exact 35-table domain inventory', function (): void {
+    $runner->add('migration baseline declares the exact 31-table domain inventory', function (): void {
         $expected = [
             'academic_periods', 'acknowledgement_requirements', 'authorized_pickup_assignments', 'cantons',
-            'document_types', 'education_levels', 'emergency_contact_assignments',
-            'enrollment_submission_snapshots', 'enrollments',
+            'document_types', 'education_levels', 'emergency_contact_assignments', 'enrollments',
             'families', 'family_addresses', 'family_authorized_pickups', 'family_emergency_contacts',
             'family_representatives', 'family_students', 'grades', 'marital_statuses', 'parishes', 'persons', 'provinces',
             'relationship_types', 'representative_address_assignments', 'representatives', 'sections',
-            'representative_acknowledgement_completions', 'representative_acknowledgements',
-            'sexes', 'snapshot_addresses', 'snapshot_authorized_pickups', 'snapshot_emergency_contacts',
+            'representative_acknowledgement_completions', 'representative_acknowledgements', 'sexes',
             'statuses', 'status_types', 'student_address_assignments', 'students', 'users',
         ];
 
@@ -54,11 +52,26 @@ function registerSchemaBaselineTests(TestRunner $runner): void
             '001_create_migrations_table', '002_create_status_schema', '003_create_reference_catalogs',
             '004_create_academic_core', '005_create_identity_and_roles', '006_create_family_management',
             '007_create_institutional_documents', '008_create_enrollment', '009_create_submission_snapshots',
+            '010_remove_submission_snapshots',
         ], $versions, 'Migration runner did not load the expected ordered sequence.');
+    });
+
+    $runner->add('migration 010 removes snapshots and restores migration 009 schema exactly', function (): void {
+        $migration009 = (string) file_get_contents(
+            dirname(__DIR__) . '/database/migrations/009_create_submission_snapshots.php'
+        );
+        $migration010 = (string) file_get_contents(
+            dirname(__DIR__) . '/database/migrations/010_remove_submission_snapshots.php'
+        );
+
+        assertBaselineSame([
+            'snapshot_authorized_pickups', 'snapshot_emergency_contacts',
+            'snapshot_addresses', 'enrollment_submission_snapshots',
+        ], baselineDroppedTables($migration010), 'Migration 010 must drop snapshot children before their root.');
         assertBaselineSame(
-            [],
-            glob(dirname(__DIR__) . '/database/migrations/010_*.php') ?: [],
-            'Migration 010 is forbidden while ADR-0018 authorizes the corrected clean baseline.'
+            baselineCreateStatements($migration009),
+            baselineCreateStatements($migration010),
+            'Migration 010 down must restore the exact migration 009 schema.',
         );
     });
 
@@ -94,17 +107,12 @@ function registerSchemaBaselineTests(TestRunner $runner): void
         ], baselineTableColumns($source, 'users'), 'User columns differ from the approved baseline.');
     });
 
-    $runner->add('Family address and submitted snapshot use the simplified address baseline', function (): void {
+    $runner->add('Family address keeps the simplified baseline without a submitted copy', function (): void {
         $migrationSource = implode("\n", baselineMigrationSources());
         assertBaselineSame([
             'id', 'family_id', 'label', 'main_street', 'street_number', 'secondary_street',
             'sector', 'reference', 'latitude', 'longitude', 'status_id', 'created_at', 'updated_at',
         ], baselineTableColumns($migrationSource, 'family_addresses'), 'FamilyAddress columns differ from ADR-0021.');
-        assertBaselineSame([
-            'id', 'enrollment_submission_snapshot_id', 'label', 'main_street', 'street_number',
-            'secondary_street', 'sector', 'reference', 'latitude', 'longitude', 'created_at',
-        ], baselineTableColumns($migrationSource, 'snapshot_addresses'), 'SubmittedAddressSnapshot columns differ from ADR-0021.');
-
         $pattern = '/CREATE TABLE `family_addresses` \((.*?)\n\s*\) ENGINE=/s';
         if (preg_match($pattern, $migrationSource, $match) !== 1) {
             throw new RuntimeException('Unable to inspect the FamilyAddress migration declaration.');
@@ -191,14 +199,14 @@ function registerSchemaBaselineTests(TestRunner $runner): void
         }
     });
 
-    $runner->add('all 35 table columns match DATABASE_DESIGN', function (): void {
+    $runner->add('all 31 table columns match DATABASE_DESIGN', function (): void {
         $design = file_get_contents(dirname(__DIR__) . '/.ai/12.DATABASE_DESIGN.md');
         if (!is_string($design)) {
             throw new RuntimeException('Unable to read DATABASE_DESIGN.');
         }
 
         preg_match_all('/^## 4\.\d+ `([^`]+)`\R(.*?)(?=^## 4\.|^# 5\.)/ms', $design, $sections, PREG_SET_ORDER);
-        assertBaselineSame(35, count($sections), 'DATABASE_DESIGN must describe exactly 35 physical tables.');
+        assertBaselineSame(31, count($sections), 'DATABASE_DESIGN must describe exactly 31 physical tables.');
 
         $migrationSource = implode("\n", baselineMigrationSources());
         foreach ($sections as $section) {
@@ -290,10 +298,10 @@ function registerSchemaBaselineTests(TestRunner $runner): void
             );
         }
 
-        assertBaselineSame(58, substr_count($migrationSource, 'REFERENCES `'), 'Unexpected foreign-key count.');
-        assertBaselineSame(3, substr_count($migrationSource, 'ON DELETE CASCADE'), 'Only the three snapshot child FKs may cascade.');
-        assertBaselineSame(55, substr_count($migrationSource, 'ON DELETE RESTRICT'), 'All non-snapshot FKs must restrict deletion.');
-        assertBaselineSame(58, substr_count($migrationSource, 'ON UPDATE RESTRICT'), 'Every FK must restrict key updates.');
+        assertBaselineSame(53, substr_count($migrationSource, 'REFERENCES `'), 'Unexpected foreign-key count.');
+        assertBaselineSame(0, substr_count($migrationSource, 'ON DELETE CASCADE'), 'The active baseline must not cascade deletion.');
+        assertBaselineSame(53, substr_count($migrationSource, 'ON DELETE RESTRICT'), 'Every active FK must restrict deletion.');
+        assertBaselineSame(53, substr_count($migrationSource, 'ON UPDATE RESTRICT'), 'Every active FK must restrict key updates.');
     });
 
     $runner->add('baseline excludes discarded schema and Person-owned family resources', function (): void {
@@ -353,7 +361,7 @@ function baselineMigrationSources(): array
 
     $files = [];
     foreach ($entries as $entry) {
-        if (preg_match('/^00[2-9]_.+\.php$/', $entry) === 1) {
+        if (preg_match('/^00[2-8]_.+\.php$/', $entry) === 1) {
             $files[] = $directory . '/' . $entry;
         }
     }
@@ -395,6 +403,28 @@ function baselineDeclaredTables(string $source): array
     return array_merge(
         array_values(array_filter($literalTables[1], static fn (string $table): bool => !str_contains($table, '%'))),
         $generatedTables[1]
+    );
+}
+
+/** @return list<string> */
+function baselineDroppedTables(string $source): array
+{
+    if (preg_match('/\$this->dropTables\(\$connection, \[(.*?)\]\);/s', $source, $match) !== 1) {
+        return [];
+    }
+    preg_match_all("/'([^']+)'/", $match[1], $tables);
+
+    return $tables[1];
+}
+
+/** @return list<string> */
+function baselineCreateStatements(string $source): array
+{
+    preg_match_all('/CREATE TABLE `[^`]+` \(.*?\) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci/s', $source, $matches);
+
+    return array_map(
+        static fn (string $statement): string => preg_replace('/\s+/', ' ', trim($statement)) ?? $statement,
+        $matches[0],
     );
 }
 

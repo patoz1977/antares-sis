@@ -95,7 +95,8 @@ function registerRepresentativeEnrollmentApplicationTests(TestRunner $runner): v
         $state = $fixture['state']->handle(44);
 
         assertSameValue(false, $state->enrollmentAvailable);
-        assertSameValue(false, $state->maintenanceEnabled);
+        assertSameValue(false, $state->liveDataMaintenanceEnabled);
+        assertSameValue(false, $state->enrollmentDraftMaintenanceEnabled);
         assertSameValue(null, $state->enrollment);
         assertSameValue(0, $fixture['enrollments']->saveCalls);
     });
@@ -104,7 +105,8 @@ function registerRepresentativeEnrollmentApplicationTests(TestRunner $runner): v
         $fixture = e011PortalFixture(acknowledgementsSatisfied: false);
         $state = $fixture['state']->handle(44);
 
-        assertSameValue(false, $state->maintenanceEnabled);
+        assertSameValue(false, $state->liveDataMaintenanceEnabled);
+        assertSameValue(false, $state->enrollmentDraftMaintenanceEnabled);
         assertSameValue(RepresentativeEnrollmentSectionStatus::Pending, $state->progress->acknowledgements);
         assertThrows(
             static fn () => $fixture['personal']->handle(new UpdateRepresentativePersonalInformationInput(
@@ -125,6 +127,9 @@ function registerRepresentativeEnrollmentApplicationTests(TestRunner $runner): v
         assertSameValue(44, $created->studentId);
         assertSameValue(77, $created->familyId);
         assertSameValue(5, $created->academicPeriodId);
+        $state = $fixture['state']->handle(44);
+        assertSameValue(true, $state->liveDataMaintenanceEnabled);
+        assertSameValue(true, $state->enrollmentDraftMaintenanceEnabled);
         assertSameValue(1, $fixture['enrollments']->saveCalls);
         assertSameValue(false, in_array('begin-nested', $fixture['transactions']->events, true));
     });
@@ -156,7 +161,8 @@ function registerRepresentativeEnrollmentApplicationTests(TestRunner $runner): v
         $enrollment->cancel(new DateTimeImmutable('2026-08-21 12:14:00+00:00'));
         $fixture['enrollments']->save($enrollment);
 
-        assertSameValue(true, $fixture['state']->handle(44)->readOnly);
+        assertSameValue(true, $fixture['state']->handle(44)->liveDataMaintenanceEnabled);
+        assertSameValue(false, $fixture['state']->handle(44)->enrollmentDraftMaintenanceEnabled);
         assertThrows(
             static fn () => $fixture['leave']->handle(
                 new UpdateRepresentativeEnrollmentLeaveAloneInput(77, 5, 44, true)
@@ -246,7 +252,6 @@ function registerRepresentativeEnrollmentApplicationTests(TestRunner $runner): v
         assertSameValue(RepresentativeEnrollmentSectionStatus::Pending, $after->progress->transport);
         assertSameValue(RepresentativeEnrollmentSectionStatus::Complete, $after->progress->pickupOrLeaveAlone);
         assertSameValue(RepresentativeEnrollmentSectionStatus::Complete, $after->progress->employment);
-        assertSameValue(false, $after->enrollment?->hasSubmissionSnapshot);
     });
 
     $runner->add('E011 Phase 2 remains Application-only and excludes lifecycle and Delivery behavior', function (): void {

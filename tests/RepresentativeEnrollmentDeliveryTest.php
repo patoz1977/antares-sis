@@ -316,15 +316,20 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         }
     });
 
-    $runner->add('E011 Submitted Completed and Cancelled states are readonly in UI and Application', function (): void {
+    $runner->add('E011 non-Draft lifecycle locks annual data while live data remains editable', function (): void {
         foreach ([EnrollmentStatus::Submitted, EnrollmentStatus::Completed, EnrollmentStatus::Cancelled] as $status) {
             $fixture = representativeEnrollmentDeliveryFixture();
             $fixture['services']['enrollments']->seed(representativeEnrollmentPersistedState($status));
             deliveryRequest('GET', '/representative/enrollment?student_id=44', ['student_id' => '44']);
             $html = $fixture['controller']->index();
             deliveryAssertContains('Status: <strong>' . $status->value . '</strong>', $html);
-            deliveryAssertContains('This Enrollment is read-only.', $html);
-            assertSameValue(false, str_contains($html, 'Save Personal Information'));
+            deliveryAssertContains("This Enrollment's annual information is read-only.", $html);
+            deliveryAssertContains('Save Personal Information', $html);
+            deliveryAssertContains('Save Student Information', $html);
+            assertSameValue(false, str_contains($html, 'Save Billing Information'));
+            assertSameValue(false, str_contains($html, 'Save Medical Information'));
+            assertSameValue(false, str_contains($html, 'Save Transport Information'));
+            assertSameValue(false, str_contains($html, 'Save Leave-alone Authorization'));
             assertSameValue(false, str_contains($html, 'Start Enrollment Draft'));
             assertSameValue(false, str_contains($html, 'Submit Enrollment'));
 
@@ -335,6 +340,25 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
             );
             assertSameValue(409, http_response_code());
             deliveryAssertContains('no longer editable', $manual);
+
+            representativeEnrollmentPost($fixture['controller'], 'updateRepresentativeContact', array_merge(
+                representativeEnrollmentContext(),
+                ['email' => 'after-lifecycle@example.test', 'mobile_phone' => '', 'landline_phone' => 'live'],
+            ));
+            assertSameValue(303, http_response_code());
+            representativeEnrollmentPost($fixture['controller'], 'updateStudentPersonal', array_merge(
+                representativeEnrollmentContext(),
+                [
+                    'first_name' => 'Live', 'middle_name' => '', 'first_surname' => 'Student',
+                    'second_surname' => '', 'birth_date' => '2015-02-03',
+                    'marital_status_id' => '4', 'education_level_id' => '5',
+                    'institutional_code' => 'FORGED', 'status_id' => '999', 'person_id' => '999',
+                ],
+            ));
+            assertSameValue(303, http_response_code());
+            assertSameValue('STUDENT-44', $fixture['services']['students']->findById(
+                new \App\Student\Domain\ValueObject\StudentId(44),
+            )?->institutionalCode()->value());
         }
     });
 
@@ -382,8 +406,9 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         $readOnly['services']['enrollments']->seed(representativeEnrollmentPersistedState(EnrollmentStatus::Submitted));
         deliveryRequest('GET', '/representative/enrollment?student_id=44', ['student_id' => '44']);
         $readOnlyHtml = $readOnly['controller']->index();
-        assertSameValue(false, str_contains($readOnlyHtml, 'data-enrollment-autosave data-section='));
-        assertSameValue(false, str_contains($readOnlyHtml, 'Save Personal Information'));
+        assertSameValue(4, substr_count($readOnlyHtml, ' data-enrollment-autosave data-section='));
+        assertSameValue(true, str_contains($readOnlyHtml, 'Save Personal Information'));
+        assertSameValue(false, str_contains($readOnlyHtml, 'Save Billing Information'));
         assertSameValue(false, str_contains($readOnlyHtml, 'Submit Enrollment'));
         assertSameValue(false, str_contains(
             representativeEnrollmentNormalizedSource('resources/views/representative-portal/index.php'),
@@ -702,7 +727,6 @@ function representativeEnrollmentPersistedState(EnrollmentStatus $status): Enrol
         null,
         null,
         false,
-        $hasSubmission ? persistedSubmissionSnapshot() : null,
         new \DateTimeImmutable('2026-08-21 12:00:00+00:00'),
         $submittedAt,
         $status === EnrollmentStatus::Completed ? new \DateTimeImmutable('2026-08-21 14:00:00+00:00') : null,
