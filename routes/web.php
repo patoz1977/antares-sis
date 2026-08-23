@@ -6,6 +6,7 @@ use App\IdentityAccess\Http\AuthenticationController;
 use App\IdentityAccess\Http\RepresentativePortalController;
 use App\IdentityAccess\Http\RepresentativeUserController;
 use App\Enrollment\Http\RepresentativeEnrollmentController;
+use App\Enrollment\Http\RepresentativeEnrollmentSubmissionController;
 use App\Family\Http\FamilyAdministrationMiddleware;
 use App\Family\Http\FamilyController;
 use App\Family\Http\FamilyResourceController;
@@ -25,6 +26,9 @@ $authenticationController = $app->container()->make(AuthenticationController::cl
 $representativePortalController = $app->container()->make(RepresentativePortalController::class);
 $representativeUserController = $app->container()->make(RepresentativeUserController::class);
 $representativeEnrollmentController = $app->container()->make(RepresentativeEnrollmentController::class);
+$representativeEnrollmentSubmissionController = $app->container()->make(
+    RepresentativeEnrollmentSubmissionController::class,
+);
 $personController = $app->container()->make(PersonController::class);
 $familyController = $app->container()->make(FamilyController::class);
 $familyResourceController = $app->container()->make(FamilyResourceController::class);
@@ -162,6 +166,16 @@ $router->post(
 $router->post(
     '/representative/enrollment/student/leave-alone',
     [$representativeEnrollmentController, 'updateLeaveAlone'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/enrollment/review',
+    [$representativeEnrollmentSubmissionController, 'review'],
+    AuthenticationMiddleware::class,
+);
+$router->post(
+    '/representative/enrollment/submit',
+    [$representativeEnrollmentSubmissionController, 'submit'],
     AuthenticationMiddleware::class,
 );
 $router->get(

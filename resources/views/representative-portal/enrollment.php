@@ -172,6 +172,7 @@ $autosaveFeedback = static function (string $section) use ($escape): void {
     <?php endif; ?>
     <?php else: ?>
     <p>Status: <strong><?= $escape($enrollment->status) ?></strong></p>
+    <p><a href="/representative/enrollment/review?student_id=<?= $escape($studentOption->student->id) ?>" data-enrollment-navigation>Review and submit Enrollment</a></p>
     <?php if (!$portal->enrollmentDraftMaintenanceEnabled): ?>
     <p role="status">This Enrollment's annual information is read-only.</p>
     <?php else: ?>
