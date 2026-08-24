@@ -43,7 +43,7 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         }
         assertSameValue(10, substr_count($routes, '[$representativeEnrollmentController,'));
         $start = strpos($routes, "\$router->get(\n    '/representative/enrollment'");
-        $end = strpos($routes, "\$router->get(\n    '/representative/resources'", is_int($start) ? $start : 0);
+        $end = strpos($routes, "\$router->get(\n    '/representative/enrollment/review'", is_int($start) ? $start : 0);
         $slice = is_int($start) && is_int($end) ? substr($routes, $start, $end - $start) : '';
         assertSameValue(10, substr_count($slice, 'AuthenticationMiddleware::class'));
         foreach (['AdministrationMiddleware', 'family_id}', 'academic_period_id}', 'enrollment_id', '/submit', '/complete', '/cancel', '/reopen'] as $forbidden) {

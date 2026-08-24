@@ -41,6 +41,8 @@ use App\Enrollment\Application\Submission\SubmitRepresentativeEnrollment;
 use App\Enrollment\Application\Support\EnrollmentDraftInitializer;
 use App\Enrollment\Domain\EnrollmentRepository;
 use App\Enrollment\Http\RepresentativeEnrollmentController;
+use App\Enrollment\Http\RepresentativeEnrollmentSubmissionController;
+use App\Enrollment\Http\RepresentativeEnrollmentSubmissionViewDataFactory;
 use App\Enrollment\Http\RepresentativeEnrollmentAutosaveResponder;
 use App\Enrollment\Http\RepresentativeEnrollmentInputMapper;
 use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
@@ -495,6 +497,14 @@ $container->singleton(
     RepresentativeEnrollmentAutosaveResponder::class,
 );
 $container->singleton(RepresentativeEnrollmentController::class, RepresentativeEnrollmentController::class);
+$container->singleton(
+    RepresentativeEnrollmentSubmissionViewDataFactory::class,
+    RepresentativeEnrollmentSubmissionViewDataFactory::class,
+);
+$container->singleton(
+    RepresentativeEnrollmentSubmissionController::class,
+    RepresentativeEnrollmentSubmissionController::class,
+);
 
 $app = new Application($config, $container);
 
