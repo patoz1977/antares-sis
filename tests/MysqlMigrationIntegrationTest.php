@@ -2379,7 +2379,7 @@ function runMariaDbEnrollmentAdministrativeLifecycleScenario(
         false,
         null,
         'Administrative pediatrician',
-        'Administrative pediatrician phone',
+        '+593990001234',
         'Administrative annual observations',
     );
     $annualTransport = new EnrollmentTransportInformation(true);
