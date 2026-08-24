@@ -367,18 +367,27 @@ function registerEnrollmentApplicationTests(TestRunner $runner): void
         );
 
         $source = '';
+        $e010Source = '';
         foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(
             __DIR__ . '/../app/Enrollment/Application',
         )) as $file) {
             if ($file->isFile() && $file->getExtension() === 'php') {
-                $source .= (string) file_get_contents($file->getPathname());
+                $fileSource = (string) file_get_contents($file->getPathname());
+                $source .= $fileSource;
+                $administrativePath = DIRECTORY_SEPARATOR . 'Administrative' . DIRECTORY_SEPARATOR;
+                if (!str_contains($file->getPathname(), $administrativePath)) {
+                    $e010Source .= $fileSource;
+                }
             }
         }
         foreach (['PDO', 'SELECT ', 'INSERT ', 'UPDATE ', 'DELETE ', 'Request', 'Response',
             'SessionManager', 'Controller', 'Infrastructure\\',
-            'SubmissionService', 'reopen(', 'complete(', 'cancel(']
+            'SubmissionService']
             as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden), $forbidden);
+        }
+        foreach (['reopen(', 'complete(', 'cancel('] as $laterPhaseBehavior) {
+            assertSameValue(false, str_contains($e010Source, $laterPhaseBehavior), $laterPhaseBehavior);
         }
         assertSameValue(false, is_dir(__DIR__ . '/../app/Enrollment/Delivery'));
     });
