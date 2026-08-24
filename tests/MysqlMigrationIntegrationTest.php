@@ -148,6 +148,11 @@ use App\Enrollment\Application\Submission\EnrollmentSubmissionValidator;
 use App\Enrollment\Application\Submission\Exception\EnrollmentSubmissionContextUnavailable;
 use App\Enrollment\Application\Submission\Exception\EnrollmentSubmissionNotReady;
 use App\Enrollment\Application\Submission\SubmitRepresentativeEnrollment;
+use App\Enrollment\Application\Administrative\CancelEnrollment;
+use App\Enrollment\Application\Administrative\CompleteEnrollment;
+use App\Enrollment\Application\Administrative\Exception\AdministrativeEnrollmentInvalidTransition;
+use App\Enrollment\Application\Administrative\GetAdministrativeEnrollmentReview;
+use App\Enrollment\Application\Administrative\ReopenEnrollment;
 use App\Enrollment\Domain\EnrollmentRepository;
 use App\Enrollment\Domain\Exception\InvalidEnrollmentState;
 use Core\Database\ConnectionFactory;
@@ -2306,6 +2311,416 @@ function runMariaDbEnrollmentSubmissionApplicationScenario(
     assertIntegration(
         $releasedEnrollment?->id()?->value() === $enrollmentId,
         'E012 rollback did not release the Enrollment root lock.'
+    );
+}
+
+function runMariaDbEnrollmentAdministrativeLifecycleScenario(
+    ConnectionManager $managerA,
+    ConnectionManager $managerB,
+    PDO $connectionA,
+    PDO $connectionB,
+    int $studentAId,
+    int $studentBId,
+    int $familyId,
+): void {
+    $repositoryA = new PdoEnrollmentRepository($managerA);
+    $repositoryB = new PdoEnrollmentRepository($managerB);
+    $connectionB->exec('SET innodb_lock_wait_timeout = 1');
+
+    $gradeId = (int) $connectionA->query(
+        "SELECT id FROM grades WHERE code = 'E010_GRADE'"
+    )->fetchColumn();
+    $sectionId = (int) $connectionA->query(
+        "SELECT id FROM sections WHERE code = 'E010_SECTION'"
+    )->fetchColumn();
+    $inactiveStatusId = (int) $connectionA->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'INACTIVE'"
+    )->fetchColumn();
+    assertIntegration(
+        $gradeId > 0 && $sectionId > 0 && $inactiveStatusId > 0,
+        'E012 Administrative lifecycle AcademicPlacement fixture is unavailable.'
+    );
+
+    $periodIds = [];
+    for ($index = 1; $index <= 9; $index++) {
+        $connectionA->prepare(
+            'INSERT INTO academic_periods (code, name, starts_on, ends_on, status_id) '
+            . 'VALUES (:code, :name, :startsOn, :endsOn, :statusId)'
+        )->execute([
+            ':code' => sprintf('E012_ADMIN_%02d', $index),
+            ':name' => sprintf('E012 Administrative %02d', $index),
+            ':startsOn' => sprintf('2027-%02d-01', $index),
+            ':endsOn' => sprintf('2027-%02d-28', $index),
+            ':statusId' => $inactiveStatusId,
+        ]);
+        $periodId = (int) $connectionA->lastInsertId();
+        assertIntegration($periodId > 0, 'E012 Administrative AcademicPeriod identity was not generated.');
+        $periodIds[] = $periodId;
+    }
+
+    $annualBilling = new EnrollmentBillingInformation(
+        new EnrollmentIdentificationTypeId(1),
+        'E012-ADMIN-BILLING',
+        'Administrative annual legal name',
+        'Administrative annual address',
+        'administrative-annual@example.test',
+        'Administrative annual phone',
+    );
+    $annualMedical = new EnrollmentMedicalInformation(
+        false,
+        null,
+        false,
+        null,
+        false,
+        null,
+        false,
+        null,
+        false,
+        null,
+        'Administrative pediatrician',
+        'Administrative pediatrician phone',
+        'Administrative annual observations',
+    );
+    $annualTransport = new EnrollmentTransportInformation(true);
+    $submittedAt = new DateTimeImmutable('2026-08-24 15:01:02+00:00');
+
+    $createEnrollment = static function (
+        PdoEnrollmentRepository $repository,
+        int $studentId,
+        int $familyId,
+        int $periodId,
+        bool $submitted,
+    ) use (
+        $gradeId,
+        $sectionId,
+        $annualBilling,
+        $annualMedical,
+        $annualTransport,
+        $submittedAt,
+    ): EnrollmentAggregate {
+        $enrollment = EnrollmentAggregate::startDraft(
+            new EnrollmentStudentId($studentId),
+            new EnrollmentFamilyId($familyId),
+            new EnrollmentAcademicPeriodId($periodId),
+            new DateTimeImmutable('2026-08-24 14:00:00+00:00'),
+            new EnrollmentAcademicPlacement(
+                new EnrollmentGradeId($gradeId),
+                new EnrollmentSectionId($sectionId),
+            ),
+            $annualBilling,
+            $annualMedical,
+            $annualTransport,
+            true,
+        );
+        if ($submitted) {
+            $enrollment->submit($submittedAt);
+        }
+
+        return $repository->save($enrollment);
+    };
+
+    $clock = static fn (string $instant): Clock => new class($instant) implements Clock {
+        public function __construct(private readonly string $instant)
+        {
+        }
+
+        public function now(): DateTimeImmutable
+        {
+            return new DateTimeImmutable($this->instant);
+        }
+    };
+
+    $execute = static function (
+        string $operation,
+        EnrollmentRepository $repository,
+        ConnectionManager $manager,
+        int $enrollmentId,
+        string $instant,
+    ) use ($clock): \App\Enrollment\Application\Dto\EnrollmentOutput {
+        $transactions = new PdoTransactionRunner($manager);
+
+        return match ($operation) {
+            'reopen' => (new ReopenEnrollment($repository, $transactions))->handle($enrollmentId),
+            'complete' => (new CompleteEnrollment(
+                $repository,
+                $transactions,
+                $clock($instant),
+            ))->handle($enrollmentId),
+            'cancel' => (new CancelEnrollment(
+                $repository,
+                $transactions,
+                $clock($instant),
+            ))->handle($enrollmentId),
+            default => throw new RuntimeException('Unsupported E012 Administrative lifecycle operation.'),
+        };
+    };
+
+    $matrix = [
+        ['Reopen/Reopen', 'reopen', 'reopen', true, 'DRAFT', 'DRAFT', false],
+        ['Complete/Complete', 'complete', 'complete', true, 'COMPLETED', 'COMPLETED', false],
+        ['Cancel/Cancel', 'cancel', 'cancel', false, 'CANCELLED', 'CANCELLED', false],
+        ['Reopen/Complete', 'reopen', 'complete', true, 'DRAFT', 'DRAFT', false],
+        ['Reopen/Cancel', 'reopen', 'cancel', true, 'DRAFT', 'CANCELLED', true],
+        ['Complete/Cancel', 'complete', 'cancel', true, 'COMPLETED', 'COMPLETED', false],
+    ];
+
+    foreach ($matrix as $index => [
+        $label,
+        $firstOperation,
+        $secondOperation,
+        $startsSubmitted,
+        $expectedWinnerStatus,
+        $expectedFinalStatus,
+        $secondAllowed,
+    ]) {
+        $persisted = $createEnrollment(
+            $repositoryA,
+            $studentAId,
+            $familyId,
+            $periodIds[$index],
+            $startsSubmitted,
+        );
+        $enrollmentId = $persisted->id()
+            ?? throw new RuntimeException('E012 Administrative race Enrollment identity is unavailable.');
+        $before = (new GetAdministrativeEnrollmentReview($repositoryA))->handle($enrollmentId->value());
+        $competingBlocked = false;
+        $afterLock = static function () use (
+            &$competingBlocked,
+            $execute,
+            $secondOperation,
+            $repositoryB,
+            $managerB,
+            $enrollmentId,
+            $index,
+            $label,
+        ): void {
+            try {
+                $execute(
+                    $secondOperation,
+                    $repositoryB,
+                    $managerB,
+                    $enrollmentId->value(),
+                    sprintf('2026-08-24 16:%02d:02+00:00', $index),
+                );
+            } catch (PDOException $exception) {
+                if (!isExpectedMariaDbLockException($exception)) {
+                    throw new RuntimeException(
+                        sprintf('E012 Administrative %s competing operation failed unexpectedly.', $label),
+                        previous: $exception,
+                    );
+                }
+                $competingBlocked = true;
+            }
+        };
+        $interceptingRepository = new class($repositoryA, $afterLock) implements EnrollmentRepository {
+            private bool $intercepted = false;
+
+            public function __construct(
+                private readonly EnrollmentRepository $delegate,
+                private readonly Closure $afterLock,
+            ) {
+            }
+
+            public function findById(EnrollmentAggregateId $id): ?EnrollmentAggregate
+            {
+                return $this->delegate->findById($id);
+            }
+
+            public function findByIdForUpdate(EnrollmentAggregateId $id): ?EnrollmentAggregate
+            {
+                $enrollment = $this->delegate->findByIdForUpdate($id);
+                if (!$this->intercepted) {
+                    $this->intercepted = true;
+                    ($this->afterLock)();
+                }
+
+                return $enrollment;
+            }
+
+            public function findByStudentAndAcademicPeriod(
+                EnrollmentStudentId $studentId,
+                EnrollmentAcademicPeriodId $academicPeriodId,
+            ): ?EnrollmentAggregate {
+                return $this->delegate->findByStudentAndAcademicPeriod($studentId, $academicPeriodId);
+            }
+
+            public function save(EnrollmentAggregate $enrollment): EnrollmentAggregate
+            {
+                return $this->delegate->save($enrollment);
+            }
+        };
+
+        $winner = $execute(
+            $firstOperation,
+            $interceptingRepository,
+            $managerA,
+            $enrollmentId->value(),
+            sprintf('2026-08-24 16:%02d:01+00:00', $index),
+        );
+        $loserRejectedAfterCommit = false;
+        $secondAppliedAfterCommit = false;
+        try {
+            $execute(
+                $secondOperation,
+                $repositoryB,
+                $managerB,
+                $enrollmentId->value(),
+                sprintf('2026-08-24 16:%02d:03+00:00', $index),
+            );
+            $secondAppliedAfterCommit = true;
+        } catch (AdministrativeEnrollmentInvalidTransition) {
+            $loserRejectedAfterCommit = true;
+        }
+        $actual = (new GetAdministrativeEnrollmentReview($repositoryB))->handle($enrollmentId->value());
+        $expectedLifecycleSecond = $secondAllowed ? 3 : 1;
+
+        assertIntegration(
+            $competingBlocked
+            && ($secondAllowed
+                ? ($secondAppliedAfterCommit && !$loserRejectedAfterCommit)
+                : (!$secondAppliedAfterCommit && $loserRejectedAfterCommit))
+            && $winner->status === $expectedWinnerStatus
+            && $actual->status === $expectedFinalStatus
+            && $actual->id === $before->id
+            && $actual->studentId === $before->studentId
+            && $actual->familyId === $before->familyId
+            && $actual->academicPeriodId === $before->academicPeriodId
+            && $actual->startedAt == $before->startedAt
+            && $actual->submittedAt == $before->submittedAt
+            && $actual->academicPlacement == $before->academicPlacement
+            && $actual->billingInformation == $before->billingInformation
+            && $actual->medicalInformation == $before->medicalInformation
+            && $actual->transportInformation == $before->transportInformation
+            && $actual->isAuthorizedToLeaveAlone === $before->isAuthorizedToLeaveAlone
+            && ($expectedFinalStatus !== 'COMPLETED'
+                || ($actual->completedAt?->format('Y-m-d H:i:s') === sprintf(
+                    '2026-08-24 16:%02d:%02d',
+                    $index,
+                    $expectedLifecycleSecond,
+                )
+                    && $actual->cancelledAt === null))
+            && ($expectedFinalStatus !== 'CANCELLED'
+                || ($actual->cancelledAt?->format('Y-m-d H:i:s') === sprintf(
+                    '2026-08-24 16:%02d:%02d',
+                    $index,
+                    $expectedLifecycleSecond,
+                )
+                    && $actual->completedAt === null))
+            && ($expectedFinalStatus !== 'DRAFT'
+                || ($actual->completedAt === null && $actual->cancelledAt === null)),
+            sprintf('E012 Administrative %s did not serialize to one coherent lifecycle transition.', $label),
+        );
+    }
+
+    $lockedRoot = $createEnrollment($repositoryA, $studentAId, $familyId, $periodIds[6], true);
+    $unrelatedRoot = $createEnrollment($repositoryA, $studentBId, $familyId, $periodIds[7], true);
+    $lockedRootId = $lockedRoot->id()
+        ?? throw new RuntimeException('E012 Administrative locked-root identity is unavailable.');
+    $unrelatedRootId = $unrelatedRoot->id()
+        ?? throw new RuntimeException('E012 Administrative unrelated-root identity is unavailable.');
+    $connectionA->beginTransaction();
+    $repositoryA->findByIdForUpdate($lockedRootId);
+    $unrelatedResult = $execute(
+        'complete',
+        $repositoryB,
+        $managerB,
+        $unrelatedRootId->value(),
+        '2026-08-24 17:01:02+00:00',
+    );
+    $connectionA->rollBack();
+    assertIntegration(
+        $unrelatedResult->status === 'COMPLETED'
+        && $unrelatedResult->completedAt?->format('Y-m-d H:i:s') === '2026-08-24 17:01:02',
+        'E012 Administrative lock on one Enrollment blocked an unrelated Enrollment.'
+    );
+
+    $rollbackRoot = $createEnrollment($repositoryA, $studentAId, $familyId, $periodIds[8], true);
+    $rollbackRootId = $rollbackRoot->id()
+        ?? throw new RuntimeException('E012 Administrative rollback-root identity is unavailable.');
+    $failingRepository = new class($repositoryA) implements EnrollmentRepository {
+        public function __construct(private readonly EnrollmentRepository $delegate)
+        {
+        }
+
+        public function findById(EnrollmentAggregateId $id): ?EnrollmentAggregate
+        {
+            return $this->delegate->findById($id);
+        }
+
+        public function findByIdForUpdate(EnrollmentAggregateId $id): ?EnrollmentAggregate
+        {
+            return $this->delegate->findByIdForUpdate($id);
+        }
+
+        public function findByStudentAndAcademicPeriod(
+            EnrollmentStudentId $studentId,
+            EnrollmentAcademicPeriodId $academicPeriodId,
+        ): ?EnrollmentAggregate {
+            return $this->delegate->findByStudentAndAcademicPeriod($studentId, $academicPeriodId);
+        }
+
+        public function save(EnrollmentAggregate $enrollment): EnrollmentAggregate
+        {
+            $this->delegate->save($enrollment);
+            throw new RuntimeException('simulated E012 Administrative post-save failure');
+        }
+    };
+    $rollbackObserved = false;
+    try {
+        $execute(
+            'reopen',
+            $failingRepository,
+            $managerA,
+            $rollbackRootId->value(),
+            '2026-08-24 17:11:12+00:00',
+        );
+    } catch (RuntimeException $exception) {
+        $rollbackObserved = $exception->getMessage() === 'simulated E012 Administrative post-save failure';
+    }
+    $afterRollback = (new GetAdministrativeEnrollmentReview($repositoryB))->handle($rollbackRootId->value());
+    $afterRelease = $execute(
+        'reopen',
+        $repositoryB,
+        $managerB,
+        $rollbackRootId->value(),
+        '2026-08-24 17:11:13+00:00',
+    );
+    assertIntegration(
+        $rollbackObserved
+        && $afterRollback->status === 'SUBMITTED'
+        && $afterRollback->completedAt === null
+        && $afterRollback->cancelledAt === null
+        && $afterRelease->status === 'DRAFT',
+        'E012 Administrative rollback left a partial transition or retained the root lock.'
+    );
+
+    $draftBilling = new EnrollmentBillingInformation(
+        new EnrollmentIdentificationTypeId(1),
+        'E012-ADMIN-UPDATED',
+        'Updated after reopen',
+        'Updated annual address',
+        'updated-after-reopen@example.test',
+        'Updated annual phone',
+    );
+    $connectionA->beginTransaction();
+    $reopened = $repositoryA->findByIdForUpdate($rollbackRootId);
+    $reopened?->updateBillingInformation($draftBilling);
+    if ($reopened !== null) {
+        $repositoryA->save($reopened);
+    }
+    $connectionA->commit();
+    $reopenedResult = (new GetAdministrativeEnrollmentReview($repositoryA))->handle($rollbackRootId->value());
+    $countStatement = $connectionA->prepare(
+        'SELECT COUNT(*) FROM enrollments WHERE student_id = :studentId AND academic_period_id = :periodId'
+    );
+    $countStatement->execute([':studentId' => $studentAId, ':periodId' => $periodIds[8]]);
+    assertIntegration(
+        $reopenedResult->status === 'DRAFT'
+        && $reopenedResult->submittedAt?->format('Y-m-d H:i:s') === $submittedAt->format('Y-m-d H:i:s')
+        && $reopenedResult->billingInformation?->legalName === 'Updated after reopen'
+        && (int) $countStatement->fetchColumn() === 1,
+        'E012 Administrative Reopen did not preserve one mutable Draft with Submission history.'
     );
 }
 
@@ -6645,6 +7060,15 @@ try {
         $submissionOtherFamilyId,
         $generatedRelationshipTypeId,
     );
+    runMariaDbEnrollmentAdministrativeLifecycleScenario(
+        $managerA,
+        $managerB,
+        $connectionA,
+        $connectionB,
+        $generatedStudentId->value(),
+        $secondStudentId->value(),
+        $submissionFamilyId,
+    );
 
     echo 'MariaDB version: ' . $mariaDbVersion . "\n";
     echo 'Physical inventory: ' . count($actualTables) . ' tables including migrations metadata; '
@@ -6695,6 +7119,9 @@ try {
     echo "PASS MySQL E012 annual autosave-first post-Submission annual rejection and live-data mutability\n";
     echo "PASS MySQL E012 Family root same-Family serialization cross-Family isolation rollback and lock release\n";
     echo "PASS MySQL E012 stale ActivePeriod rejection with accumulated E009 E010 E011 concurrency regression\n";
+    echo "PASS MySQL E012 Administrative lifecycle roundtrip UTC annual preservation and exact review\n";
+    echo "PASS MySQL E012 Administrative same-root concurrency matrix and cross-root isolation\n";
+    echo "PASS MySQL E012 Administrative rollback no-partial-state and root-lock release\n";
     echo "PASS MySQL Academic Core Grade Section references and next ACTIVE Grade ordering\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {
