@@ -138,6 +138,7 @@ use App\Enrollment\Domain\ValueObject\SectionId as EnrollmentSectionId;
 use App\Enrollment\Domain\ValueObject\StudentId as EnrollmentStudentId;
 use App\Enrollment\Domain\ValueObject\TransportInformation as EnrollmentTransportInformation;
 use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
+use App\Enrollment\Infrastructure\Persistence\PdoSubmittedEnrollmentIdQuery;
 use App\Enrollment\Application\Dto\StartEnrollmentDraftInput;
 use App\Enrollment\Application\Dto\UpdateEnrollmentTransportInformationInput;
 use App\Enrollment\Application\Exception\EnrollmentFamilyContextUnavailable;
@@ -2721,6 +2722,176 @@ function runMariaDbEnrollmentAdministrativeLifecycleScenario(
         && $reopenedResult->billingInformation?->legalName === 'Updated after reopen'
         && (int) $countStatement->fetchColumn() === 1,
         'E012 Administrative Reopen did not preserve one mutable Draft with Submission history.'
+    );
+}
+
+function runMariaDbSubmittedEnrollmentQueryScenario(
+    ConnectionManager $manager,
+    PDO $connection,
+    int $studentAId,
+    int $studentBId,
+    int $familyId,
+): void {
+    $repository = new PdoEnrollmentRepository($manager);
+    $query = new PdoSubmittedEnrollmentIdQuery($manager);
+    $inactiveStatusId = (int) $connection->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'INACTIVE'"
+    )->fetchColumn();
+    assertIntegration($inactiveStatusId > 0, 'E012 Delivery INACTIVE AcademicPeriod status is unavailable.');
+
+    $activePeriods = $connection->query(
+        "SELECT ap.id FROM academic_periods ap "
+        . "INNER JOIN statuses s ON s.id = ap.status_id "
+        . "INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE' ORDER BY ap.id"
+    )->fetchAll(PDO::FETCH_COLUMN);
+    assertIntegration(
+        count($activePeriods) === 1 && (int) $activePeriods[0] > 0,
+        'E012 Delivery requires exactly one current ACTIVE AcademicPeriod fixture.'
+    );
+    $activePeriodId = (int) $activePeriods[0];
+
+    $activePairStatement = $connection->prepare(
+        'SELECT COUNT(*) FROM enrollments WHERE student_id = :studentId AND academic_period_id = :periodId'
+    );
+    $activeStudentId = null;
+    foreach ([$studentBId, $studentAId] as $candidateStudentId) {
+        $activePairStatement->execute([':studentId' => $candidateStudentId, ':periodId' => $activePeriodId]);
+        if ((int) $activePairStatement->fetchColumn() === 0) {
+            $activeStudentId = $candidateStudentId;
+            break;
+        }
+    }
+    assertIntegration(
+        $activeStudentId !== null,
+        'E012 Delivery active-period Submitted query fixture collides with an existing Enrollment.'
+    );
+
+    $periodIds = [];
+    foreach (['DRAFT', 'SUBMITTED', 'COMPLETED', 'CANCELLED'] as $index => $state) {
+        $connection->prepare(
+            'INSERT INTO academic_periods (code, name, starts_on, ends_on, status_id) '
+            . 'VALUES (:code, :name, :startsOn, :endsOn, :statusId)'
+        )->execute([
+            ':code' => 'E012_DELIVERY_' . $state,
+            ':name' => 'E012 Delivery ' . $state,
+            ':startsOn' => sprintf('2030-%02d-01', $index + 1),
+            ':endsOn' => sprintf('2030-%02d-28', $index + 1),
+            ':statusId' => $inactiveStatusId,
+        ]);
+        $periodIds[$state] = (int) $connection->lastInsertId();
+        assertIntegration(
+            $periodIds[$state] > 0,
+            'E012 Delivery AcademicPeriod identity was not generated.'
+        );
+    }
+
+    $create = static function (
+        PdoEnrollmentRepository $enrollments,
+        int $studentId,
+        int $familyId,
+        int $periodId,
+        string $state,
+        string $submittedAt,
+    ): EnrollmentAggregate {
+        $enrollment = EnrollmentAggregate::startDraft(
+            new EnrollmentStudentId($studentId),
+            new EnrollmentFamilyId($familyId),
+            new EnrollmentAcademicPeriodId($periodId),
+            new DateTimeImmutable('2029-12-01 00:00:00+00:00'),
+        );
+        if ($state !== 'DRAFT') {
+            $enrollment->submit(new DateTimeImmutable($submittedAt));
+        }
+        if ($state === 'COMPLETED') {
+            $enrollment->complete(new DateTimeImmutable('2030-01-20 12:00:00+00:00'));
+        } elseif ($state === 'CANCELLED') {
+            $enrollment->cancel(new DateTimeImmutable('2030-01-20 13:00:00+00:00'));
+        }
+
+        return $enrollments->save($enrollment);
+    };
+
+    $draft = $create($repository, $studentAId, $familyId, $periodIds['DRAFT'], 'DRAFT', '2030-01-01 00:00:00+00:00');
+    $inactiveSubmitted = $create(
+        $repository,
+        $studentAId,
+        $familyId,
+        $periodIds['SUBMITTED'],
+        'SUBMITTED',
+        '2030-01-15 10:00:00+00:00',
+    );
+    $activeSubmitted = $create(
+        $repository,
+        $activeStudentId,
+        $familyId,
+        $activePeriodId,
+        'SUBMITTED',
+        '2030-01-15 11:00:00+00:00',
+    );
+    $completed = $create(
+        $repository,
+        $studentAId,
+        $familyId,
+        $periodIds['COMPLETED'],
+        'COMPLETED',
+        '2030-01-15 12:00:00+00:00',
+    );
+    $cancelled = $create(
+        $repository,
+        $studentAId,
+        $familyId,
+        $periodIds['CANCELLED'],
+        'CANCELLED',
+        '2030-01-15 13:00:00+00:00',
+    );
+
+    $activeSubmittedId = $activeSubmitted->id()?->value() ?? 0;
+    $inactiveSubmittedId = $inactiveSubmitted->id()?->value() ?? 0;
+    $excludedIds = array_map(
+        static fn (EnrollmentAggregate $enrollment): int => $enrollment->id()?->value() ?? 0,
+        [$draft, $completed, $cancelled],
+    );
+    $before = (int) $connection->query('SELECT COUNT(*) FROM enrollments')->fetchColumn();
+    $submittedIds = $query->findSubmittedEnrollmentIds();
+    $after = (int) $connection->query('SELECT COUNT(*) FROM enrollments')->fetchColumn();
+
+    $statusStatement = $connection->prepare(
+        'SELECT st.code AS status_type_code, s.code AS status_code, ap_status.code AS period_status '
+        . 'FROM enrollments e '
+        . 'INNER JOIN statuses s ON s.id = e.status_id '
+        . 'INNER JOIN status_types st ON st.id = s.status_type_id '
+        . 'INNER JOIN academic_periods ap ON ap.id = e.academic_period_id '
+        . 'INNER JOIN statuses ap_status ON ap_status.id = ap.status_id '
+        . 'WHERE e.id = :id'
+    );
+    $resolved = [];
+    foreach ([$activeSubmittedId, $inactiveSubmittedId] as $id) {
+        $statusStatement->execute([':id' => $id]);
+        $resolved[$id] = $statusStatement->fetch(PDO::FETCH_ASSOC);
+    }
+
+    assertIntegration(
+        $activeSubmittedId > 0
+        && $inactiveSubmittedId > 0
+        && array_slice($submittedIds, 0, 2) === [$activeSubmittedId, $inactiveSubmittedId]
+        && count(array_intersect($submittedIds, $excludedIds)) === 0
+        && $before === $after
+        && $resolved[$activeSubmittedId]['status_type_code'] === 'ENROLLMENT_STATUS'
+        && $resolved[$activeSubmittedId]['status_code'] === 'SUBMITTED'
+        && $resolved[$activeSubmittedId]['period_status'] === 'ACTIVE'
+        && $resolved[$inactiveSubmittedId]['status_type_code'] === 'ENROLLMENT_STATUS'
+        && $resolved[$inactiveSubmittedId]['status_code'] === 'SUBMITTED'
+        && $resolved[$inactiveSubmittedId]['period_status'] === 'INACTIVE',
+        'E012 Delivery Submitted query did not preserve exact state filtering ordering and period context. '
+        . json_encode([
+            'submitted_ids' => $submittedIds,
+            'expected_first_ids' => [$activeSubmittedId, $inactiveSubmittedId],
+            'excluded_ids' => $excludedIds,
+            'row_counts' => [$before, $after],
+            'resolved_statuses' => $resolved,
+        ], JSON_THROW_ON_ERROR)
     );
 }
 
@@ -7069,6 +7240,13 @@ try {
         $secondStudentId->value(),
         $submissionFamilyId,
     );
+    runMariaDbSubmittedEnrollmentQueryScenario(
+        $managerA,
+        $connectionA,
+        $generatedStudentId->value(),
+        $secondStudentId->value(),
+        $submissionFamilyId,
+    );
 
     echo 'MariaDB version: ' . $mariaDbVersion . "\n";
     echo 'Physical inventory: ' . count($actualTables) . ' tables including migrations metadata; '
@@ -7122,6 +7300,7 @@ try {
     echo "PASS MySQL E012 Administrative lifecycle roundtrip UTC annual preservation and exact review\n";
     echo "PASS MySQL E012 Administrative same-root concurrency matrix and cross-root isolation\n";
     echo "PASS MySQL E012 Administrative rollback no-partial-state and root-lock release\n";
+    echo "PASS MySQL E012 Administrative Delivery Submitted query state order period context and side-effect freedom\n";
     echo "PASS MySQL Academic Core Grade Section references and next ACTIVE Grade ordering\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {

@@ -57,6 +57,7 @@ require __DIR__ . '/EnrollmentSubmissionApplicationTest.php';
 require __DIR__ . '/EnrollmentAdministrativeLifecycleApplicationTest.php';
 require __DIR__ . '/RepresentativeEnrollmentDeliveryTest.php';
 require __DIR__ . '/RepresentativeEnrollmentSubmissionDeliveryTest.php';
+require __DIR__ . '/EnrollmentAdministrativeDeliveryTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
@@ -107,6 +108,7 @@ require __DIR__ . '/SchemaBaselineTest.php';
 \Tests\registerEnrollmentAdministrativeLifecycleApplicationTests($runner);
 \Tests\registerRepresentativeEnrollmentDeliveryTests($runner);
 \Tests\registerRepresentativeEnrollmentSubmissionDeliveryTests($runner);
+\Tests\registerEnrollmentAdministrativeDeliveryTests($runner);
 \Tests\registerSchemaBaselineTests($runner);
 
 ob_start();

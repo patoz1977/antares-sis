@@ -23,6 +23,13 @@ use App\AcademicCore\Application\AcademicPlacementReferenceProvider;
 use App\AcademicCore\Domain\AcademicPeriodRepository;
 use App\AcademicCore\Infrastructure\Persistence\PdoAcademicPeriodRepository;
 use App\AcademicCore\Infrastructure\Persistence\PdoAcademicPlacementReferenceProvider;
+use App\Enrollment\Application\Administrative\CancelEnrollment;
+use App\Enrollment\Application\Administrative\CompleteEnrollment;
+use App\Enrollment\Application\Administrative\GetAdministrativeEnrollmentReview;
+use App\Enrollment\Application\Administrative\GetAdministrativeEnrollmentReviewContext;
+use App\Enrollment\Application\Administrative\ListSubmittedEnrollments;
+use App\Enrollment\Application\Administrative\ReopenEnrollment;
+use App\Enrollment\Application\Administrative\SubmittedEnrollmentIdQuery;
 use App\Enrollment\Application\RepresentativePortal\GetRepresentativeEnrollmentPortalState;
 use App\Enrollment\Application\RepresentativePortal\RepresentativeEnrollmentPortalAuthorization;
 use App\Enrollment\Application\RepresentativePortal\ResolveOrStartRepresentativeEnrollment;
@@ -40,12 +47,15 @@ use App\Enrollment\Application\Submission\GetRepresentativeEnrollmentSubmissionR
 use App\Enrollment\Application\Submission\SubmitRepresentativeEnrollment;
 use App\Enrollment\Application\Support\EnrollmentDraftInitializer;
 use App\Enrollment\Domain\EnrollmentRepository;
+use App\Enrollment\Http\AdministrativeEnrollmentController;
+use App\Enrollment\Http\EnrollmentAdministrationMiddleware;
 use App\Enrollment\Http\RepresentativeEnrollmentController;
 use App\Enrollment\Http\RepresentativeEnrollmentSubmissionController;
 use App\Enrollment\Http\RepresentativeEnrollmentSubmissionViewDataFactory;
 use App\Enrollment\Http\RepresentativeEnrollmentAutosaveResponder;
 use App\Enrollment\Http\RepresentativeEnrollmentInputMapper;
 use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
+use App\Enrollment\Infrastructure\Persistence\PdoSubmittedEnrollmentIdQuery;
 use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
 use App\IdentityAccess\Application\Contract\Clock;
@@ -308,6 +318,7 @@ $container->singleton(DeactivateAcademicPeriod::class, DeactivateAcademicPeriod:
 $container->singleton(RepresentativeRepository::class, PdoRepresentativeRepository::class);
 $container->singleton(StudentRepository::class, PdoStudentRepository::class);
 $container->singleton(EnrollmentRepository::class, PdoEnrollmentRepository::class);
+$container->singleton(SubmittedEnrollmentIdQuery::class, PdoSubmittedEnrollmentIdQuery::class);
 $container->singleton(FamilyRepository::class, PdoFamilyRepository::class);
 $container->singleton(RelationshipTypeLookup::class, PdoRelationshipTypeLookup::class);
 $container->singleton(DocumentTypeLookup::class, PdoDocumentTypeLookup::class);
@@ -505,6 +516,17 @@ $container->singleton(
     RepresentativeEnrollmentSubmissionController::class,
     RepresentativeEnrollmentSubmissionController::class,
 );
+$container->singleton(GetAdministrativeEnrollmentReview::class, GetAdministrativeEnrollmentReview::class);
+$container->singleton(
+    GetAdministrativeEnrollmentReviewContext::class,
+    GetAdministrativeEnrollmentReviewContext::class,
+);
+$container->singleton(ListSubmittedEnrollments::class, ListSubmittedEnrollments::class);
+$container->singleton(ReopenEnrollment::class, ReopenEnrollment::class);
+$container->singleton(CompleteEnrollment::class, CompleteEnrollment::class);
+$container->singleton(CancelEnrollment::class, CancelEnrollment::class);
+$container->singleton(AdministrativeEnrollmentController::class, AdministrativeEnrollmentController::class);
+$container->singleton(EnrollmentAdministrationMiddleware::class, EnrollmentAdministrationMiddleware::class);
 
 $app = new Application($config, $container);
 
