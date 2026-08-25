@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\IdentityAccess\Http\AuthenticationController;
 use App\IdentityAccess\Http\RepresentativePortalController;
 use App\IdentityAccess\Http\RepresentativeUserController;
+use App\Enrollment\Http\AdministrativeEnrollmentController;
+use App\Enrollment\Http\EnrollmentAdministrationMiddleware;
 use App\Enrollment\Http\RepresentativeEnrollmentController;
 use App\Enrollment\Http\RepresentativeEnrollmentSubmissionController;
 use App\Family\Http\FamilyAdministrationMiddleware;
@@ -25,6 +27,7 @@ use Core\Routing\Router;
 $authenticationController = $app->container()->make(AuthenticationController::class);
 $representativePortalController = $app->container()->make(RepresentativePortalController::class);
 $representativeUserController = $app->container()->make(RepresentativeUserController::class);
+$administrativeEnrollmentController = $app->container()->make(AdministrativeEnrollmentController::class);
 $representativeEnrollmentController = $app->container()->make(RepresentativeEnrollmentController::class);
 $representativeEnrollmentSubmissionController = $app->container()->make(
     RepresentativeEnrollmentSubmissionController::class,
@@ -57,12 +60,41 @@ $institutionalAcknowledgementMiddleware = [
     AuthenticationMiddleware::class,
     InstitutionalDocumentsAdministrationMiddleware::class,
 ];
+$enrollmentAdministrationMiddleware = [
+    AuthenticationMiddleware::class,
+    EnrollmentAdministrationMiddleware::class,
+];
 
 $router->get('/login', [$authenticationController, 'showLogin']);
 $router->get('/forgot-password', [$authenticationController, 'showForgotPassword']);
 $router->post('/login', [$authenticationController, 'login']);
 $router->post('/logout', [$authenticationController, 'logout']);
 $router->get('/', [$authenticationController, 'dashboard'], AuthenticationMiddleware::class);
+$router->get(
+    '/enrollments',
+    [$administrativeEnrollmentController, 'index'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->get(
+    '/enrollments/review',
+    [$administrativeEnrollmentController, 'review'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->post(
+    '/enrollments/reopen',
+    [$administrativeEnrollmentController, 'reopen'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->post(
+    '/enrollments/complete',
+    [$administrativeEnrollmentController, 'complete'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->post(
+    '/enrollments/cancel',
+    [$administrativeEnrollmentController, 'cancel'],
+    $enrollmentAdministrationMiddleware,
+);
 $router->get(
     '/institutional-acknowledgements',
     [$institutionalAcknowledgementController, 'index'],
