@@ -62,6 +62,8 @@ use App\Enrollment\Application\Support\EnrollmentDraftInitializer;
 use App\Enrollment\Domain\EnrollmentRepository;
 use App\Enrollment\Http\AdministrativeEnrollmentController;
 use App\Enrollment\Http\EnrollmentAdministrationMiddleware;
+use App\Enrollment\Http\EnrollmentReportCsvWriter;
+use App\Enrollment\Http\EnrollmentReportingController;
 use App\Enrollment\Http\RepresentativeEnrollmentController;
 use App\Enrollment\Http\RepresentativeEnrollmentSubmissionController;
 use App\Enrollment\Http\RepresentativeEnrollmentSubmissionViewDataFactory;
@@ -562,6 +564,8 @@ $container->singleton(CompleteEnrollment::class, CompleteEnrollment::class);
 $container->singleton(CancelEnrollment::class, CancelEnrollment::class);
 $container->singleton(AdministrativeEnrollmentController::class, AdministrativeEnrollmentController::class);
 $container->singleton(EnrollmentAdministrationMiddleware::class, EnrollmentAdministrationMiddleware::class);
+$container->singleton(EnrollmentReportCsvWriter::class, EnrollmentReportCsvWriter::class);
+$container->singleton(EnrollmentReportingController::class, EnrollmentReportingController::class);
 
 $app = new Application($config, $container);
 

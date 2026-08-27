@@ -129,7 +129,7 @@ function registerEnrollmentAdministrativeDeliveryTests(TestRunner $runner): void
             assertSameValue(1, substr_count($routes, $route), $route);
         }
         assertSameValue(
-            5,
+            16,
             substr_count($routes, "    \$enrollmentAdministrationMiddleware,\n);"),
         );
         foreach (['/admin/enrollments', '/enrollments/reopen?id=', '/enrollments/complete?id=', '/enrollments/cancel?id='] as $forbidden) {
