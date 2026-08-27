@@ -30,6 +30,19 @@ use App\Enrollment\Application\Administrative\GetAdministrativeEnrollmentReviewC
 use App\Enrollment\Application\Administrative\ListSubmittedEnrollments;
 use App\Enrollment\Application\Administrative\ReopenEnrollment;
 use App\Enrollment\Application\Administrative\SubmittedEnrollmentIdQuery;
+use App\Enrollment\Application\Reporting\AcademicPeriodReportingQuery;
+use App\Enrollment\Application\Reporting\EnrollmentSummaryQuery;
+use App\Enrollment\Application\Reporting\GetEnrollmentReportingPeriods;
+use App\Enrollment\Application\Reporting\GetEnrollmentSummaryReport;
+use App\Enrollment\Application\Reporting\GetStudentBillingReport;
+use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
+use App\Enrollment\Application\Reporting\GetStudentMedicalReport;
+use App\Enrollment\Application\Reporting\GetStudentRepresentativeDirectory;
+use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingPeriod;
+use App\Enrollment\Application\Reporting\StudentBillingReportQuery;
+use App\Enrollment\Application\Reporting\StudentEnrollmentListQuery;
+use App\Enrollment\Application\Reporting\StudentMedicalReportQuery;
+use App\Enrollment\Application\Reporting\StudentRepresentativeDirectoryQuery;
 use App\Enrollment\Application\RepresentativePortal\GetRepresentativeEnrollmentPortalState;
 use App\Enrollment\Application\RepresentativePortal\RepresentativeEnrollmentPortalAuthorization;
 use App\Enrollment\Application\RepresentativePortal\ResolveOrStartRepresentativeEnrollment;
@@ -56,6 +69,12 @@ use App\Enrollment\Http\RepresentativeEnrollmentAutosaveResponder;
 use App\Enrollment\Http\RepresentativeEnrollmentInputMapper;
 use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
 use App\Enrollment\Infrastructure\Persistence\PdoSubmittedEnrollmentIdQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoAcademicPeriodReportingQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoEnrollmentSummaryQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoStudentBillingReportQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoStudentEnrollmentListQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoStudentMedicalReportQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoStudentRepresentativeDirectoryQuery;
 use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
 use App\IdentityAccess\Application\Contract\Clock;
@@ -319,6 +338,22 @@ $container->singleton(RepresentativeRepository::class, PdoRepresentativeReposito
 $container->singleton(StudentRepository::class, PdoStudentRepository::class);
 $container->singleton(EnrollmentRepository::class, PdoEnrollmentRepository::class);
 $container->singleton(SubmittedEnrollmentIdQuery::class, PdoSubmittedEnrollmentIdQuery::class);
+$container->singleton(AcademicPeriodReportingQuery::class, PdoAcademicPeriodReportingQuery::class);
+$container->singleton(EnrollmentSummaryQuery::class, PdoEnrollmentSummaryQuery::class);
+$container->singleton(StudentEnrollmentListQuery::class, PdoStudentEnrollmentListQuery::class);
+$container->singleton(
+    StudentRepresentativeDirectoryQuery::class,
+    PdoStudentRepresentativeDirectoryQuery::class,
+);
+$container->singleton(StudentBillingReportQuery::class, PdoStudentBillingReportQuery::class);
+$container->singleton(StudentMedicalReportQuery::class, PdoStudentMedicalReportQuery::class);
+$container->singleton(GetEnrollmentReportingPeriods::class, GetEnrollmentReportingPeriods::class);
+$container->singleton(ResolveEnrollmentReportingPeriod::class, ResolveEnrollmentReportingPeriod::class);
+$container->singleton(GetEnrollmentSummaryReport::class, GetEnrollmentSummaryReport::class);
+$container->singleton(GetStudentEnrollmentReport::class, GetStudentEnrollmentReport::class);
+$container->singleton(GetStudentRepresentativeDirectory::class, GetStudentRepresentativeDirectory::class);
+$container->singleton(GetStudentBillingReport::class, GetStudentBillingReport::class);
+$container->singleton(GetStudentMedicalReport::class, GetStudentMedicalReport::class);
 $container->singleton(FamilyRepository::class, PdoFamilyRepository::class);
 $container->singleton(RelationshipTypeLookup::class, PdoRelationshipTypeLookup::class);
 $container->singleton(DocumentTypeLookup::class, PdoDocumentTypeLookup::class);

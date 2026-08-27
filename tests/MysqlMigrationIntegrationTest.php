@@ -139,6 +139,12 @@ use App\Enrollment\Domain\ValueObject\StudentId as EnrollmentStudentId;
 use App\Enrollment\Domain\ValueObject\TransportInformation as EnrollmentTransportInformation;
 use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
 use App\Enrollment\Infrastructure\Persistence\PdoSubmittedEnrollmentIdQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoAcademicPeriodReportingQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoEnrollmentSummaryQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoStudentBillingReportQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoStudentEnrollmentListQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoStudentMedicalReportQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoStudentRepresentativeDirectoryQuery;
 use App\Enrollment\Application\Dto\StartEnrollmentDraftInput;
 use App\Enrollment\Application\Dto\UpdateEnrollmentTransportInformationInput;
 use App\Enrollment\Application\Exception\EnrollmentFamilyContextUnavailable;
@@ -154,6 +160,13 @@ use App\Enrollment\Application\Administrative\CompleteEnrollment;
 use App\Enrollment\Application\Administrative\Exception\AdministrativeEnrollmentInvalidTransition;
 use App\Enrollment\Application\Administrative\GetAdministrativeEnrollmentReview;
 use App\Enrollment\Application\Administrative\ReopenEnrollment;
+use App\Enrollment\Application\Reporting\GetEnrollmentReportingPeriods;
+use App\Enrollment\Application\Reporting\GetEnrollmentSummaryReport;
+use App\Enrollment\Application\Reporting\GetStudentBillingReport;
+use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
+use App\Enrollment\Application\Reporting\GetStudentMedicalReport;
+use App\Enrollment\Application\Reporting\GetStudentRepresentativeDirectory;
+use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingPeriod;
 use App\Enrollment\Domain\EnrollmentRepository;
 use App\Enrollment\Domain\Exception\InvalidEnrollmentState;
 use Core\Database\ConnectionFactory;
@@ -2893,6 +2906,329 @@ function runMariaDbSubmittedEnrollmentQueryScenario(
             'resolved_statuses' => $resolved,
         ], JSON_THROW_ON_ERROR)
     );
+}
+
+function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $connection): void
+{
+    $statusId = static function (string $type, string $code) use ($connection): int {
+        $statement = $connection->prepare(
+            'SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id '
+            . 'WHERE st.code = :type AND s.code = :code'
+        );
+        $statement->execute([':type' => $type, ':code' => $code]);
+        $id = (int) $statement->fetchColumn();
+        assertIntegration($id > 0, "E013 reporting fixture status {$type}/{$code} is unavailable.");
+
+        return $id;
+    };
+    $generalActive = $statusId('GENERAL_STATUS', 'ACTIVE');
+    $generalInactive = $statusId('GENERAL_STATUS', 'INACTIVE');
+    $enrollmentStatuses = [];
+    foreach (['DRAFT', 'SUBMITTED', 'COMPLETED', 'CANCELLED'] as $code) {
+        $enrollmentStatuses[$code] = $statusId('ENROLLMENT_STATUS', $code);
+    }
+
+    $firstId = static function (string $table) use ($connection): int {
+        $id = (int) $connection->query("SELECT id FROM {$table} ORDER BY id ASC LIMIT 1")->fetchColumn();
+        assertIntegration($id > 0, "E013 reporting fixture requires {$table}.");
+
+        return $id;
+    };
+    $documentTypeId = $firstId('document_types');
+    $sexId = $firstId('sexes');
+    $relationshipTypeId = $firstId('relationship_types');
+    $gradeIds = array_map(
+        'intval',
+        $connection->query('SELECT id FROM grades ORDER BY sort_order ASC, id ASC LIMIT 2')
+            ->fetchAll(PDO::FETCH_COLUMN),
+    );
+    assertIntegration(count($gradeIds) === 2, 'E013 reporting fixture requires two Grade references.');
+    $gradeOneId = $gradeIds[0];
+    $gradeTwoId = $gradeIds[1];
+    $sectionOneId = $firstId('sections');
+
+    $connection->prepare('UPDATE academic_periods SET status_id = :inactive WHERE status_id = :active')
+        ->execute([':inactive' => $generalInactive, ':active' => $generalActive]);
+    $insertPeriod = $connection->prepare(
+        'INSERT INTO academic_periods (code, name, starts_on, ends_on, status_id) '
+        . 'VALUES (:code, :name, :startsOn, :endsOn, :statusId)'
+    );
+    $insertPeriod->execute([
+        ':code' => 'E013_P2_HIST', ':name' => 'E013 Reporting Historical',
+        ':startsOn' => '2040-09-01', ':endsOn' => '2041-06-30', ':statusId' => $generalInactive,
+    ]);
+    $historicalPeriodId = (int) $connection->lastInsertId();
+    $insertPeriod->execute([
+        ':code' => 'E013_P2_ACTIVE', ':name' => 'E013 Reporting Active',
+        ':startsOn' => '2041-09-01', ':endsOn' => '2042-06-30', ':statusId' => $generalActive,
+    ]);
+    $activePeriodId = (int) $connection->lastInsertId();
+    assertIntegration($historicalPeriodId > 0 && $activePeriodId > 0, 'E013 AcademicPeriod identities were not generated.');
+
+    $insertPerson = $connection->prepare(
+        'INSERT INTO persons (first_name, first_surname, document_type_id, document_number, birth_date, '
+        . 'sex_id, email, mobile_phone, landline_phone, status_id) VALUES '
+        . '(:firstName, :surname, :documentTypeId, :documentNumber, :birthDate, :sexId, '
+        . ':email, :mobilePhone, :landlinePhone, :statusId)'
+    );
+    $studentIds = [];
+    for ($index = 1; $index <= 6; $index++) {
+        $insertPerson->execute([
+            ':firstName' => 'E013Student' . $index,
+            ':surname' => sprintf('E013Surname%02d', $index),
+            ':documentTypeId' => $documentTypeId,
+            ':documentNumber' => 'E013-STUDENT-' . $index,
+            ':birthDate' => '2015-01-0' . $index,
+            ':sexId' => $sexId,
+            ':email' => null,
+            ':mobilePhone' => null,
+            ':landlinePhone' => null,
+            ':statusId' => $generalActive,
+        ]);
+        $personId = (int) $connection->lastInsertId();
+        $studentStatement = $connection->prepare(
+            'INSERT INTO students (person_id, institutional_code, admission_date, status_id) '
+            . 'VALUES (:personId, :code, :admissionDate, :statusId)'
+        );
+        $studentStatement->execute([
+            ':personId' => $personId,
+            ':code' => 'E013-P2-STUDENT-' . $index,
+            ':admissionDate' => '2040-09-01',
+            ':statusId' => $index === 6 ? $generalInactive : $generalActive,
+        ]);
+        $studentIds[$index] = (int) $connection->lastInsertId();
+    }
+
+    $insertPerson->execute([
+        ':firstName' => 'E013Current', ':surname' => 'Representative',
+        ':documentTypeId' => $documentTypeId, ':documentNumber' => 'E013-REPRESENTATIVE',
+        ':birthDate' => '1980-01-01', ':sexId' => $sexId,
+        ':email' => 'e013.personal@example.test', ':mobilePhone' => '0991300000',
+        ':landlinePhone' => '022130000', ':statusId' => $generalActive,
+    ]);
+    $representativePersonId = (int) $connection->lastInsertId();
+    $connection->prepare(
+        'INSERT INTO representatives (person_id, occupation, company, position, work_phone, work_email, status_id) '
+        . 'VALUES (:personId, :occupation, :company, :position, :workPhone, :workEmail, :statusId)'
+    )->execute([
+        ':personId' => $representativePersonId, ':occupation' => 'E013 Occupation',
+        ':company' => 'E013 Company', ':position' => 'E013 Position', ':workPhone' => '022131313',
+        ':workEmail' => 'e013.work@example.test', ':statusId' => $generalActive,
+    ]);
+    $representativeId = (int) $connection->lastInsertId();
+    $connection->prepare('INSERT INTO families (display_name, status_id) VALUES (:name, :statusId)')
+        ->execute([':name' => 'E013 Current Family', ':statusId' => $generalActive]);
+    $familyId = (int) $connection->lastInsertId();
+    $connection->prepare(
+        'INSERT INTO family_students (family_id, student_id, started_at) VALUES (:familyId, :studentId, :startedAt)'
+    )->execute([':familyId' => $familyId, ':studentId' => $studentIds[2], ':startedAt' => '2040-01-01 00:00:00']);
+    $connection->prepare(
+        'INSERT INTO family_representatives '
+        . '(family_id, representative_id, relationship_type_id, is_primary, started_at) '
+        . 'VALUES (:familyId, :representativeId, :relationshipTypeId, 1, :startedAt)'
+    )->execute([
+        ':familyId' => $familyId, ':representativeId' => $representativeId,
+        ':relationshipTypeId' => $relationshipTypeId, ':startedAt' => '2040-01-01 00:00:00',
+    ]);
+    $connection->prepare(
+        'INSERT INTO family_addresses '
+        . '(family_id, label, main_street, street_number, secondary_street, sector, reference, status_id) '
+        . 'VALUES (:familyId, :label, :mainStreet, :number, :secondary, :sector, :reference, :statusId)'
+    )->execute([
+        ':familyId' => $familyId, ':label' => 'E013 Current Address', ':mainStreet' => 'E013 Current Street',
+        ':number' => '13', ':secondary' => 'E013 Cross Street', ':sector' => 'E013 Current Sector',
+        ':reference' => 'E013 Current Reference', ':statusId' => $generalActive,
+    ]);
+    $addressId = (int) $connection->lastInsertId();
+    $connection->prepare(
+        'INSERT INTO student_address_assignments '
+        . '(family_id, family_address_id, student_id, started_at) '
+        . 'VALUES (:familyId, :addressId, :studentId, :startedAt)'
+    )->execute([
+        ':familyId' => $familyId, ':addressId' => $addressId,
+        ':studentId' => $studentIds[2], ':startedAt' => '2040-01-01 00:00:00',
+    ]);
+
+    $insertEnrollment = $connection->prepare(
+        'INSERT INTO enrollments (student_id, family_id, academic_period_id, status_id, grade_id, section_id, '
+        . 'billing_identification_type_id, billing_identification_number, billing_legal_name, billing_address, '
+        . 'billing_email, billing_phone, has_medical_condition, medical_condition_detail, has_allergies, '
+        . 'allergy_detail, takes_permanent_medication, medication_name, requires_special_care, special_care_detail, '
+        . 'has_medical_insurance, insurance_provider, pediatrician_name, pediatrician_phone, medical_observations) '
+        . 'VALUES (:studentId, :familyId, :periodId, :statusId, :gradeId, :sectionId, :documentTypeId, '
+        . ':billingNumber, :billingName, :billingAddress, :billingEmail, :billingPhone, :hasCondition, '
+        . ':conditionDetail, :hasAllergies, :allergyDetail, :takesMedication, :medicationName, :requiresCare, '
+        . ':careDetail, :hasInsurance, :insuranceProvider, :pediatricianName, :pediatricianPhone, :observations)'
+    );
+    $saveEnrollment = static function (
+        int $studentId,
+        int $periodId,
+        string $status,
+        ?int $gradeId,
+        ?int $sectionId,
+        bool $completeAnnual,
+        string $label,
+    ) use ($insertEnrollment, $familyId, $documentTypeId, $enrollmentStatuses): void {
+        $insertEnrollment->execute([
+            ':studentId' => $studentId, ':familyId' => $familyId, ':periodId' => $periodId,
+            ':statusId' => $enrollmentStatuses[$status], ':gradeId' => $gradeId, ':sectionId' => $sectionId,
+            ':documentTypeId' => $completeAnnual ? $documentTypeId : null,
+            ':billingNumber' => $completeAnnual ? 'E013-' . $label : null,
+            ':billingName' => $completeAnnual ? $label . ' Billing' : null,
+            ':billingAddress' => $completeAnnual ? $label . ' Billing Address' : null,
+            ':billingEmail' => $completeAnnual ? strtolower($label) . '@example.test' : null,
+            ':billingPhone' => $completeAnnual ? '0991313131' : null,
+            ':hasCondition' => $completeAnnual ? 1 : null,
+            ':conditionDetail' => $completeAnnual ? $label . ' condition' : null,
+            ':hasAllergies' => $completeAnnual ? 1 : null,
+            ':allergyDetail' => $completeAnnual ? $label . ' allergy' : null,
+            ':takesMedication' => $completeAnnual ? 1 : null,
+            ':medicationName' => $completeAnnual ? $label . ' medication' : null,
+            ':requiresCare' => $completeAnnual ? 1 : null,
+            ':careDetail' => $completeAnnual ? $label . ' care' : null,
+            ':hasInsurance' => $completeAnnual ? 1 : null,
+            ':insuranceProvider' => $completeAnnual ? $label . ' insurance' : null,
+            ':pediatricianName' => $completeAnnual ? $label . ' doctor' : null,
+            ':pediatricianPhone' => $completeAnnual ? '0991414141' : null,
+            ':observations' => $completeAnnual ? $label . ' observation' : null,
+        ]);
+    };
+    $saveEnrollment($studentIds[2], $activePeriodId, 'DRAFT', $gradeOneId, $sectionOneId, false, 'CurrentDraft');
+    $saveEnrollment($studentIds[3], $activePeriodId, 'SUBMITTED', $gradeOneId, null, true, 'Current');
+    $saveEnrollment($studentIds[4], $activePeriodId, 'COMPLETED', null, null, false, 'CurrentComplete');
+    $saveEnrollment($studentIds[5], $activePeriodId, 'CANCELLED', $gradeTwoId, null, false, 'CurrentCancel');
+    $saveEnrollment($studentIds[6], $activePeriodId, 'DRAFT', null, null, false, 'Inactive');
+    $saveEnrollment($studentIds[2], $historicalPeriodId, 'COMPLETED', $gradeTwoId, null, true, 'Historical');
+
+    $trackedTables = ['academic_periods', 'students', 'enrollments', 'families', 'family_students',
+        'family_representatives', 'family_addresses', 'student_address_assignments'];
+    $before = [];
+    foreach ($trackedTables as $table) {
+        $before[$table] = (int) $connection->query("SELECT COUNT(*) FROM {$table}")->fetchColumn();
+    }
+
+    $periodResolver = new ResolveEnrollmentReportingPeriod(new PdoAcademicPeriodRepository($manager));
+    $periods = (new GetEnrollmentReportingPeriods(new PdoAcademicPeriodReportingQuery($manager)))->handle();
+    assertIntegration(
+        $periods->defaultAcademicPeriodId === $activePeriodId
+        && $periodResolver->handle($historicalPeriodId)->status->value === 'INACTIVE',
+        'E013 reporting AcademicPeriod options default or explicit INACTIVE selection is incorrect.'
+    );
+
+    $summary = (new GetEnrollmentSummaryReport(
+        $periodResolver,
+        new PdoEnrollmentSummaryQuery($manager),
+    ))->handle($activePeriodId);
+    $summaryStatuses = [];
+    foreach ($summary->rows as $row) {
+        $summaryStatuses[$row->status->value] = ($summaryStatuses[$row->status->value] ?? 0) + $row->count;
+    }
+    assertIntegration(
+        $summary->total === 5
+        && ($summaryStatuses['DRAFT'] ?? 0) === 2
+        && ($summaryStatuses['SUBMITTED'] ?? 0) === 1
+        && ($summaryStatuses['COMPLETED'] ?? 0) === 1
+        && ($summaryStatuses['CANCELLED'] ?? 0) === 1
+        && count($summaryStatuses) === 4
+        && count(array_filter($summary->rows, static fn ($row): bool => $row->gradeId === null)) === 2,
+        'E013 Enrollment Summary did not count exact existing Enrollments, statuses or null placement.'
+    );
+
+    $studentRows = (new GetStudentEnrollmentReport(
+        $periodResolver,
+        new PdoStudentEnrollmentListQuery($manager),
+    ))->handle($activePeriodId);
+    $directoryRows = (new GetStudentRepresentativeDirectory(
+        $periodResolver,
+        new PdoStudentRepresentativeDirectoryQuery($manager),
+    ))->handle($activePeriodId);
+    $billingRows = (new GetStudentBillingReport(
+        $periodResolver,
+        new PdoStudentBillingReportQuery($manager),
+    ))->handle($activePeriodId);
+    $medicalRows = (new GetStudentMedicalReport(
+        $periodResolver,
+        new PdoStudentMedicalReportQuery($manager),
+    ))->handle($activePeriodId);
+    $activeStudentCount = (int) $connection->query(
+        'SELECT COUNT(*) FROM students s INNER JOIN statuses status_row ON status_row.id = s.status_id '
+        . 'INNER JOIN status_types status_type ON status_type.id = status_row.status_type_id '
+        . "WHERE status_type.code = 'GENERAL_STATUS' AND status_row.code = 'ACTIVE'"
+    )->fetchColumn();
+    assertIntegration(
+        count($studentRows) === $activeStudentCount
+        && count($directoryRows) === $activeStudentCount
+        && count($billingRows) === $activeStudentCount
+        && count($medicalRows) === $activeStudentCount,
+        'E013 reports 2-5 did not return exactly one row per ACTIVE Student.'
+    );
+    $byStudent = static function (array $rows, int $studentId): object {
+        $matches = array_values(array_filter($rows, static fn ($row): bool => $row->studentId === $studentId));
+        assertIntegration(count($matches) === 1, 'E013 report did not return exactly one expected Student row.');
+
+        return $matches[0];
+    };
+    assertIntegration(
+        $byStudent($studentRows, $studentIds[1])->status->value === 'NOT STARTED'
+        && $byStudent($studentRows, $studentIds[2])->status->value === 'DRAFT'
+        && $byStudent($studentRows, $studentIds[3])->status->value === 'SUBMITTED'
+        && $byStudent($studentRows, $studentIds[4])->status->value === 'COMPLETED'
+        && $byStudent($studentRows, $studentIds[5])->status->value === 'CANCELLED'
+        && count(array_filter($studentRows, static fn ($row): bool => $row->studentId === $studentIds[6])) === 0,
+        'E013 ACTIVE Student population or reporting status mapping is incorrect.'
+    );
+
+    $directory = $byStudent($directoryRows, $studentIds[2]);
+    assertIntegration(
+        $directory->gradeId === $gradeOneId
+        && $directory->sectionId === $sectionOneId
+        && $directory->representativeMobilePhone === '0991300000'
+        && $directory->representativeWorkEmail === 'e013.work@example.test'
+        && str_contains((string) $directory->studentAddress, 'E013 Current Street'),
+        'E013 Directory did not combine selected annual placement with current Representative contacts and Address.'
+    );
+    $billing = $byStudent($billingRows, $studentIds[3]);
+    $medical = $byStudent($medicalRows, $studentIds[3]);
+    assertIntegration(
+        $billing->legalName === 'Current Billing'
+        && $medical->medicalConditionDetail === 'Current condition'
+        && $byStudent($billingRows, $studentIds[1])->legalName === null
+        && $byStudent($medicalRows, $studentIds[1])->hasMedicalCondition === null,
+        'E013 Billing or Medical selected-period values and valid blanks are incorrect.'
+    );
+
+    $historicalDirectoryRows = (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch($historicalPeriodId);
+    $historicalBillingRows = (new PdoStudentBillingReportQuery($manager))->fetch($historicalPeriodId);
+    $historicalMedicalRows = (new PdoStudentMedicalReportQuery($manager))->fetch($historicalPeriodId);
+    $historicalDirectory = $byStudent($historicalDirectoryRows, $studentIds[2]);
+    assertIntegration(
+        $historicalDirectory->gradeId === $gradeTwoId
+        && $historicalDirectory->status->value === 'COMPLETED'
+        && $historicalDirectory->representativeMobilePhone === '0991300000'
+        && str_contains((string) $historicalDirectory->studentAddress, 'E013 Current Street')
+        && $byStudent($historicalBillingRows, $studentIds[2])->legalName === 'Historical Billing'
+        && $byStudent($historicalMedicalRows, $studentIds[2])->observations === 'Historical observation',
+        'E013 historical report mixed annual and current live data incorrectly.'
+    );
+
+    foreach ($trackedTables as $table) {
+        assertIntegration(
+            $before[$table] === (int) $connection->query("SELECT COUNT(*) FROM {$table}")->fetchColumn(),
+            "E013 reporting query unexpectedly wrote to {$table}."
+        );
+    }
+    $plans = [
+        'SELECT e.id FROM enrollments e WHERE e.academic_period_id = ' . $activePeriodId,
+        'SELECT s.id FROM students s LEFT JOIN enrollments e ON e.student_id = s.id '
+            . 'AND e.academic_period_id = ' . $activePeriodId . ' ORDER BY s.id',
+        'SELECT s.id FROM students s LEFT JOIN family_students fs ON fs.student_id = s.id AND fs.ended_at IS NULL '
+            . 'LEFT JOIN family_representatives fr ON fr.family_id = fs.family_id '
+            . 'AND fr.ended_at IS NULL AND fr.is_primary = 1 ORDER BY s.id',
+    ];
+    foreach ($plans as $sql) {
+        $plan = $connection->query('EXPLAIN ' . $sql)->fetchAll(PDO::FETCH_ASSOC);
+        assertIntegration($plan !== [], 'E013 reporting EXPLAIN returned no query-plan rows.');
+    }
 }
 
 $requiredNonEmptyEnvironment = [
@@ -7247,6 +7583,7 @@ try {
         $secondStudentId->value(),
         $submissionFamilyId,
     );
+    runMariaDbEnrollmentReportingScenario($managerA, $connectionA);
 
     echo 'MariaDB version: ' . $mariaDbVersion . "\n";
     echo 'Physical inventory: ' . count($actualTables) . ' tables including migrations metadata; '
@@ -7301,6 +7638,10 @@ try {
     echo "PASS MySQL E012 Administrative same-root concurrency matrix and cross-root isolation\n";
     echo "PASS MySQL E012 Administrative rollback no-partial-state and root-lock release\n";
     echo "PASS MySQL E012 Administrative Delivery Submitted query state order period context and side-effect freedom\n";
+    echo "PASS MySQL E013 reporting AcademicPeriod options default and explicit historical selection\n";
+    echo "PASS MySQL E013 Enrollment Summary status placement and inactive Student counting\n";
+    echo "PASS MySQL E013 Student Directory Billing Medical selected-period and current-live projections\n";
+    echo "PASS MySQL E013 reporting deterministic one-row ACTIVE population read-only queries and plans\n";
     echo "PASS MySQL Academic Core Grade Section references and next ACTIVE Grade ordering\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";
 } finally {
