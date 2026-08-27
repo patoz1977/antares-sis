@@ -116,8 +116,8 @@ function registerEnrollmentReportingApplicationTests(TestRunner $runner): void
         ] as $binding) {
             assertSameValue(true, str_contains($source, $binding));
         }
-        assertSameValue(false, str_contains($source, 'ReportingController'));
-        assertSameValue(false, str_contains($source, 'CsvWriter'));
+        assertSameValue(false, str_contains($source, 'EnrollmentReportingController::class, Pdo'));
+        assertSameValue(false, str_contains($source, 'EnrollmentReportCsvWriter::class, Pdo'));
     });
 }
 

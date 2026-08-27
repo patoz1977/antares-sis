@@ -18,6 +18,7 @@ declare(strict_types=1);
     <p><a href="/families">Manage Families</a></p>
     <p><a href="/institutional-acknowledgements">Manage Institutional Acknowledgements</a></p>
     <p><a href="/enrollments">Manage Enrollments</a></p>
+    <p><a href="/reports/enrollments">Enrollment Reports</a></p>
     <?php endif; ?>
 
     <form method="post" action="/logout">
