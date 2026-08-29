@@ -37,8 +37,8 @@ function registerForgotPasswordAssistanceTests(TestRunner $runner): void
         $html = $controller->showForgotPassword();
 
         assertSameValue(200, http_response_code());
-        deliveryAssertContains('Forgot password', $html);
-        deliveryAssertContains('contact the school administration office', $html);
+        deliveryAssertContains('Ayuda con la contraseña', $html);
+        deliveryAssertContains('comunícate con Secretaría', $html);
         deliveryAssertContains('href="/login"', $html);
         assertSameValue(false, str_contains($html, '<form'));
         foreach (['name="username"', 'name="document"', 'name="email"', 'token', 'OTP'] as $forbidden) {
