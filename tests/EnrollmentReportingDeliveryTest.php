@@ -87,7 +87,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
 
         assertSameValue(200, http_response_code());
         e013Contains('P7 — Period 7', $html);
-        e013Contains('P8 — Period 8 (Active)', $html);
+        e013Contains('P8 — Period 8 (Activo)', $html);
         e013Contains('value="8" selected', $html);
         foreach (['summary', 'students', 'directory', 'billing', 'medical'] as $report) {
             e013Contains('/reports/enrollments/' . $report . '?academic_period_id=8', $html);
@@ -97,7 +97,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         e013ReportingRequest('/reports/enrollments');
         $html = $zero['controller']->index();
         assertSameValue(200, http_response_code());
-        e013Contains('Choose an AcademicPeriod', $html);
+        e013Contains('Selecciona un período académico', $html);
         assertSameValue(false, str_contains($html, ' selected'));
     });
 
@@ -126,7 +126,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         e013ReportingRequest('/reports/enrollments/students');
         $html = $zero['controller']->students();
         assertSameValue(200, http_response_code());
-        e013Contains('Choose an AcademicPeriod', $html);
+        e013Contains('Selecciona un período académico', $html);
         assertSameValue(0, $zero['students']->calls);
 
         $multiple = e013ReportingFixture(activeId: 8, multipleActive: true);
@@ -140,11 +140,11 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
     $runner->add('E013 Phase 3 five HTML reports render approved datasets empty states CSV links and escaped output', function (): void {
         $fixture = e013ReportingFixture();
         foreach ([
-            ['summary', ['Enrollment Summary', 'Total:', 'DRAFT', 'Grade =SUM', 'Section A']],
-            ['students', ['Student Enrollment List', 'NOT STARTED', '&lt;script&gt;alert(1)&lt;/script&gt;']],
-            ['directory', ['Student and Representative Directory', 'Primary Representative', 'Address, with comma', 'Mobile:']],
-            ['billing', ['Student Billing Information', 'Identification Type', 'Billing Address', 'Legal Name']],
-            ['medical', ['Student Medical Information', 'Has Medical Condition', 'Yes', 'No', 'Observations']],
+            ['summary', ['Resumen de matrículas', 'Total:', 'Borrador', 'Grade =SUM', 'Section A']],
+            ['students', ['Lista de estudiantes', 'No iniciada', '&lt;script&gt;alert(1)&lt;/script&gt;']],
+            ['directory', ['Directorio de estudiantes y representantes', '@something Representative', 'Address, with comma', 'Móvil:']],
+            ['billing', ['Reporte de facturación', 'Tipo de identificación', 'Dirección de facturación', 'Nombre legal']],
+            ['medical', ['Reporte médico', 'Condición médica', 'Sí', 'No', 'Observaciones']],
         ] as [$method, $expected]) {
             e013ReportingRequest('/reports/enrollments/' . $method, ['academic_period_id' => '8']);
             $html = $fixture['controller']->{$method}();
@@ -159,7 +159,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         e013ReportingRequest('/reports/enrollments/directory', ['academic_period_id' => '7']);
         $historical = $fixture['controller']->directory();
         e013Contains(
-            'Enrollment status and placement correspond to the selected academic period. Contact and address information are current SIS data.',
+            'El estado y la ubicación de la matrícula corresponden al período seleccionado. El contacto y la dirección son datos actuales del SIS.',
             $historical,
         );
         assertSameValue(false, stripos($historical, 'submitter') !== false);
@@ -168,7 +168,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         foreach (['summary', 'students', 'directory', 'billing', 'medical'] as $method) {
             e013ReportingRequest('/reports/enrollments/' . $method, ['academic_period_id' => '8']);
             $html = $empty['controller']->{$method}();
-            assertSameValue(true, str_contains($html, 'No Enrollment records') || str_contains($html, 'No active Students'));
+            assertSameValue(true, str_contains($html, 'No hay matrículas') || str_contains($html, 'No hay estudiantes activos'));
         }
     });
 
@@ -456,5 +456,7 @@ function e013CsvRecords(string $csv): array
 
 function e013Contains(string $needle, string $haystack): void
 {
-    assertSameValue(true, str_contains($haystack, $needle), $needle);
+    if (!str_contains($haystack, $needle)) {
+        throw new \RuntimeException('Expected report output to contain "' . $needle . '".');
+    }
 }
