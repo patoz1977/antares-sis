@@ -97,7 +97,7 @@
                 state.mode = 'dirty';
                 if (reportValidity) {
                     form.reportValidity();
-                    this.showErrors(form, ['Complete the required fields before leaving this section.']);
+                    this.showErrors(form, ['Completa los campos obligatorios antes de salir de esta sección.']);
                     this.focusFailure(form);
                 }
 
@@ -106,7 +106,7 @@
 
             const sentRevision = state.revision;
             state.mode = 'saving';
-            this.setStatus(form, 'Saving...');
+            this.setStatus(form, 'Guardando...');
             this.clearErrors(form);
 
             try {
@@ -128,7 +128,7 @@
                     this.updateProgress(payload.section, payload.sectionStatus);
                     if (state.revision === sentRevision) {
                         state.mode = 'clean';
-                        this.setStatus(form, 'Saved');
+                        this.setStatus(form, 'Guardado');
                         this.clearErrors(form);
                     } else {
                         state.mode = 'dirty';
@@ -147,10 +147,10 @@
                 }
 
                 state.mode = 'error';
-                this.setStatus(form, 'Save error');
+                this.setStatus(form, 'Error al guardar');
                 this.showErrors(
                     form,
-                    Array.isArray(payload.errors) ? payload.errors : ['The information could not be saved.'],
+                    Array.isArray(payload.errors) ? payload.errors : ['No se pudo guardar la información.'],
                     payload.reloadRequired === true,
                     typeof payload.redirect === 'string' ? payload.redirect : null,
                 );
@@ -164,8 +164,8 @@
                     return true;
                 }
                 state.mode = 'error';
-                this.setStatus(form, 'Save error');
-                this.showErrors(form, ['The information could not be saved.']);
+                this.setStatus(form, 'Error al guardar');
+                this.showErrors(form, ['No se pudo guardar la información.']);
 
                 return false;
             }
@@ -287,7 +287,7 @@
             }
             const item = this.root.querySelector(`[data-progress-section="${section}"]`);
             if (item) {
-                item.textContent = status === 'COMPLETE' ? 'Complete' : 'Pending';
+                item.textContent = status === 'COMPLETE' ? 'Completa' : 'Pendiente';
             }
         }
 
@@ -326,14 +326,14 @@
                 const reload = document.createElement('button');
                 reload.type = 'button';
                 reload.className = 'btn btn-outline-secondary';
-                reload.textContent = 'Reload';
+                reload.textContent = 'Actualizar';
                 reload.addEventListener('click', () => window.location.reload());
                 container.appendChild(reload);
             } else if (redirect) {
                 const link = document.createElement('a');
                 link.href = redirect;
                 link.className = 'btn btn-outline-secondary';
-                link.textContent = 'Continue';
+                link.textContent = 'Continuar';
                 container.appendChild(link);
             }
             container.hidden = false;

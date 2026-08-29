@@ -63,6 +63,7 @@ require __DIR__ . '/EnrollmentAdministrativeDeliveryTest.php';
 require __DIR__ . '/EnrollmentReportingDeliveryTest.php';
 require __DIR__ . '/SharedShellNavigationTest.php';
 require __DIR__ . '/AdministrativeUiBaselineTest.php';
+require __DIR__ . '/RepresentativeUiBaselineTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
@@ -119,6 +120,7 @@ require __DIR__ . '/SchemaBaselineTest.php';
 \Tests\registerEnrollmentReportingDeliveryTests($runner);
 \Tests\registerSharedShellNavigationTests($runner);
 \Tests\registerAdministrativeUiBaselineTests($runner);
+\Tests\registerRepresentativeUiBaselineTests($runner);
 \Tests\registerSchemaBaselineTests($runner);
 
 ob_start();

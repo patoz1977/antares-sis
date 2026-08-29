@@ -36,12 +36,12 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
 
         assertSameValue(200, http_response_code());
         foreach ([
-            'Review and Submit Enrollment', 'Authorized Family', 'Stored Complete Person Record',
-            'Academic Period', 'Status', 'Current Representative and Student Information',
-            'current live information from the SIS', 'Current Family Resources', 'Current street',
-            'Emergency Contact', 'Authorized Pickup', 'Annual Enrollment Information',
-            'Representative Legal Name', 'Submission Readiness',
-            'All current Submission requirements are satisfied.', 'Submit Enrollment',
+            'Revisar y enviar matrícula', 'Familia actual', 'Stored Complete Person Record',
+            'Período académico', 'Estado de matrícula', 'Datos actuales del SIS',
+            'información es actual', 'Recursos familiares actuales', 'Current street',
+            'Contactos de emergencia', 'Personas autorizadas para retirar', 'Información anual de matrícula',
+            'Representative Legal Name', 'Preparación para el envío',
+            'Todos los requisitos actuales para el envío están completos.', 'Enviar matrícula',
         ] as $expected) {
             deliveryAssertContains($expected, $html);
         }
@@ -64,13 +64,13 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
         $html = representativeEnrollmentSubmissionReview($fixture['controller']);
 
         assertSameValue(200, http_response_code());
-        deliveryAssertContains('This Enrollment cannot be submitted yet.', $html);
+        deliveryAssertContains('Esta matrícula todavía no puede enviarse.', $html);
         deliveryAssertContains(e012Requirement(
             $fixture['review']->handle(44)->validation,
             'ACKNOWLEDGEMENTS',
         )->message, $html);
         deliveryAssertContains('/representative/acknowledgements', $html);
-        assertSameValue(false, str_contains($html, '>Submit Enrollment<'));
+        assertSameValue(false, str_contains($html, '>Enviar matrícula<'));
     });
 
     $runner->add('E012 review exposes missing current Family resources from the authoritative validation', function (): void {
@@ -82,8 +82,8 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
         foreach (['STUDENT_ADDRESS', 'EMERGENCY_CONTACT', 'PICKUP_OR_LEAVE_ALONE'] as $code) {
             deliveryAssertContains(e012Requirement($validation, $code)->message, $html);
         }
-        deliveryAssertContains('None currently assigned.', $html);
-        assertSameValue(false, str_contains($html, '>Submit Enrollment<'));
+        deliveryAssertContains('No hay una dirección asignada actualmente.', $html);
+        assertSameValue(false, str_contains($html, '>Enviar matrícula<'));
     });
 
     $runner->add('E012 review handles absent active period and invalid Student proposals safely', function (): void {
@@ -111,11 +111,17 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
             $fixture = representativeEnrollmentSubmissionDeliveryFixture(status: $status);
             $html = representativeEnrollmentSubmissionReview($fixture['controller']);
 
-            deliveryAssertContains('<strong>' . $status->value . '</strong>', $html);
-            deliveryAssertContains('This Enrollment cannot be submitted yet.', $html);
-            deliveryAssertContains('Current Representative and Student Information', $html);
-            deliveryAssertContains('Current Family Resources', $html);
-            assertSameValue(false, str_contains($html, '>Submit Enrollment<'), $status->value);
+            $statusLabel = match ($status) {
+                EnrollmentStatus::Submitted => 'Enviada',
+                EnrollmentStatus::Completed => 'Completada',
+                EnrollmentStatus::Cancelled => 'Cancelada',
+                default => throw new RuntimeException('Unexpected lifecycle fixture.'),
+            };
+            deliveryAssertContains('>' . $statusLabel . '</span>', $html);
+            deliveryAssertContains('Esta matrícula todavía no puede enviarse.', $html);
+            deliveryAssertContains('Datos actuales del SIS', $html);
+            deliveryAssertContains('Recursos familiares actuales', $html);
+            assertSameValue(false, str_contains($html, '>Enviar matrícula<'), $status->value);
             foreach (['Complete Enrollment', 'Cancel Enrollment', 'Reopen Enrollment'] as $forbidden) {
                 assertSameValue(false, str_contains($html, $forbidden), $forbidden);
             }
@@ -133,9 +139,9 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
         $fixture['enrollments']->resetObservations();
 
         $html = representativeEnrollmentSubmissionReview($fixture['controller']);
-        deliveryAssertContains('<strong>DRAFT</strong>', $html);
+        deliveryAssertContains('>Borrador</span>', $html);
         deliveryAssertContains('2026-08-20 12:00:00', $html);
-        deliveryAssertContains('Resubmit Enrollment', $html);
+        deliveryAssertContains('Reenviar matrícula', $html);
     });
 
     $runner->add('E012 Submit uses CSRF Application authority PRG and generic success flash', function (): void {
@@ -161,8 +167,8 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
 
         $html = representativeEnrollmentSubmissionReview($fixture['controller']);
         deliveryAssertContains('Enrollment submitted successfully.', $html);
-        deliveryAssertContains('<strong>SUBMITTED</strong>', $html);
-        assertSameValue(false, str_contains($html, '>Submit Enrollment<'));
+        deliveryAssertContains('>Enviada</span>', $html);
+        assertSameValue(false, str_contains($html, '>Enviar matrícula<'));
         assertSameValue(false, str_contains($html, '999'));
     });
 
@@ -178,8 +184,8 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
 
         $html = representativeEnrollmentSubmissionReview($fixture['controller']);
         deliveryAssertContains('Enrollment is not ready for Submission.', $html);
-        deliveryAssertContains('<strong>SUBMITTED</strong>', $html);
-        assertSameValue(false, str_contains($html, '>Submit Enrollment<'));
+        deliveryAssertContains('>Enviada</span>', $html);
+        assertSameValue(false, str_contains($html, '>Enviar matrícula<'));
     });
 
     $runner->add('E012 forged incomplete Submit returns by PRG and recomputes current requirements', function (): void {
@@ -197,8 +203,8 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
 
         $html = representativeEnrollmentSubmissionReview($fixture['controller']);
         deliveryAssertContains('Enrollment is not ready for Submission.', $html);
-        deliveryAssertContains('This Enrollment cannot be submitted yet.', $html);
-        assertSameValue(false, str_contains($html, '>Submit Enrollment<'));
+        deliveryAssertContains('Esta matrícula todavía no puede enviarse.', $html);
+        assertSameValue(false, str_contains($html, '>Enviar matrícula<'));
     });
 
     $runner->add('E012 Delivery rejects CSRF malformed stale and cross-context proposals without disclosure', function (): void {
@@ -265,7 +271,7 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
     $runner->add('E012 review navigation reuses E011 autosave flush and form works without JavaScript', function (): void {
         $portal = representativeEnrollmentNormalizedSource('resources/views/representative-portal/enrollment.php');
         deliveryAssertContains('/representative/enrollment/review?student_id=', $portal);
-        deliveryAssertContains('data-enrollment-navigation>Review and submit Enrollment', $portal);
+        deliveryAssertContains('data-enrollment-navigation>Revisar y enviar matrícula', $portal);
 
         $script = representativeEnrollmentNormalizedSource('public/js/representative-enrollment.js');
         foreach (['a[data-enrollment-navigation]', 'await this.flushAll()', 'event.preventDefault()'] as $required) {
