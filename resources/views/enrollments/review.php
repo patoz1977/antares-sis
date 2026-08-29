@@ -15,74 +15,78 @@ $name = static fn (object $person): string => trim(implode(' ', array_filter([
     $person->firstSurname,
     $person->secondSurname,
 ], static fn (?string $part): bool => $part !== null && $part !== '')));
-$supplied = static fn (?string $value): string => $value === null || $value === '' ? 'Not supplied' : $value;
-$yesNo = static fn (bool $value): string => $value ? 'Yes' : 'No';
+$supplied = static fn (?string $value): string => $value === null || $value === '' ? 'No registrado' : $value;
+$yesNo = static fn (bool $value): string => $value ? 'Sí' : 'No';
 $formatInstant = static fn (?DateTimeImmutable $value): string =>
-    $value?->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s') ?? 'Not recorded';
+    $value?->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s') ?? 'No registrada';
 $enrollment = $review->enrollment;
 $resources = $review->currentFamilyResources;
 $billing = $enrollment->billingInformation;
 $medical = $enrollment->medicalInformation;
 $transport = $enrollment->transportInformation;
 ?>
-    <header class="mb-4">
-        <h1>Administrative Enrollment Review</h1>
-        <p><a href="/enrollments">Back to Submitted Enrollment queue</a></p>
+    <header class="app-page-header d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-start">
+        <div>
+            <p class="text-uppercase fw-semibold text-primary mb-2">Administración de matrículas</p>
+            <h1 class="display-6 fw-bold mb-2">Revisión administrativa</h1>
+            <p class="text-body-secondary mb-0">Contrasta datos actuales del SIS con la información anual de la matrícula.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="/enrollments">Volver a la cola</a>
     </header>
 
-    <section class="mb-4" aria-labelledby="lifecycle-identity-heading">
-        <h2 id="lifecycle-identity-heading">Enrollment identity and lifecycle</h2>
-        <dl>
-            <dt>Enrollment ID</dt><dd><?= $escape($enrollment->id) ?></dd>
-            <dt>Status</dt><dd><strong><?= $escape($enrollment->status) ?></strong></dd>
-            <dt>Academic Period</dt>
+    <section class="app-data-card" aria-labelledby="lifecycle-identity-heading">
+        <h2 class="h3" id="lifecycle-identity-heading">Identidad y ciclo de vida</h2>
+        <dl class="app-data-list">
+            <dt>ID de matrícula</dt><dd><?= $escape($enrollment->id) ?></dd>
+            <dt>Estado</dt><dd><?php $statusCode = $enrollment->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></dd>
+            <dt>Período académico</dt>
             <dd><?= $escape($review->academicPeriod->name) ?> (<?= $escape($review->academicPeriod->code) ?>, <?= $escape($review->academicPeriod->status) ?>)</dd>
-            <dt>Started at (UTC)</dt><dd><?= $escape($formatInstant($enrollment->startedAt)) ?></dd>
-            <dt>Submitted at (UTC)</dt><dd><?= $escape($formatInstant($enrollment->submittedAt)) ?></dd>
-            <dt>Completed at (UTC)</dt><dd><?= $escape($formatInstant($enrollment->completedAt)) ?></dd>
-            <dt>Cancelled at (UTC)</dt><dd><?= $escape($formatInstant($enrollment->cancelledAt)) ?></dd>
+            <dt>Inicio (UTC)</dt><dd><?= $escape($formatInstant($enrollment->startedAt)) ?></dd>
+            <dt>Envío (UTC)</dt><dd><?= $escape($formatInstant($enrollment->submittedAt)) ?></dd>
+            <dt>Finalización (UTC)</dt><dd><?= $escape($formatInstant($enrollment->completedAt)) ?></dd>
+            <dt>Cancelación (UTC)</dt><dd><?= $escape($formatInstant($enrollment->cancelledAt)) ?></dd>
         </dl>
     </section>
 
-    <section class="mb-4" aria-labelledby="current-sis-information-heading">
-        <h2 id="current-sis-information-heading">Current SIS information</h2>
-        <p>This section shows current live SIS information at the time of this review.</p>
+    <section class="app-data-card" aria-labelledby="current-sis-information-heading">
+        <h2 class="h3" id="current-sis-information-heading">Datos actuales del SIS</h2>
+        <p class="alert alert-info">Esta sección muestra información viva y actual al momento de la revisión; no es una copia histórica del envío.</p>
 
-        <h3>Current Student</h3>
-        <dl>
-            <dt>Name</dt><dd><?= $escape($name($review->studentPerson)) ?></dd>
-            <dt>Institutional code</dt><dd><?= $escape($review->student->institutionalCode) ?></dd>
-            <dt>Birth date</dt><dd><?= $escape($review->studentPerson->birthDate->format('Y-m-d')) ?></dd>
-            <dt>Admission date</dt><dd><?= $escape($review->student->admissionDate->format('Y-m-d')) ?></dd>
-            <dt>Status</dt><dd><?= $escape($review->student->status->value) ?></dd>
+        <h3 class="h5 mt-4">Estudiante actual</h3>
+        <dl class="app-data-list">
+            <dt>Nombre</dt><dd><?= $escape($name($review->studentPerson)) ?></dd>
+            <dt>Código institucional</dt><dd><?= $escape($review->student->institutionalCode) ?></dd>
+            <dt>Fecha de nacimiento</dt><dd><?= $escape($review->studentPerson->birthDate->format('Y-m-d')) ?></dd>
+            <dt>Fecha de admisión</dt><dd><?= $escape($review->student->admissionDate->format('Y-m-d')) ?></dd>
+            <dt>Estado</dt><dd><?= $escape($review->student->status->value === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></dd>
         </dl>
 
-        <h3>Current Family</h3>
-        <dl>
-            <dt>Name</dt><dd><?= $escape($review->familyDisplayName) ?></dd>
-            <dt>Status</dt><dd><?= $escape($review->familyStatus) ?></dd>
+        <h3 class="h5 mt-4">Familia actual</h3>
+        <dl class="app-data-list">
+            <dt>Nombre</dt><dd><?= $escape($review->familyDisplayName) ?></dd>
+            <dt>Estado</dt><dd><?= $escape($review->familyStatus === 'ACTIVE' ? 'Activa' : 'Inactiva') ?></dd>
         </dl>
 
-        <h3>Currently active Family Representatives</h3>
+        <h3 class="h5 mt-4">Representantes familiares activos</h3>
         <?php if ($review->currentRepresentatives === []): ?>
-        <p>None currently active.</p>
+        <p>No hay representantes activos.</p>
         <?php else: ?>
         <?php foreach ($review->currentRepresentatives as $representative): ?>
         <article>
-            <h4><?= $escape($name($representative->person)) ?><?= $representative->isPrimary ? ' — Primary' : '' ?></h4>
-            <dl>
-                <dt>Personal email</dt><dd><?= $escape($supplied($representative->person->email)) ?></dd>
-                <dt>Mobile phone</dt><dd><?= $escape($supplied($representative->person->mobilePhone)) ?></dd>
-                <dt>Occupation</dt><dd><?= $escape($supplied($representative->representative->occupation)) ?></dd>
-                <dt>Work phone</dt><dd><?= $escape($supplied($representative->representative->workPhone)) ?></dd>
+            <h4 class="h6"><?= $escape($name($representative->person)) ?><?= $representative->isPrimary ? ' — Principal' : '' ?></h4>
+            <dl class="app-data-list">
+                <dt>Correo personal</dt><dd><?= $escape($supplied($representative->person->email)) ?></dd>
+                <dt>Teléfono móvil</dt><dd><?= $escape($supplied($representative->person->mobilePhone)) ?></dd>
+                <dt>Ocupación</dt><dd><?= $escape($supplied($representative->representative->occupation)) ?></dd>
+                <dt>Teléfono laboral</dt><dd><?= $escape($supplied($representative->representative->workPhone)) ?></dd>
             </dl>
         </article>
         <?php endforeach; ?>
         <?php endif; ?>
 
-        <h3>Current Student Address</h3>
+        <h3 class="h5 mt-4">Dirección actual del estudiante</h3>
         <?php if ($resources->studentAddress === null): ?>
-        <p>None currently assigned.</p>
+        <p>No hay una dirección asignada actualmente.</p>
         <?php else: ?>
         <address>
             <strong><?= $escape($resources->studentAddress->label) ?></strong><br>
@@ -93,9 +97,9 @@ $transport = $enrollment->transportInformation;
         </address>
         <?php endif; ?>
 
-        <h3>Current Emergency Contacts assigned to this Student</h3>
+        <h3 class="h5 mt-4">Contactos de emergencia actuales</h3>
         <?php if ($resources->emergencyContacts === []): ?>
-        <p>None currently assigned.</p>
+        <p>No hay contactos de emergencia asignados actualmente.</p>
         <?php else: ?>
         <ul>
             <?php foreach ($resources->emergencyContacts as $contact): ?>
@@ -104,9 +108,9 @@ $transport = $enrollment->transportInformation;
         </ul>
         <?php endif; ?>
 
-        <h3>Current Authorized Pickups assigned to this Student</h3>
+        <h3 class="h5 mt-4">Personas autorizadas para retirar</h3>
         <?php if ($resources->authorizedPickups === []): ?>
-        <p>None currently assigned.</p>
+        <p>No hay personas autorizadas asignadas actualmente.</p>
         <?php else: ?>
         <ul>
             <?php foreach ($resources->authorizedPickups as $pickup): ?>
@@ -116,68 +120,71 @@ $transport = $enrollment->transportInformation;
         <?php endif; ?>
     </section>
 
-    <section class="mb-4" aria-labelledby="annual-enrollment-information-heading">
-        <h2 id="annual-enrollment-information-heading">Annual Enrollment information</h2>
-        <p>This section is owned and preserved by the annual Enrollment.</p>
+    <section class="app-data-card" aria-labelledby="annual-enrollment-information-heading">
+        <h2 class="h3" id="annual-enrollment-information-heading">Información anual de la matrícula</h2>
+        <p class="alert alert-secondary">Esta sección pertenece a la matrícula anual y se conserva con su ciclo de vida.</p>
 
-        <h3>Academic Placement</h3>
-        <dl>
-            <dt>Grade</dt><dd><?= $escape($review->grade?->name ?? 'Not assigned') ?></dd>
-            <dt>Section</dt><dd><?= $escape($review->section?->name ?? 'Not assigned') ?></dd>
+        <h3 class="h5">Ubicación académica</h3>
+        <dl class="app-data-list">
+            <dt>Grado</dt><dd><?= $escape($review->grade?->name ?? 'Sin asignar') ?></dd>
+            <dt>Sección</dt><dd><?= $escape($review->section?->name ?? 'Sin asignar') ?></dd>
         </dl>
 
-        <h3>Billing Information</h3>
+        <h3 class="h5 mt-4">Información de facturación</h3>
         <?php if ($billing === null): ?>
-        <p>Not supplied.</p>
+        <p>No registrada.</p>
         <?php else: ?>
-        <dl>
-            <dt>Identification number</dt><dd><?= $escape($billing->identificationNumber) ?></dd>
-            <dt>Legal name</dt><dd><?= $escape($billing->legalName) ?></dd>
-            <dt>Billing address</dt><dd><?= $escape($billing->billingAddress) ?></dd>
-            <dt>Billing email</dt><dd><?= $escape($billing->billingEmail) ?></dd>
-            <dt>Phone</dt><dd><?= $escape($billing->phone) ?></dd>
+        <dl class="app-data-list">
+            <dt>Número de identificación</dt><dd><?= $escape($billing->identificationNumber) ?></dd>
+            <dt>Nombre legal</dt><dd><?= $escape($billing->legalName) ?></dd>
+            <dt>Dirección de facturación</dt><dd><?= $escape($billing->billingAddress) ?></dd>
+            <dt>Correo de facturación</dt><dd><?= $escape($billing->billingEmail) ?></dd>
+            <dt>Teléfono</dt><dd><?= $escape($billing->phone) ?></dd>
         </dl>
         <?php endif; ?>
 
-        <h3>Medical Information</h3>
+        <h3 class="h5 mt-4">Información médica</h3>
         <?php if ($medical === null): ?>
-        <p>Not supplied.</p>
+        <p>No registrada.</p>
         <?php else: ?>
-        <dl>
-            <dt>Medical condition</dt><dd><?= $escape($yesNo($medical->hasMedicalCondition)) ?></dd>
-            <dt>Medical condition detail</dt><dd><?= $escape($supplied($medical->medicalConditionDetail)) ?></dd>
-            <dt>Allergies</dt><dd><?= $escape($yesNo($medical->hasAllergies)) ?></dd>
-            <dt>Allergy detail</dt><dd><?= $escape($supplied($medical->allergyDetail)) ?></dd>
-            <dt>Permanent medication</dt><dd><?= $escape($yesNo($medical->takesPermanentMedication)) ?></dd>
-            <dt>Medication name</dt><dd><?= $escape($supplied($medical->medicationName)) ?></dd>
-            <dt>Special care</dt><dd><?= $escape($yesNo($medical->requiresSpecialCare)) ?></dd>
-            <dt>Special care detail</dt><dd><?= $escape($supplied($medical->specialCareDetail)) ?></dd>
-            <dt>Medical insurance</dt><dd><?= $escape($yesNo($medical->hasMedicalInsurance)) ?></dd>
-            <dt>Insurance provider</dt><dd><?= $escape($supplied($medical->insuranceProvider)) ?></dd>
-            <dt>Pediatrician name</dt><dd><?= $escape($supplied($medical->pediatricianName)) ?></dd>
-            <dt>Pediatrician phone</dt><dd><?= $escape($supplied($medical->pediatricianPhone)) ?></dd>
-            <dt>Observations</dt><dd><?= $escape($supplied($medical->observations)) ?></dd>
+        <dl class="app-data-list">
+            <dt>Condición médica</dt><dd><?= $escape($yesNo($medical->hasMedicalCondition)) ?></dd>
+            <dt>Detalle de condición</dt><dd><?= $escape($supplied($medical->medicalConditionDetail)) ?></dd>
+            <dt>Alergias</dt><dd><?= $escape($yesNo($medical->hasAllergies)) ?></dd>
+            <dt>Detalle de alergias</dt><dd><?= $escape($supplied($medical->allergyDetail)) ?></dd>
+            <dt>Medicación permanente</dt><dd><?= $escape($yesNo($medical->takesPermanentMedication)) ?></dd>
+            <dt>Nombre de medicación</dt><dd><?= $escape($supplied($medical->medicationName)) ?></dd>
+            <dt>Cuidado especial</dt><dd><?= $escape($yesNo($medical->requiresSpecialCare)) ?></dd>
+            <dt>Detalle de cuidado</dt><dd><?= $escape($supplied($medical->specialCareDetail)) ?></dd>
+            <dt>Seguro médico</dt><dd><?= $escape($yesNo($medical->hasMedicalInsurance)) ?></dd>
+            <dt>Aseguradora</dt><dd><?= $escape($supplied($medical->insuranceProvider)) ?></dd>
+            <dt>Pediatra</dt><dd><?= $escape($supplied($medical->pediatricianName)) ?></dd>
+            <dt>Teléfono del pediatra</dt><dd><?= $escape($supplied($medical->pediatricianPhone)) ?></dd>
+            <dt>Observaciones</dt><dd><?= $escape($supplied($medical->observations)) ?></dd>
         </dl>
         <?php endif; ?>
 
-        <h3>Transport and departure</h3>
-        <dl>
-            <dt>Institutional transport</dt><dd><?= $escape($transport === null ? 'Not supplied' : $yesNo($transport->requiresInstitutionalTransport)) ?></dd>
-            <dt>Authorized to leave alone</dt><dd><?= $escape($yesNo($enrollment->isAuthorizedToLeaveAlone)) ?></dd>
+        <h3 class="h5 mt-4">Transporte y salida</h3>
+        <dl class="app-data-list">
+            <dt>Transporte institucional</dt><dd><?= $escape($transport === null ? 'No registrado' : $yesNo($transport->requiresInstitutionalTransport)) ?></dd>
+            <dt>Autorizado para salir solo</dt><dd><?= $escape($yesNo($enrollment->isAuthorizedToLeaveAlone)) ?></dd>
         </dl>
     </section>
 
-    <section class="mb-4" aria-labelledby="lifecycle-actions-heading">
-        <h2 id="lifecycle-actions-heading">Administrative lifecycle actions</h2>
+    <section class="app-consequential-panel" aria-labelledby="lifecycle-actions-heading">
+        <h2 class="h3" id="lifecycle-actions-heading">Acciones del ciclo de vida</h2>
+        <p class="text-body-secondary">Cada acción conserva las reglas de transición existentes y se valida nuevamente en el servidor.</p>
+        <div class="app-action-group">
         <?php foreach ([
-            '/enrollments/reopen' => 'Reopen Enrollment',
-            '/enrollments/complete' => 'Complete Enrollment',
-            '/enrollments/cancel' => 'Cancel Enrollment',
-        ] as $action => $label): ?>
+            '/enrollments/reopen' => ['Reabrir matrícula', 'btn-outline-primary'],
+            '/enrollments/complete' => ['Completar matrícula', 'btn-success'],
+            '/enrollments/cancel' => ['Cancelar matrícula', 'btn-outline-danger'],
+        ] as $action => [$label, $buttonClass]): ?>
         <form method="post" action="<?= $escape($action) ?>">
             <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
             <input type="hidden" name="enrollment_id" value="<?= $escape($enrollment->id) ?>">
-            <button type="submit"><?= $escape($label) ?></button>
+            <button class="btn <?= $escape($buttonClass) ?>" type="submit"><?= $escape($label) ?></button>
         </form>
         <?php endforeach; ?>
+        </div>
     </section>
