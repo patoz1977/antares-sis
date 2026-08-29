@@ -11,387 +11,392 @@ $activeAddresses = array_values(array_filter($resources->addresses, static fn ($
 $activeContacts = array_values(array_filter($resources->emergencyContacts, static fn ($item): bool => $item->status === 'ACTIVE'));
 $activePickups = array_values(array_filter($resources->authorizedPickups, static fn ($item): bool => $item->status === 'ACTIVE'));
 ?>
-<h1>Family resources</h1>
+<header class="app-page-header d-flex flex-column flex-lg-row justify-content-between gap-3 align-items-lg-start">
+    <div>
+        <p class="text-uppercase fw-semibold text-primary mb-2">Familia <?= $escape($resources->displayName) ?></p>
+        <h1 class="display-6 fw-bold mb-2">Recursos familiares</h1>
+        <p class="text-body-secondary mb-0">Administra direcciones, contactos de emergencia, personas autorizadas y su historial de asignaciones.</p>
+    </div>
+    <div class="app-action-group">
+        <a class="btn btn-outline-primary" href="/families/show?id=<?= $escape($resources->familyId) ?>">Volver a la familia</a>
+        <a class="btn btn-outline-secondary" href="/families">Familias</a>
+    </div>
+</header>
 
-<dl>
-    <dt>Family</dt><dd><?= $escape($resources->displayName) ?></dd>
-    <dt>Family ID</dt><dd><?= $escape($resources->familyId) ?></dd>
-    <dt>Status</dt><dd><?= $escape($resources->status) ?></dd>
-</dl>
+<section class="app-data-card" aria-labelledby="resources-family-heading">
+    <h2 class="h4" id="resources-family-heading">Contexto familiar</h2>
+    <dl class="app-data-list">
+        <dt>Familia</dt><dd><?= $escape($resources->displayName) ?></dd>
+        <dt>ID interno</dt><dd><?= $escape($resources->familyId) ?></dd>
+        <dt>Estado</dt><dd><?php $statusCode = $resources->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></dd>
+    </dl>
+</section>
 
-<?php if ($errors !== []): ?>
-<div role="alert">
-    <p>Review the submitted information.</p>
-    <ul>
-    <?php foreach ($errors as $error): ?>
-        <li><?= $escape($error) ?></li>
-    <?php endforeach; ?>
-    </ul>
-</div>
-<?php endif; ?>
+<?php require dirname(__DIR__) . '/components/validation-summary.php'; ?>
 
-<p><a href="/families/show?id=<?= $escape($resources->familyId) ?>">Back to Family</a></p>
-<p><a href="/families">Back to Families</a></p>
+<section class="app-resource-section mb-5" aria-labelledby="addresses-heading">
+<h2 class="h3" id="addresses-heading">Direcciones</h2>
 
-<section aria-labelledby="addresses-heading">
-<h2 id="addresses-heading">Addresses</h2>
-
-<h3>Create Address</h3>
+<div class="app-form-section">
+<h3 class="h5">Crear dirección</h3>
 <form method="post" action="/families/resources/addresses/create">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
-    <label>Label <input name="label" value="<?= $escape($value('label')) ?>" required></label>
-    <label>Main street <input name="main_street" value="<?= $escape($value('main_street')) ?>" required></label>
-    <label>Street number <input name="street_number" value="<?= $escape($value('street_number')) ?>"></label>
-    <label>Secondary street <input name="secondary_street" value="<?= $escape($value('secondary_street')) ?>"></label>
+    <label>Etiqueta <input name="label" value="<?= $escape($value('label')) ?>" required></label>
+    <label>Calle principal <input name="main_street" value="<?= $escape($value('main_street')) ?>" required></label>
+    <label>Número <input name="street_number" value="<?= $escape($value('street_number')) ?>"></label>
+    <label>Calle secundaria <input name="secondary_street" value="<?= $escape($value('secondary_street')) ?>"></label>
     <label>Sector <input name="sector" value="<?= $escape($value('sector')) ?>"></label>
-    <label>Reference <input name="reference" value="<?= $escape($value('reference')) ?>"></label>
-    <label>Latitude <input name="latitude" inputmode="decimal" value="<?= $escape($value('latitude')) ?>"></label>
-    <label>Longitude <input name="longitude" inputmode="decimal" value="<?= $escape($value('longitude')) ?>"></label>
-    <button type="submit">Create Address</button>
+    <label>Referencia <input name="reference" value="<?= $escape($value('reference')) ?>"></label>
+    <label>Latitud <input name="latitude" inputmode="decimal" value="<?= $escape($value('latitude')) ?>"></label>
+    <label>Longitud <input name="longitude" inputmode="decimal" value="<?= $escape($value('longitude')) ?>"></label>
+    <button type="submit">Crear dirección</button>
 </form>
+</div>
 
 <?php if ($resources->addresses === []): ?>
-<p>No Addresses registered.</p>
+<?php $emptyStateTitle = 'No hay direcciones registradas'; $emptyStateText = 'Crea una dirección para poder asignarla a representantes o estudiantes.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php else: ?>
 <?php foreach ($resources->addresses as $address): ?>
-<article>
+<article class="app-data-card">
     <h3><?= $escape($address->label) ?></h3>
     <dl>
-        <dt>Address ID</dt><dd><?= $escape($address->id) ?></dd>
-        <dt>Main street</dt><dd><?= $escape($address->mainStreet) ?></dd>
-        <dt>Street number</dt><dd><?= $escape($address->streetNumber ?? 'Not supplied') ?></dd>
-        <dt>Secondary street</dt><dd><?= $escape($address->secondaryStreet ?? 'Not supplied') ?></dd>
-        <dt>Sector</dt><dd><?= $escape($address->sector ?? 'Not supplied') ?></dd>
-        <dt>Reference</dt><dd><?= $escape($address->reference ?? 'Not supplied') ?></dd>
-        <dt>Latitude</dt><dd><?= $escape($address->latitude ?? 'Not supplied') ?></dd>
-        <dt>Longitude</dt><dd><?= $escape($address->longitude ?? 'Not supplied') ?></dd>
-        <dt>Status</dt><dd><?= $escape($address->status) ?></dd>
+        <dt>ID de dirección</dt><dd><?= $escape($address->id) ?></dd>
+        <dt>Calle principal</dt><dd><?= $escape($address->mainStreet) ?></dd>
+        <dt>Número</dt><dd><?= $escape($address->streetNumber ?? 'No registrado') ?></dd>
+        <dt>Calle secundaria</dt><dd><?= $escape($address->secondaryStreet ?? 'No registrado') ?></dd>
+        <dt>Sector</dt><dd><?= $escape($address->sector ?? 'No registrado') ?></dd>
+        <dt>Referencia</dt><dd><?= $escape($address->reference ?? 'No registrado') ?></dd>
+        <dt>Latitud</dt><dd><?= $escape($address->latitude ?? 'No registrada') ?></dd>
+        <dt>Longitud</dt><dd><?= $escape($address->longitude ?? 'No registrada') ?></dd>
+        <dt>Estado</dt><dd><?= $escape($address->status === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></dd>
     </dl>
     <form method="post" action="/families/resources/addresses/update">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="family_address_id" value="<?= $escape($address->id) ?>">
-        <label>Label <input name="label" value="<?= $escape($address->label) ?>" required></label>
-        <label>Main street <input name="main_street" value="<?= $escape($address->mainStreet) ?>" required></label>
-        <label>Street number <input name="street_number" value="<?= $escape($address->streetNumber) ?>"></label>
-        <label>Secondary street <input name="secondary_street" value="<?= $escape($address->secondaryStreet) ?>"></label>
+        <label>Etiqueta <input name="label" value="<?= $escape($address->label) ?>" required></label>
+        <label>Calle principal <input name="main_street" value="<?= $escape($address->mainStreet) ?>" required></label>
+        <label>Número <input name="street_number" value="<?= $escape($address->streetNumber) ?>"></label>
+        <label>Calle secundaria <input name="secondary_street" value="<?= $escape($address->secondaryStreet) ?>"></label>
         <label>Sector <input name="sector" value="<?= $escape($address->sector) ?>"></label>
-        <label>Reference <input name="reference" value="<?= $escape($address->reference) ?>"></label>
-        <label>Latitude <input name="latitude" inputmode="decimal" value="<?= $escape($address->latitude) ?>"></label>
-        <label>Longitude <input name="longitude" inputmode="decimal" value="<?= $escape($address->longitude) ?>"></label>
-        <button type="submit">Update Address</button>
+        <label>Referencia <input name="reference" value="<?= $escape($address->reference) ?>"></label>
+        <label>Latitud <input name="latitude" inputmode="decimal" value="<?= $escape($address->latitude) ?>"></label>
+        <label>Longitud <input name="longitude" inputmode="decimal" value="<?= $escape($address->longitude) ?>"></label>
+        <button type="submit">Guardar dirección</button>
     </form>
     <form method="post" action="/families/resources/addresses/<?= $address->status === 'ACTIVE' ? 'deactivate' : 'activate' ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="family_address_id" value="<?= $escape($address->id) ?>">
-        <button type="submit"><?= $address->status === 'ACTIVE' ? 'Deactivate' : 'Activate' ?> Address</button>
+        <button type="submit"><?= $address->status === 'ACTIVE' ? 'Desactivar' : 'Activar' ?> dirección</button>
     </form>
 </article>
 <?php endforeach; ?>
 <?php endif; ?>
 
-<h3>Assign Address to Representative</h3>
+<h3 class="h5">Asignar dirección a representante</h3>
 <form method="post" action="/families/resources/representatives/address">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
-    <label>Representative
+    <label>Representante
         <select name="representative_id" required>
             <?php foreach ($activeRepresentatives as $membership): ?>
-            <option value="<?= $escape($membership->representativeId) ?>">Representative <?= $escape($membership->representativeId) ?></option>
+            <option value="<?= $escape($membership->representativeId) ?>">Representante <?= $escape($membership->representativeId) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
-    <label>Address
+    <label>Dirección
         <select name="family_address_id" required>
             <?php foreach ($activeAddresses as $address): ?>
             <option value="<?= $escape($address->id) ?>"><?= $escape($address->label) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
-    <label>Started at <input name="started_at" type="datetime-local" required></label>
-    <button type="submit"<?= $activeRepresentatives === [] || $activeAddresses === [] ? ' disabled' : '' ?>>Assign Representative Address</button>
+    <label>Inicio <input name="started_at" type="datetime-local" required></label>
+    <button type="submit"<?= $activeRepresentatives === [] || $activeAddresses === [] ? ' disabled' : '' ?>>Asignar dirección al representante</button>
 </form>
 
-<h3>Assign Address to Student</h3>
+<h3 class="h5">Asignar dirección a estudiante</h3>
 <form method="post" action="/families/resources/students/address">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
-    <label>Student
+    <label>Estudiante
         <select name="student_id" required>
             <?php foreach ($activeStudents as $membership): ?>
-            <option value="<?= $escape($membership->studentId) ?>">Student <?= $escape($membership->studentId) ?></option>
+            <option value="<?= $escape($membership->studentId) ?>">Estudiante <?= $escape($membership->studentId) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
-    <label>Address
+    <label>Dirección
         <select name="family_address_id" required>
             <?php foreach ($activeAddresses as $address): ?>
             <option value="<?= $escape($address->id) ?>"><?= $escape($address->label) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
-    <label>Started at <input name="started_at" type="datetime-local" required></label>
-    <button type="submit"<?= $activeStudents === [] || $activeAddresses === [] ? ' disabled' : '' ?>>Assign Student Address</button>
+    <label>Inicio <input name="started_at" type="datetime-local" required></label>
+    <button type="submit"<?= $activeStudents === [] || $activeAddresses === [] ? ' disabled' : '' ?>>Asignar dirección al estudiante</button>
 </form>
 
-<h3>Address assignment history</h3>
+<h3 class="h5">Historial de asignaciones de dirección</h3>
 <?php foreach ($resources->representativeAddressAssignments as $assignment): ?>
-<article>
-    <p>Representative <?= $escape($assignment->representativeId) ?> — Address <?= $escape($assignment->familyAddressId) ?> — <?= $assignment->isActive ? 'Active' : 'History' ?></p>
-    <p><?= $escape($timestamp($assignment->startedAt)) ?> to <?= $assignment->endedAt === null ? 'Not ended' : $escape($timestamp($assignment->endedAt)) ?></p>
+<article class="app-data-card">
+    <p>Representante <?= $escape($assignment->representativeId) ?> — Dirección <?= $escape($assignment->familyAddressId) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
+    <p><?= $escape($timestamp($assignment->startedAt)) ?> hasta <?= $assignment->endedAt === null ? 'Sin finalizar' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
     <form method="post" action="/families/resources/representatives/address/end">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="assignment_id" value="<?= $escape($assignment->id) ?>">
-        <label>Ended at <input name="ended_at" type="datetime-local" required></label>
-        <button type="submit">End Representative Address</button>
+        <label>Fin <input name="ended_at" type="datetime-local" required></label>
+        <button type="submit">Finalizar dirección del representante</button>
     </form>
     <?php endif; ?>
 </article>
 <?php endforeach; ?>
 <?php foreach ($resources->studentAddressAssignments as $assignment): ?>
 <article>
-    <p>Student <?= $escape($assignment->studentId) ?> — Address <?= $escape($assignment->familyAddressId) ?> — <?= $assignment->isActive ? 'Active' : 'History' ?></p>
-    <p><?= $escape($timestamp($assignment->startedAt)) ?> to <?= $assignment->endedAt === null ? 'Not ended' : $escape($timestamp($assignment->endedAt)) ?></p>
+    <p>Estudiante <?= $escape($assignment->studentId) ?> — Dirección <?= $escape($assignment->familyAddressId) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
+    <p><?= $escape($timestamp($assignment->startedAt)) ?> hasta <?= $assignment->endedAt === null ? 'Sin finalizar' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
     <form method="post" action="/families/resources/students/address/end">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="assignment_id" value="<?= $escape($assignment->id) ?>">
-        <label>Ended at <input name="ended_at" type="datetime-local" required></label>
-        <button type="submit">End Student Address</button>
+        <label>Fin <input name="ended_at" type="datetime-local" required></label>
+        <button type="submit">Finalizar dirección del estudiante</button>
     </form>
     <?php endif; ?>
 </article>
 <?php endforeach; ?>
 </section>
 
-<section aria-labelledby="emergency-heading">
-<h2 id="emergency-heading">Emergency Contacts</h2>
+<section class="app-resource-section mb-5" aria-labelledby="emergency-heading">
+<h2 class="h3" id="emergency-heading">Contactos de emergencia</h2>
 <?php if ($options->relationshipTypes === []): ?>
-<p role="alert">Active relationship types are unavailable. Emergency Contact and Authorized Pickup forms are disabled.</p>
+<p class="alert alert-warning" role="alert">No hay tipos de relación activos. Los formularios de contactos de emergencia y personas autorizadas están deshabilitados.</p>
 <?php endif; ?>
-<h3>Create Emergency Contact</h3>
+<h3 class="h5">Crear contacto de emergencia</h3>
 <form method="post" action="/families/resources/emergency-contacts/create">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
-    <label>Names <input name="names" value="<?= $escape($value('names')) ?>" required></label>
-    <label>Relationship type
+    <label>Nombres <input name="names" value="<?= $escape($value('names')) ?>" required></label>
+    <label>Tipo de relación
         <select name="relationship_type_id" required>
             <?php foreach ($options->relationshipTypes as $option): ?>
             <option value="<?= $escape($option->id) ?>"><?= $escape($option->name) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
-    <label>Mobile phone <input name="mobile_phone" value="<?= $escape($value('mobile_phone')) ?>" required></label>
-    <label>Phone <input name="phone" value="<?= $escape($value('phone')) ?>"></label>
-    <label>Email <input name="email" type="email" value="<?= $escape($value('email')) ?>"></label>
-    <label>Observations <textarea name="observations"><?= $escape($value('observations')) ?></textarea></label>
-    <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Create Emergency Contact</button>
+    <label>Teléfono móvil <input name="mobile_phone" value="<?= $escape($value('mobile_phone')) ?>" required></label>
+    <label>Teléfono <input name="phone" value="<?= $escape($value('phone')) ?>"></label>
+    <label>Correo electrónico <input name="email" type="email" value="<?= $escape($value('email')) ?>"></label>
+    <label>Observaciones <textarea name="observations"><?= $escape($value('observations')) ?></textarea></label>
+    <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Crear contacto de emergencia</button>
 </form>
 
 <?php foreach ($resources->emergencyContacts as $contact): ?>
 <article>
     <h3><?= $escape($contact->names) ?></h3>
     <dl>
-        <dt>Emergency Contact ID</dt><dd><?= $escape($contact->id) ?></dd>
-        <dt>Relationship type ID</dt><dd><?= $escape($contact->relationshipTypeId) ?></dd>
-        <dt>Mobile phone</dt><dd><?= $escape($contact->mobilePhone) ?></dd>
-        <dt>Phone</dt><dd><?= $escape($contact->phone ?? 'Not supplied') ?></dd>
-        <dt>Email</dt><dd><?= $escape($contact->email ?? 'Not supplied') ?></dd>
-        <dt>Observations</dt><dd><?= $escape($contact->observations ?? 'Not supplied') ?></dd>
-        <dt>Status</dt><dd><?= $escape($contact->status) ?></dd>
+        <dt>ID de contacto</dt><dd><?= $escape($contact->id) ?></dd>
+        <dt>Tipo de relación (ID)</dt><dd><?= $escape($contact->relationshipTypeId) ?></dd>
+        <dt>Teléfono móvil</dt><dd><?= $escape($contact->mobilePhone) ?></dd>
+        <dt>Teléfono</dt><dd><?= $escape($contact->phone ?? 'No registrado') ?></dd>
+        <dt>Correo electrónico</dt><dd><?= $escape($contact->email ?? 'No registrado') ?></dd>
+        <dt>Observaciones</dt><dd><?= $escape($contact->observations ?? 'No registradas') ?></dd>
+        <dt>Estado</dt><dd><?= $escape($contact->status === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></dd>
     </dl>
     <form method="post" action="/families/resources/emergency-contacts/update">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="family_emergency_contact_id" value="<?= $escape($contact->id) ?>">
-        <label>Names <input name="names" value="<?= $escape($contact->names) ?>" required></label>
-        <label>Relationship type
+        <label>Nombres <input name="names" value="<?= $escape($contact->names) ?>" required></label>
+        <label>Tipo de relación
             <select name="relationship_type_id" required>
                 <?php foreach ($options->relationshipTypes as $option): ?>
                 <option value="<?= $escape($option->id) ?>"<?= $option->id === $contact->relationshipTypeId ? ' selected' : '' ?>><?= $escape($option->name) ?></option>
                 <?php endforeach; ?>
             </select>
         </label>
-        <label>Mobile phone <input name="mobile_phone" value="<?= $escape($contact->mobilePhone) ?>" required></label>
-        <label>Phone <input name="phone" value="<?= $escape($contact->phone) ?>"></label>
-        <label>Email <input name="email" type="email" value="<?= $escape($contact->email) ?>"></label>
-        <label>Observations <textarea name="observations"><?= $escape($contact->observations) ?></textarea></label>
-        <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Update Emergency Contact</button>
+        <label>Teléfono móvil <input name="mobile_phone" value="<?= $escape($contact->mobilePhone) ?>" required></label>
+        <label>Teléfono <input name="phone" value="<?= $escape($contact->phone) ?>"></label>
+        <label>Correo electrónico <input name="email" type="email" value="<?= $escape($contact->email) ?>"></label>
+        <label>Observaciones <textarea name="observations"><?= $escape($contact->observations) ?></textarea></label>
+        <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Guardar contacto de emergencia</button>
     </form>
     <form method="post" action="/families/resources/emergency-contacts/<?= $contact->status === 'ACTIVE' ? 'deactivate' : 'activate' ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="family_emergency_contact_id" value="<?= $escape($contact->id) ?>">
-        <button type="submit"><?= $contact->status === 'ACTIVE' ? 'Deactivate' : 'Activate' ?> Emergency Contact</button>
+        <button type="submit"><?= $contact->status === 'ACTIVE' ? 'Desactivar' : 'Activar' ?> contacto de emergencia</button>
     </form>
 </article>
 <?php endforeach; ?>
 
-<h3>Assign Emergency Contact</h3>
+<h3 class="h5">Asignar contacto de emergencia</h3>
 <form method="post" action="/families/resources/emergency-contacts/assign">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
-    <label>Emergency Contact
+    <label>Contacto de emergencia
         <select name="family_emergency_contact_id" required>
             <?php foreach ($activeContacts as $contact): ?>
             <option value="<?= $escape($contact->id) ?>"><?= $escape($contact->names) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
-    <label>Student
+    <label>Estudiante
         <select name="student_id" required>
             <?php foreach ($activeStudents as $membership): ?>
-            <option value="<?= $escape($membership->studentId) ?>">Student <?= $escape($membership->studentId) ?></option>
+            <option value="<?= $escape($membership->studentId) ?>">Estudiante <?= $escape($membership->studentId) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
-    <label>Priority <input name="priority" type="number" min="1"></label>
-    <label>Started at <input name="started_at" type="datetime-local" required></label>
-    <button type="submit"<?= $activeContacts === [] || $activeStudents === [] ? ' disabled' : '' ?>>Assign Emergency Contact</button>
+    <label>Prioridad <input name="priority" type="number" min="1"></label>
+    <label>Inicio <input name="started_at" type="datetime-local" required></label>
+    <button type="submit"<?= $activeContacts === [] || $activeStudents === [] ? ' disabled' : '' ?>>Asignar contacto de emergencia</button>
 </form>
 
-<h3>Emergency Contact assignment history</h3>
+<h3 class="h5">Historial de contactos de emergencia</h3>
 <?php foreach ($resources->emergencyContactAssignments as $assignment): ?>
 <article>
-    <p>Emergency Contact <?= $escape($assignment->familyEmergencyContactId) ?> — Student <?= $escape($assignment->studentId) ?> — Priority <?= $escape($assignment->priority ?? 'Not supplied') ?> — <?= $assignment->isActive ? 'Active' : 'History' ?></p>
-    <p><?= $escape($timestamp($assignment->startedAt)) ?> to <?= $assignment->endedAt === null ? 'Not ended' : $escape($timestamp($assignment->endedAt)) ?></p>
+    <p>Contacto <?= $escape($assignment->familyEmergencyContactId) ?> — Estudiante <?= $escape($assignment->studentId) ?> — Prioridad <?= $escape($assignment->priority ?? 'No registrada') ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
+    <p><?= $escape($timestamp($assignment->startedAt)) ?> hasta <?= $assignment->endedAt === null ? 'Sin finalizar' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
     <form method="post" action="/families/resources/emergency-contacts/end">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="assignment_id" value="<?= $escape($assignment->id) ?>">
-        <label>Ended at <input name="ended_at" type="datetime-local" required></label>
-        <button type="submit">End Emergency Contact assignment</button>
+        <label>Fin <input name="ended_at" type="datetime-local" required></label>
+        <button type="submit">Finalizar asignación</button>
     </form>
     <?php endif; ?>
 </article>
 <?php endforeach; ?>
 </section>
 
-<section aria-labelledby="pickups-heading">
-<h2 id="pickups-heading">Authorized Pickups</h2>
-<h3>Create Authorized Pickup</h3>
+<section class="app-resource-section mb-5" aria-labelledby="pickups-heading">
+<h2 class="h3" id="pickups-heading">Personas autorizadas para retirar</h2>
+<h3 class="h5">Crear persona autorizada</h3>
 <form method="post" action="/families/resources/authorized-pickups/create">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
-    <label>Names <input name="names" value="<?= $escape($value('names')) ?>" required></label>
-    <label>Relationship type
+    <label>Nombres <input name="names" value="<?= $escape($value('names')) ?>" required></label>
+    <label>Tipo de relación
         <select name="relationship_type_id" required>
             <?php foreach ($options->relationshipTypes as $option): ?>
             <option value="<?= $escape($option->id) ?>"<?= (string) $option->id === (string) $value('relationship_type_id') ? ' selected' : '' ?>><?= $escape($option->name) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
-    <label>Mobile phone <input name="mobile_phone" value="<?= $escape($value('mobile_phone')) ?>" required></label>
-    <label>Phone <input name="phone" value="<?= $escape($value('phone')) ?>"></label>
-    <label>Document type (optional)
+    <label>Teléfono móvil <input name="mobile_phone" value="<?= $escape($value('mobile_phone')) ?>" required></label>
+    <label>Teléfono <input name="phone" value="<?= $escape($value('phone')) ?>"></label>
+    <label>Tipo de documento (opcional)
         <select name="document_type_id">
-            <option value="">No identification</option>
+            <option value="">Sin identificación</option>
             <?php foreach ($options->documentTypes as $option): ?>
             <option value="<?= $escape($option->id) ?>"<?= (string) $option->id === (string) $value('document_type_id') ? ' selected' : '' ?>><?= $escape($option->name) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
-    <label>Document number (optional) <input name="document_number" value="<?= $escape($value('document_number')) ?>"></label>
-    <label>Observations <textarea name="observations"><?= $escape($value('observations')) ?></textarea></label>
-    <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Create Authorized Pickup</button>
+    <label>Número de documento (opcional) <input name="document_number" value="<?= $escape($value('document_number')) ?>"></label>
+    <label>Observaciones <textarea name="observations"><?= $escape($value('observations')) ?></textarea></label>
+    <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Crear persona autorizada</button>
 </form>
 <?php if ($options->documentTypes === []): ?>
-<p>No active document types are available. Authorized Pickups may still be saved without identification.</p>
+<p class="alert alert-info">No hay tipos de documento activos. La persona autorizada puede guardarse sin identificación.</p>
 <?php endif; ?>
 
 <?php foreach ($resources->authorizedPickups as $pickup): ?>
-<article>
+<article class="app-data-card">
     <h3><?= $escape($pickup->names) ?></h3>
     <dl>
-        <dt>Authorized Pickup ID</dt><dd><?= $escape($pickup->id) ?></dd>
-        <dt>Relationship type ID</dt><dd><?= $escape($pickup->relationshipTypeId) ?></dd>
-        <dt>Mobile phone</dt><dd><?= $escape($pickup->mobilePhone) ?></dd>
-        <dt>Phone</dt><dd><?= $escape($pickup->phone ?? 'Not supplied') ?></dd>
-        <dt>Document type ID</dt><dd><?= $escape($pickup->documentTypeId ?? 'Not supplied') ?></dd>
-        <dt>Document number</dt><dd><?= $escape($pickup->documentNumber ?? 'Not supplied') ?></dd>
-        <dt>Observations</dt><dd><?= $escape($pickup->observations ?? 'Not supplied') ?></dd>
-        <dt>Status</dt><dd><?= $escape($pickup->status) ?></dd>
+        <dt>ID de persona autorizada</dt><dd><?= $escape($pickup->id) ?></dd>
+        <dt>Tipo de relación (ID)</dt><dd><?= $escape($pickup->relationshipTypeId) ?></dd>
+        <dt>Teléfono móvil</dt><dd><?= $escape($pickup->mobilePhone) ?></dd>
+        <dt>Teléfono</dt><dd><?= $escape($pickup->phone ?? 'No registrado') ?></dd>
+        <dt>Tipo de documento (ID)</dt><dd><?= $escape($pickup->documentTypeId ?? 'No registrado') ?></dd>
+        <dt>Número de documento</dt><dd><?= $escape($pickup->documentNumber ?? 'No registrado') ?></dd>
+        <dt>Observaciones</dt><dd><?= $escape($pickup->observations ?? 'No registradas') ?></dd>
+        <dt>Estado</dt><dd><?= $escape($pickup->status === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></dd>
     </dl>
     <form method="post" action="/families/resources/authorized-pickups/update">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="family_authorized_pickup_id" value="<?= $escape($pickup->id) ?>">
-        <label>Names <input name="names" value="<?= $escape($pickup->names) ?>" required></label>
-        <label>Relationship type
+        <label>Nombres <input name="names" value="<?= $escape($pickup->names) ?>" required></label>
+        <label>Tipo de relación
             <select name="relationship_type_id" required>
                 <?php foreach ($options->relationshipTypes as $option): ?>
                 <option value="<?= $escape($option->id) ?>"<?= $option->id === $pickup->relationshipTypeId ? ' selected' : '' ?>><?= $escape($option->name) ?></option>
                 <?php endforeach; ?>
             </select>
         </label>
-        <label>Mobile phone <input name="mobile_phone" value="<?= $escape($pickup->mobilePhone) ?>" required></label>
-        <label>Phone <input name="phone" value="<?= $escape($pickup->phone) ?>"></label>
-        <label>Document type
+        <label>Teléfono móvil <input name="mobile_phone" value="<?= $escape($pickup->mobilePhone) ?>" required></label>
+        <label>Teléfono <input name="phone" value="<?= $escape($pickup->phone) ?>"></label>
+        <label>Tipo de documento
             <select name="document_type_id">
-                <option value="">No identification</option>
+                <option value="">Sin identificación</option>
                 <?php foreach ($options->documentTypes as $option): ?>
                 <option value="<?= $escape($option->id) ?>"<?= $option->id === $pickup->documentTypeId ? ' selected' : '' ?>><?= $escape($option->name) ?></option>
                 <?php endforeach; ?>
             </select>
         </label>
-        <label>Document number <input name="document_number" value="<?= $escape($pickup->documentNumber) ?>"></label>
-        <label>Observations <textarea name="observations"><?= $escape($pickup->observations) ?></textarea></label>
-        <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Update Authorized Pickup</button>
+        <label>Número de documento <input name="document_number" value="<?= $escape($pickup->documentNumber) ?>"></label>
+        <label>Observaciones <textarea name="observations"><?= $escape($pickup->observations) ?></textarea></label>
+        <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Guardar persona autorizada</button>
     </form>
     <form method="post" action="/families/resources/authorized-pickups/<?= $pickup->status === 'ACTIVE' ? 'deactivate' : 'activate' ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="family_authorized_pickup_id" value="<?= $escape($pickup->id) ?>">
-        <button type="submit"><?= $pickup->status === 'ACTIVE' ? 'Deactivate' : 'Activate' ?> Authorized Pickup</button>
+        <button type="submit"><?= $pickup->status === 'ACTIVE' ? 'Desactivar' : 'Activar' ?> persona autorizada</button>
     </form>
 </article>
 <?php endforeach; ?>
 
-<h3>Assign Authorized Pickup</h3>
+<h3 class="h5">Asignar persona autorizada</h3>
 <form method="post" action="/families/resources/authorized-pickups/assign">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
-    <label>Authorized Pickup
+    <label>Persona autorizada
         <select name="family_authorized_pickup_id" required>
             <?php foreach ($activePickups as $pickup): ?>
             <option value="<?= $escape($pickup->id) ?>"><?= $escape($pickup->names) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
-    <label>Student
+    <label>Estudiante
         <select name="student_id" required>
             <?php foreach ($activeStudents as $membership): ?>
-            <option value="<?= $escape($membership->studentId) ?>">Student <?= $escape($membership->studentId) ?></option>
+            <option value="<?= $escape($membership->studentId) ?>">Estudiante <?= $escape($membership->studentId) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
-    <label>Started at <input name="started_at" type="datetime-local" required></label>
-    <button type="submit"<?= $activePickups === [] || $activeStudents === [] ? ' disabled' : '' ?>>Assign Authorized Pickup</button>
+    <label>Inicio <input name="started_at" type="datetime-local" required></label>
+    <button type="submit"<?= $activePickups === [] || $activeStudents === [] ? ' disabled' : '' ?>>Asignar persona autorizada</button>
 </form>
 
-<h3>Authorized Pickup assignment history</h3>
+<h3 class="h5">Historial de personas autorizadas</h3>
 <?php foreach ($resources->authorizedPickupAssignments as $assignment): ?>
 <article>
-    <p>Authorized Pickup <?= $escape($assignment->familyAuthorizedPickupId) ?> — Student <?= $escape($assignment->studentId) ?> — <?= $assignment->isActive ? 'Active' : 'History' ?></p>
-    <p><?= $escape($timestamp($assignment->startedAt)) ?> to <?= $assignment->endedAt === null ? 'Not ended' : $escape($timestamp($assignment->endedAt)) ?></p>
+    <p>Persona autorizada <?= $escape($assignment->familyAuthorizedPickupId) ?> — Estudiante <?= $escape($assignment->studentId) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
+    <p><?= $escape($timestamp($assignment->startedAt)) ?> hasta <?= $assignment->endedAt === null ? 'Sin finalizar' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
     <form method="post" action="/families/resources/authorized-pickups/end">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="assignment_id" value="<?= $escape($assignment->id) ?>">
-        <label>Ended at <input name="ended_at" type="datetime-local" required></label>
-        <button type="submit">End Authorized Pickup assignment</button>
+        <label>Fin <input name="ended_at" type="datetime-local" required></label>
+        <button type="submit">Finalizar asignación</button>
     </form>
     <?php endif; ?>
 </article>
 <?php endforeach; ?>
 </section>
 
-<p><a href="/families/show?id=<?= $escape($resources->familyId) ?>">Back to Family</a></p>
-<p><a href="/families">Back to Families</a></p>
+<div class="app-action-group">
+    <a class="btn btn-outline-primary" href="/families/show?id=<?= $escape($resources->familyId) ?>">Volver a la familia</a>
+    <a class="btn btn-outline-secondary" href="/families">Familias</a>
+</div>
