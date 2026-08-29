@@ -271,7 +271,10 @@ $databaseConfigValues['charset'] = (string) ($databaseConfigValues['charset'] ??
 $databaseConfig = new DatabaseConfig($databaseConfigValues);
 
 $container = new Container();
-$container->instance(WhiteLabelBranding::class, WhiteLabelBranding::fromConfig($config));
+$container->instance(
+    WhiteLabelBranding::class,
+    WhiteLabelBranding::fromConfig($config, $root . DIRECTORY_SEPARATOR . 'public'),
+);
 $container->singleton(SharedShellDataFactory::class, SharedShellDataFactory::class);
 $container->instance(DatabaseConfig::class, $databaseConfig);
 $container->singleton(ConnectionFactory::class, ConnectionFactory::class);

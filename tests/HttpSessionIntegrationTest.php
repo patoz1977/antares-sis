@@ -101,6 +101,64 @@ integrationAssert(
     'HTTP login exposed a non-generic authentication failure.'
 );
 
+[$invalidLoginAuthenticate, $invalidLoginRepository, $invalidLoginSession] = Tests\authenticationFixture();
+$invalidLoginCsrf = new SessionCsrfTokenManager($invalidLoginSession);
+$invalidLoginGetUser = new GetAuthenticatedUser($invalidLoginSession, $invalidLoginRepository);
+$invalidLoginController = new AuthenticationController(
+    $invalidLoginAuthenticate,
+    new LogoutUser($invalidLoginSession, new Tests\FakeSecurityEvents()),
+    $invalidLoginGetUser,
+    new GetAuthenticatedRepresentative(
+        $invalidLoginGetUser,
+        new Tests\RepresentativeAccessResolutionTest(null),
+    ),
+    $invalidLoginCsrf,
+    $invalidLoginSession,
+);
+$_SERVER['REQUEST_URI'] = '/login';
+$_POST = ['_csrf_token' => 'invalid'];
+$invalidLoginController->login();
+integrationAssert(http_response_code() === 303, 'Invalid login CSRF did not preserve the PRG redirect.');
+integrationAssert($invalidLoginSession->authenticatedUserId() === null, 'Invalid login CSRF authenticated a User.');
+$_SERVER['REQUEST_METHOD'] = 'GET';
+$_POST = [];
+$invalidLoginHtml = $invalidLoginController->showLogin();
+integrationAssert(str_contains($invalidLoginHtml, 'Solicitud no válida.'), 'Invalid login CSRF did not render Spanish feedback.');
+integrationAssert(!str_contains($invalidLoginHtml, 'Invalid request.'), 'Invalid login CSRF still rendered English feedback.');
+
+[$invalidLogoutAuthenticate, $invalidLogoutRepository, $invalidLogoutSession] = Tests\authenticationFixture();
+$invalidLogoutCsrf = new SessionCsrfTokenManager($invalidLogoutSession);
+$invalidLogoutGetUser = new GetAuthenticatedUser($invalidLogoutSession, $invalidLogoutRepository);
+$invalidLogoutController = new AuthenticationController(
+    $invalidLogoutAuthenticate,
+    new LogoutUser($invalidLogoutSession, new Tests\FakeSecurityEvents()),
+    $invalidLogoutGetUser,
+    new GetAuthenticatedRepresentative(
+        $invalidLogoutGetUser,
+        new Tests\RepresentativeAccessResolutionTest(null),
+    ),
+    $invalidLogoutCsrf,
+    $invalidLogoutSession,
+);
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_SERVER['REQUEST_URI'] = '/login';
+$_POST = [
+    '_csrf_token' => $invalidLogoutCsrf->token(),
+    'username' => 'admin',
+    'password' => 'correct-password',
+];
+$invalidLogoutController->login();
+integrationAssert($invalidLogoutSession->authenticatedUserId() === 1, 'Invalid logout fixture did not authenticate first.');
+$_SERVER['REQUEST_URI'] = '/logout';
+$_POST = ['_csrf_token' => 'invalid'];
+$invalidLogoutController->logout();
+integrationAssert(http_response_code() === 303, 'Invalid logout CSRF did not preserve the PRG redirect.');
+integrationAssert($invalidLogoutSession->authenticatedUserId() === 1, 'Invalid logout CSRF destroyed the authenticated session.');
+integrationAssert(
+    $invalidLogoutSession->pull('_flash_authentication_error') === 'Solicitud no válida.',
+    'Invalid logout CSRF did not produce Spanish feedback.'
+);
+
 ob_end_clean();
 echo "PASS real PHP session regeneration and destruction\n";
 echo "PASS HTTP login/logout request, CSRF and redirect integration\n";

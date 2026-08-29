@@ -19,12 +19,12 @@ final readonly class WhiteLabelBranding
     ) {
     }
 
-    public static function fromConfig(array $config): self
+    public static function fromConfig(array $config, ?string $publicDirectory = null): self
     {
         return new self(
             self::displayName($config['app_name'] ?? null),
-            self::publicAssetPath($config['app_logo_path'] ?? null),
-            self::publicAssetPath($config['app_favicon_path'] ?? null),
+            self::publicAssetPath($config['app_logo_path'] ?? null, $publicDirectory),
+            self::publicAssetPath($config['app_favicon_path'] ?? null, $publicDirectory),
             self::primaryColor($config['app_primary_color'] ?? null),
             self::assetVersion($config['app_asset_version'] ?? null),
         );
@@ -41,7 +41,7 @@ final readonly class WhiteLabelBranding
         return $value !== '' && strlen($value) <= 120 ? $value : self::DEFAULT_DISPLAY_NAME;
     }
 
-    private static function publicAssetPath(mixed $value): ?string
+    private static function publicAssetPath(mixed $value, ?string $publicDirectory): ?string
     {
         if (!is_string($value)) {
             return null;
@@ -53,6 +53,31 @@ final readonly class WhiteLabelBranding
             || preg_match('/^\/[A-Za-z0-9][A-Za-z0-9._\/-]*$/D', $value) !== 1
             || str_contains($value, '..')
             || str_contains($value, '//')) {
+            return null;
+        }
+
+        if (!is_string($publicDirectory) || $publicDirectory === '') {
+            return null;
+        }
+
+        $publicRoot = realpath($publicDirectory);
+        if ($publicRoot === false || !is_dir($publicRoot)) {
+            return null;
+        }
+
+        $relativePath = str_replace('/', DIRECTORY_SEPARATOR, ltrim($value, '/'));
+        $assetPath = realpath($publicRoot . DIRECTORY_SEPARATOR . $relativePath);
+        if ($assetPath === false || !is_file($assetPath)) {
+            return null;
+        }
+
+        $publicPrefix = rtrim($publicRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $publicPrefix = strtolower($publicPrefix);
+            $assetPath = strtolower($assetPath);
+        }
+
+        if (!str_starts_with($assetPath, $publicPrefix)) {
             return null;
         }
 

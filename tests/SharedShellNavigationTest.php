@@ -13,6 +13,36 @@ use Tests\Support\TestRunner;
 
 function registerSharedShellNavigationTests(TestRunner $runner): void
 {
+    $runner->add('E014 invalid login CSRF follows PRG and renders Spanish feedback', function (): void {
+        $fixture = representativePortalLoginFixture(false, 'admin');
+        deliveryRequest('POST', '/login', ['_csrf_token' => 'invalid']);
+
+        assertSameValue('', $fixture['authentication']->login());
+        assertSameValue(303, http_response_code());
+        assertSameValue(null, $fixture['session']->authenticatedUserId());
+
+        deliveryRequest('GET', '/login');
+        $html = $fixture['authentication']->showLogin();
+        deliveryAssertContains('Solicitud no válida.', $html);
+        assertSameValue(false, str_contains($html, 'Invalid request.'));
+    });
+
+    $runner->add('E014 invalid logout CSRF preserves authentication and Spanish feedback', function (): void {
+        $fixture = representativePortalLoginFixture(false, 'admin');
+        $fixture['session']->userId = 11;
+        deliveryRequest('POST', '/logout', ['_csrf_token' => 'invalid']);
+
+        assertSameValue('', $fixture['authentication']->logout());
+        assertSameValue(303, http_response_code());
+        assertSameValue(11, $fixture['session']->authenticatedUserId());
+        assertSameValue(0, $fixture['session']->destructions);
+        assertSameValue('Solicitud no válida.', $fixture['session']->pull('_flash_authentication_error'));
+        assertSameValue(false, str_contains(
+            (string) file_get_contents(dirname(__DIR__) . '/app/IdentityAccess/Http/AuthenticationController.php'),
+            'Invalid request.',
+        ));
+    });
+
     $runner->add('E014 shared shell renders Spanish local assets escaped White Label and no JavaScript dependency', function (): void {
         $branding = WhiteLabelBranding::fromConfig([
             'app_name' => 'Colegio <Seguro> & Uno',
@@ -69,6 +99,77 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
         assertSameValue(null, $branding->faviconPath);
         assertSameValue('#0D6EFD', $branding->primaryColor);
         assertSameValue('e014-p2', $branding->assetVersion);
+
+        foreach (['https://remote.example/logo.svg', '//remote.example/logo.svg', '/../secret.svg'] as $unsafeLogo) {
+            assertSameValue(null, WhiteLabelBranding::fromConfig([
+                'app_logo_path' => $unsafeLogo,
+            ], dirname(__DIR__) . '/public')->logoPath);
+        }
+    });
+
+    $runner->add('E014 existing public White Label logo and favicon render from safe paths', function (): void {
+        $publicDirectory = createWhiteLabelPublicFixture();
+
+        try {
+            $branding = WhiteLabelBranding::fromConfig([
+                'app_logo_path' => '/branding/logo.svg',
+                'app_favicon_path' => '/branding/favicon.ico',
+            ], $publicDirectory);
+            assertSameValue('/branding/logo.svg', $branding->logoPath);
+            assertSameValue('/branding/favicon.ico', $branding->faviconPath);
+
+            View::setSharedDataResolver(static fn (): array => [
+                'shell' => new ShellViewData($branding, 'public', [], null),
+            ]);
+            try {
+                $html = View::render('auth.login', [
+                    'title' => 'Iniciar sesión',
+                    'csrfToken' => 'csrf',
+                ]);
+            } finally {
+                View::setSharedDataResolver(null);
+            }
+
+            deliveryAssertContains('src="/branding/logo.svg"', $html);
+            deliveryAssertContains('<link rel="icon" href="/branding/favicon.ico">', $html);
+        } finally {
+            removeWhiteLabelPublicFixture($publicDirectory);
+        }
+    });
+
+    $runner->add('E014 missing public White Label assets never render broken references', function (): void {
+        $publicDirectory = createWhiteLabelPublicFixture();
+
+        try {
+            $unconfigured = WhiteLabelBranding::fromConfig([], $publicDirectory);
+            assertSameValue(null, $unconfigured->logoPath);
+            assertSameValue(null, $unconfigured->faviconPath);
+
+            $branding = WhiteLabelBranding::fromConfig([
+                'app_logo_path' => '/branding/logo-no-existe.svg',
+                'app_favicon_path' => '/branding/favicon-no-existe.ico',
+            ], $publicDirectory);
+            assertSameValue(null, $branding->logoPath);
+            assertSameValue(null, $branding->faviconPath);
+
+            View::setSharedDataResolver(static fn (): array => [
+                'shell' => new ShellViewData($branding, 'public', [], null),
+            ]);
+            try {
+                $html = View::render('auth.login', [
+                    'title' => 'Iniciar sesión',
+                    'csrfToken' => 'csrf',
+                ]);
+            } finally {
+                View::setSharedDataResolver(null);
+            }
+
+            assertSameValue(false, str_contains($html, '<img class="app-brand-logo"'));
+            assertSameValue(false, str_contains($html, '<link rel="icon"'));
+            deliveryAssertContains('app-brand-mark', $html);
+        } finally {
+            removeWhiteLabelPublicFixture($publicDirectory);
+        }
     });
 
     $runner->add('E014 administrator shell exposes only approved modules and prefix-aware active state', function (): void {
@@ -265,6 +366,44 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
         assertSameValue(['components/navigation.php'], $logoutOwners);
         assertSameValue(['layouts/app.php'], $mainOwners);
     });
+}
+
+function createWhiteLabelPublicFixture(): string
+{
+    $directory = sys_get_temp_dir()
+        . DIRECTORY_SEPARATOR
+        . 'antares-e014-branding-'
+        . bin2hex(random_bytes(8));
+    $brandingDirectory = $directory . DIRECTORY_SEPARATOR . 'branding';
+    if (!mkdir($brandingDirectory, 0700, true) && !is_dir($brandingDirectory)) {
+        throw new \RuntimeException('Unable to create the White Label public fixture.');
+    }
+
+    $logo = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>';
+    if (file_put_contents($brandingDirectory . DIRECTORY_SEPARATOR . 'logo.svg', $logo) === false
+        || file_put_contents($brandingDirectory . DIRECTORY_SEPARATOR . 'favicon.ico', 'fixture-icon') === false) {
+        removeWhiteLabelPublicFixture($directory);
+        throw new \RuntimeException('Unable to write the White Label public fixture.');
+    }
+
+    return $directory;
+}
+
+function removeWhiteLabelPublicFixture(string $directory): void
+{
+    $brandingDirectory = $directory . DIRECTORY_SEPARATOR . 'branding';
+    foreach (['logo.svg', 'favicon.ico'] as $file) {
+        $path = $brandingDirectory . DIRECTORY_SEPARATOR . $file;
+        if (is_file($path)) {
+            unlink($path);
+        }
+    }
+    if (is_dir($brandingDirectory)) {
+        rmdir($brandingDirectory);
+    }
+    if (is_dir($directory)) {
+        rmdir($directory);
+    }
 }
 
 function shellItem(ShellViewData $shell, string $label): array

@@ -57,7 +57,7 @@ final class AuthenticationController extends Controller
         $csrfToken = $this->stringInput($input, '_csrf_token');
 
         if (!$this->csrf->isValid($csrfToken)) {
-            $this->session->put(self::FLASH_ERROR_KEY, 'Invalid request.');
+            $this->session->put(self::FLASH_ERROR_KEY, 'Solicitud no válida.');
 
             return $this->redirect('/login', 303);
         }
@@ -83,7 +83,7 @@ final class AuthenticationController extends Controller
         $input = (new Request())->input();
 
         if (!$this->csrf->isValid($this->stringInput($input, '_csrf_token'))) {
-            $this->session->put(self::FLASH_ERROR_KEY, 'Invalid request.');
+            $this->session->put(self::FLASH_ERROR_KEY, 'Solicitud no válida.');
 
             return $this->redirect('/login', 303);
         }
