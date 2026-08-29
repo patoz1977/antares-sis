@@ -5,54 +5,75 @@ declare(strict_types=1);
 $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 $timestamp = static fn (DateTimeImmutable $value): string => $value->format(DateTimeImmutable::ATOM);
 ?>
-<h1>Family details</h1>
+<header class="app-page-header d-flex flex-column flex-lg-row justify-content-between gap-3 align-items-lg-start">
+    <div>
+        <p class="text-uppercase fw-semibold text-primary mb-2">Familias</p>
+        <h1 class="display-6 fw-bold mb-2"><?= $escape($family->displayName) ?></h1>
+        <p class="text-body-secondary mb-0">Contexto operativo de membresías, recursos y acceso del representante. ID interno: <?= $escape($family->id) ?>.</p>
+    </div>
+    <div class="app-action-group">
+        <a class="btn btn-primary" href="/families/students/create?family_id=<?= $escape($family->id) ?>">Agregar estudiante</a>
+        <a class="btn btn-outline-primary" href="/families/resources?family_id=<?= $escape($family->id) ?>">Administrar recursos</a>
+        <a class="btn btn-outline-secondary" href="/families">Volver</a>
+    </div>
+</header>
 
-<h2>Family</h2>
-<dl>
-    <dt>ID</dt><dd><?= $escape($family->id) ?></dd>
-    <dt>Display name</dt><dd><?= $escape($family->displayName) ?></dd>
-    <dt>Status</dt><dd><?= $escape($family->status->value) ?></dd>
-</dl>
+<section class="app-data-card" aria-labelledby="family-identity-heading">
+    <h2 class="h4" id="family-identity-heading">Identidad familiar</h2>
+    <dl class="app-data-list">
+        <dt>Nombre visible</dt><dd><?= $escape($family->displayName) ?></dd>
+        <dt>ID interno</dt><dd><?= $escape($family->id) ?></dd>
+        <dt>Estado</dt><dd><?php $statusCode = $family->status->value; require dirname(__DIR__) . '/components/status-badge.php'; ?></dd>
+    </dl>
+</section>
 
-<h2>Representative memberships</h2>
+<section class="mb-5" aria-labelledby="family-representatives-heading">
+<h2 class="h3" id="family-representatives-heading">Representantes y membresías</h2>
 <?php if ($family->representatives === []): ?>
-<p>No Representative memberships.</p>
+<?php $emptyStateTitle = 'No hay representantes asociados'; $emptyStateText = 'Esta familia no tiene membresías de representante registradas.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php else: ?>
+<div class="row g-4">
 <?php foreach ($family->representatives as $membership): ?>
-<section>
-    <h3><?= $membership->isPrimary && $membership->isActive ? 'Active primary Representative' : 'Representative membership' ?></h3>
-    <dl>
-        <dt>Membership ID</dt><dd><?= $escape($membership->id) ?></dd>
-        <dt>Representative ID</dt><dd><?= $escape($membership->representativeId) ?></dd>
-        <dt>Relationship type ID</dt><dd><?= $escape($membership->relationshipTypeId) ?></dd>
-        <dt>Primary</dt><dd><?= $membership->isPrimary ? 'Yes' : 'No' ?></dd>
-        <dt>Membership state</dt><dd><?= $membership->isActive ? 'Active' : 'History' ?></dd>
-        <dt>Started at</dt><dd><?= $escape($timestamp($membership->startedAt)) ?></dd>
-        <dt>Ended at</dt><dd><?= $membership->endedAt === null ? 'Not ended' : $escape($timestamp($membership->endedAt)) ?></dd>
+<div class="col-lg-6">
+<article class="app-data-card h-100">
+    <h3 class="h5"><?= $membership->isPrimary && $membership->isActive ? 'Representante principal activo' : 'Membresía de representante' ?></h3>
+    <dl class="app-data-list">
+        <dt>ID de membresía</dt><dd><?= $escape($membership->id) ?></dd>
+        <dt>ID de representante</dt><dd><?= $escape($membership->representativeId) ?></dd>
+        <dt>Tipo de relación (ID)</dt><dd><?= $escape($membership->relationshipTypeId) ?></dd>
+        <dt>Principal</dt><dd><?= $membership->isPrimary ? 'Sí' : 'No' ?></dd>
+        <dt>Vigencia</dt><dd><?= $membership->isActive ? 'Activa' : 'Histórica' ?></dd>
+        <dt>Inicio</dt><dd><?= $escape($timestamp($membership->startedAt)) ?></dd>
+        <dt>Fin</dt><dd><?= $membership->endedAt === null ? 'Sin finalizar' : $escape($timestamp($membership->endedAt)) ?></dd>
     </dl>
-    <p><a href="/representative-users/manage?representative_id=<?= $escape($membership->representativeId) ?>">Manage Representative User</a></p>
-</section>
+    <a class="btn btn-outline-primary" href="/representative-users/manage?representative_id=<?= $escape($membership->representativeId) ?>">Administrar usuario del representante</a>
+</article>
+</div>
 <?php endforeach; ?>
+</div>
 <?php endif; ?>
+</section>
 
-<h2>Student memberships</h2>
+<section class="mb-4" aria-labelledby="family-students-heading">
+<h2 class="h3" id="family-students-heading">Estudiantes y membresías</h2>
 <?php if ($family->students === []): ?>
-<p>No Student memberships.</p>
+<?php $emptyStateTitle = 'No hay estudiantes asociados'; $emptyStateText = 'Agrega un estudiante para crear su membresía familiar.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php else: ?>
+<div class="row g-4">
 <?php foreach ($family->students as $membership): ?>
-<section>
-    <h3>Student membership</h3>
-    <dl>
-        <dt>Membership ID</dt><dd><?= $escape($membership->id) ?></dd>
-        <dt>Student ID</dt><dd><?= $escape($membership->studentId) ?></dd>
-        <dt>Membership state</dt><dd><?= $membership->isActive ? 'Active' : 'History' ?></dd>
-        <dt>Started at</dt><dd><?= $escape($timestamp($membership->startedAt)) ?></dd>
-        <dt>Ended at</dt><dd><?= $membership->endedAt === null ? 'Not ended' : $escape($timestamp($membership->endedAt)) ?></dd>
+<div class="col-lg-6">
+<article class="app-data-card h-100">
+    <h3 class="h5">Membresía de estudiante</h3>
+    <dl class="app-data-list">
+        <dt>ID de membresía</dt><dd><?= $escape($membership->id) ?></dd>
+        <dt>ID de estudiante</dt><dd><?= $escape($membership->studentId) ?></dd>
+        <dt>Vigencia</dt><dd><?= $membership->isActive ? 'Activa' : 'Histórica' ?></dd>
+        <dt>Inicio</dt><dd><?= $escape($timestamp($membership->startedAt)) ?></dd>
+        <dt>Fin</dt><dd><?= $membership->endedAt === null ? 'Sin finalizar' : $escape($timestamp($membership->endedAt)) ?></dd>
     </dl>
-</section>
+</article>
+</div>
 <?php endforeach; ?>
+</div>
 <?php endif; ?>
-
-<p><a href="/families/students/create?family_id=<?= $escape($family->id) ?>">Add Student</a></p>
-<p><a href="/families/resources?family_id=<?= $escape($family->id) ?>">Manage Family resources</a></p>
-<p><a href="/families">Back to Families</a></p>
+</section>

@@ -78,7 +78,7 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
         $selector = $controller->index();
         assertSameValue(null, $session->get('_institutional_acknowledgements_trusted_academic_period_id'));
         assertSameValue(0, $repository->findByPeriodCount);
-        deliveryAssertContains('Select an Academic Period', $selector);
+        deliveryAssertContains('Selecciona un período académico', $selector);
         assertSameValue(false, str_contains($selector, 'Period A Requirement'));
 
         deliveryRequest('GET', '/institutional-acknowledgements?academic_period_id=9', ['academic_period_id' => '9']);

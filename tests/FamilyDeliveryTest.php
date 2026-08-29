@@ -99,20 +99,20 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
     $runner->add('Family index forms and safe detail navigation are available', function (): void {
         [$controller, $environment] = familyDeliveryController();
         $index = $controller->index();
-        deliveryAssertContains('Create Representative and Family', $index);
+        deliveryAssertContains('Crear representante y familia', $index);
         deliveryAssertContains('action="/families/show"', $index);
 
         deliveryRequest('GET', '/families/show?id=' . $environment->familyId, ['id' => (string) $environment->familyId]);
         $detail = $controller->show();
         deliveryAssertContains('Existing Composite Family', $detail);
-        deliveryAssertContains('Active primary Representative', $detail);
-        deliveryAssertContains('History', $detail);
-        deliveryAssertContains('Add Student', $detail);
+        deliveryAssertContains('Representante principal activo', $detail);
+        deliveryAssertContains('Histórica', $detail);
+        deliveryAssertContains('Agregar estudiante', $detail);
 
         deliveryRequest('GET', '/families/show?id=999999', ['id' => '999999']);
         $missing = $controller->show();
         assertSameValue(404, http_response_code());
-        deliveryAssertContains('Family not found', $missing);
+        deliveryAssertContains('Familia no encontrada', $missing);
         assertSameValue(false, str_contains($missing, 'SQLSTATE'));
 
         deliveryRequest('GET', '/families/show?id=bad', ['id' => 'bad']);
@@ -129,10 +129,10 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         [$controller] = familyDeliveryController(familyOptions: $options);
         $form = $controller->showCreateRepresentativeFamily();
 
-        foreach (['Person', 'Representative', 'Family', 'name="_csrf_token"', 'name="started_at"'] as $text) {
+        foreach (['Datos personales del representante', 'Información del representante', 'Familia y membresía', 'name="_csrf_token"', 'name="started_at"'] as $text) {
             deliveryAssertContains($text, $form);
         }
-        deliveryAssertContains('Personal email (required)', $form);
+        deliveryAssertContains('Correo electrónico personal', $form);
         deliveryAssertContains('name="email" type="email" value="" required', $form);
         deliveryAssertContains('&lt;Parent&gt;', $form);
         assertSameValue(false, str_contains($form, '<Parent>'));

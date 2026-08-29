@@ -116,7 +116,7 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         $index = $controller->index();
         $form = $controller->showCreate();
 
-        deliveryAssertContains('Create Person', $index);
+        deliveryAssertContains('Crear persona', $index);
         deliveryAssertContains('action="/persons/show"', $index);
         deliveryAssertContains('name="_csrf_token" value="delivery-csrf"', $form);
         deliveryAssertContains('action="/persons/create"', $form);
@@ -128,13 +128,13 @@ function registerPersonDeliveryTests(TestRunner $runner): void
 
         deliveryRequest('GET', '/persons/show?id=7', ['id' => '7']);
         $found = $controller->show();
-        deliveryAssertContains('Person details', $found);
+        deliveryAssertContains('Detalle de persona', $found);
         deliveryAssertContains('Stored', $found);
 
         deliveryRequest('GET', '/persons/show?id=999', ['id' => '999']);
         $missing = $controller->show();
         assertSameValue(404, http_response_code());
-        deliveryAssertContains('Person not found', $missing);
+        deliveryAssertContains('Persona no encontrada', $missing);
         assertSameValue(false, str_contains($missing, 'SQL'));
     });
 

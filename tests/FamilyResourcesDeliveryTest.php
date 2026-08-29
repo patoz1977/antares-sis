@@ -135,7 +135,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         $page = $controller->index();
 
         deliveryAssertContains('Resource Application Family', $page);
-        foreach (['Addresses', 'Emergency Contacts', 'Authorized Pickups', 'History', 'Back to Family', 'Back to Families'] as $text) {
+        foreach (['Direcciones', 'Contactos de emergencia', 'Personas autorizadas para retirar', 'Historial', 'Volver a la familia', 'Familias'] as $text) {
             deliveryAssertContains($text, $page);
         }
         assertSameValue(500, $session->get('_family_resources_trusted_family_id'));
@@ -346,7 +346,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
             deliveryRequest('POST', '/families/resources/test', $input);
             $response = $controller->{$method}();
             assertSameValue(422, http_response_code());
-            deliveryAssertContains('Review the submitted information', $response);
+            deliveryAssertContains('Revisa la información indicada', $response);
             if ($method === 'createAuthorizedPickup') {
                 deliveryAssertContains('Pickup person', $response);
             }
@@ -357,8 +357,8 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         familyResourcesOpen($controller);
         deliveryRequest('GET', '/families/resources?family_id=500', ['family_id' => '500']);
         $page = $controller->index();
-        deliveryAssertContains('relationship types are unavailable', $page);
-        deliveryAssertContains('may still be saved without identification', $page);
+        deliveryAssertContains('No hay tipos de relación activos', $page);
+        deliveryAssertContains('puede guardarse sin identificación', $page);
         assertSameValue(false, str_contains($page, 'name="document_type_id" required'));
     });
 

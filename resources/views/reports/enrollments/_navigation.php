@@ -11,42 +11,55 @@ $studentName = static fn (?string $surnames, ?string $names): string => htmlspec
     ENT_QUOTES,
     'UTF-8',
 );
-$boolean = static fn (?bool $value): string => $value === null ? '—' : ($value ? 'Yes' : 'No');
+$boolean = static fn (?bool $value): string => $value === null ? '—' : ($value ? 'Sí' : 'No');
 $reports = [
-    '/reports/enrollments/summary' => 'Summary',
-    '/reports/enrollments/students' => 'Students',
-    '/reports/enrollments/directory' => 'Directory',
-    '/reports/enrollments/billing' => 'Billing',
-    '/reports/enrollments/medical' => 'Medical',
+    '/reports/enrollments/summary' => 'Resumen de matrículas',
+    '/reports/enrollments/students' => 'Lista de estudiantes',
+    '/reports/enrollments/directory' => 'Directorio',
+    '/reports/enrollments/billing' => 'Facturación',
+    '/reports/enrollments/medical' => 'Información médica',
 ];
+$reportPageTitle = is_string($reportPageTitle ?? null) ? $reportPageTitle : 'Reportes de matrículas';
+$reportPageDescription = is_string($reportPageDescription ?? null) ? $reportPageDescription : '';
+$reportCsvPath = is_string($reportCsvPath ?? null) ? $reportCsvPath : null;
 ?>
-<style>
-    .report-table { border-collapse: collapse; min-width: 100%; }
-    .report-table th, .report-table td { border: 1px solid #bbb; padding: .45rem; text-align: left; vertical-align: top; }
-    .report-table-wrap { max-width: 100%; overflow-x: auto; }
-    .report-nav { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
-    .report-notice { border-left: .25rem solid #777; padding: .5rem .75rem; }
-</style>
-<p><a href="/">Dashboard</a> &rsaquo; <a href="/reports/enrollments">Basic Enrollment Reports</a></p>
-<nav class="report-nav" aria-label="Enrollment reports">
+<header class="app-page-header d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-start">
+    <div>
+        <p class="text-uppercase fw-semibold text-primary mb-2">Administración</p>
+        <h1 class="display-6 fw-bold mb-2"><?= $escape($reportPageTitle) ?></h1>
+        <?php if ($reportPageDescription !== ''): ?><p class="text-body-secondary mb-0"><?= $escape($reportPageDescription) ?></p><?php endif; ?>
+    </div>
+    <?php if (!$selectionRequired && $reportCsvPath !== null): ?>
+    <a class="btn btn-outline-primary" href="<?= $escape($reportCsvPath . $periodQuery) ?>"><i class="bi bi-download me-2" aria-hidden="true"></i>Exportar CSV</a>
+    <?php endif; ?>
+</header>
+
+<?php $breadcrumbItems = [['label' => 'Inicio', 'url' => '/'], ['label' => 'Reportes de matrículas']]; require dirname(__DIR__, 2) . '/components/breadcrumb.php'; ?>
+
+<nav class="report-nav mb-4" aria-label="Reportes de matrículas">
 <?php foreach ($reports as $url => $label): ?>
-    <a href="<?= $escape($url . $periodQuery) ?>"><?= $escape($label) ?></a>
+    <a class="btn btn-sm btn-outline-primary" href="<?= $escape($url . $periodQuery) ?>"><?= $escape($label) ?></a>
 <?php endforeach; ?>
 </nav>
 
-<form method="get" action="<?= $escape($reportPath) ?>">
-    <label for="academic_period_id">AcademicPeriod</label>
-    <select id="academic_period_id" name="academic_period_id" required>
-        <option value="">Select an AcademicPeriod</option>
+<section class="app-form-section" aria-labelledby="report-period-heading">
+    <h2 class="h4" id="report-period-heading">Período académico</h2>
+    <form class="row g-3 align-items-end" method="get" action="<?= $escape($reportPath) ?>">
+        <div class="col-lg-9">
+            <label class="form-label" for="academic_period_id">Período académico</label>
+            <select class="form-select" id="academic_period_id" name="academic_period_id" required>
+                <option value="">Selecciona un período académico</option>
 <?php foreach ($periods as $period): ?>
-        <option value="<?= $escape($period->id) ?>"<?= $selectedPeriodId === $period->id ? ' selected' : '' ?>><?= $escape($period->code . ' — ' . $period->name . ($period->status->value === 'ACTIVE' ? ' (Active)' : '')) ?></option>
+                <option value="<?= $escape($period->id) ?>"<?= $selectedPeriodId === $period->id ? ' selected' : '' ?>><?= $escape($period->code . ' — ' . $period->name . ($period->status->value === 'ACTIVE' ? ' (Activo)' : '')) ?></option>
 <?php endforeach; ?>
-    </select>
-    <button type="submit">View report</button>
-</form>
+            </select>
+        </div>
+        <div class="col-lg-3"><button class="btn btn-outline-primary w-100" type="submit">Ver reporte</button></div>
+    </form>
+</section>
 
 <?php if ($selectionRequired): ?>
-<p class="report-notice" role="status">Choose an AcademicPeriod to generate this report.</p>
+<p class="report-notice" role="status">Selecciona un período académico para generar este reporte.</p>
 <?php else: ?>
-<p>Selected AcademicPeriod: <strong><?= $escape($selectedPeriod->code . ' — ' . $selectedPeriod->name) ?></strong> (<?= $escape($selectedPeriod->status->value) ?>)</p>
+<p>Período seleccionado: <strong><?= $escape($selectedPeriod->code . ' — ' . $selectedPeriod->name) ?></strong> (<?= $escape($selectedPeriod->status->value === 'ACTIVE' ? 'Activo' : 'Inactivo') ?>)</p>
 <?php endif; ?>

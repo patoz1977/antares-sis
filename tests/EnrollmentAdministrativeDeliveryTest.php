@@ -141,7 +141,7 @@ function registerEnrollmentAdministrativeDeliveryTests(TestRunner $runner): void
         $fixture = e012AdministrativeDeliveryFixture();
         deliveryRequest('GET', '/enrollments');
         $index = $fixture['controller']->index();
-        deliveryAssertContains('Submitted Enrollment queue', $index);
+        deliveryAssertContains('Matrículas enviadas pendientes de revisión', $index);
         deliveryAssertContains('Stored Complete Person Record', $index);
         deliveryAssertContains('Authorized Family', $index);
         assertSameValue(false, str_contains($index, 'Representative Legal Name'));
@@ -151,10 +151,10 @@ function registerEnrollmentAdministrativeDeliveryTests(TestRunner $runner): void
         deliveryRequest('GET', '/enrollments/review?id=900', ['id' => '900']);
         $review = $fixture['controller']->review();
         foreach ([
-            'Current SIS information', 'current live SIS information', 'Annual Enrollment information',
-            'Currently active Family Representatives', 'Current Student Address', 'Current street',
-            'Emergency Contact', 'Authorized Pickup', 'Representative Legal Name',
-            'Reopen Enrollment', 'Complete Enrollment', 'Cancel Enrollment',
+            'Datos actuales del SIS', 'información viva y actual', 'Información anual de la matrícula',
+            'Representantes familiares activos', 'Dirección actual del estudiante', 'Current street',
+            'Contactos de emergencia', 'Personas autorizadas', 'Representative Legal Name',
+            'Reabrir matrícula', 'Completar matrícula', 'Cancelar matrícula',
         ] as $expected) {
             deliveryAssertContains($expected, $review);
         }
