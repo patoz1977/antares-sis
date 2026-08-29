@@ -22,7 +22,7 @@ $field = static fn (string $key, mixed $fallback = ''): string => $escape($value
                 <option value="">Selecciona un período académico</option>
                 <?php foreach ($periods as $period): ?>
                 <option value="<?= $escape($period->id) ?>"<?= ($selectedPeriod?->id ?? null) === $period->id ? ' selected' : '' ?>>
-                    <?= $escape($period->code . ' — ' . $period->name . ' (' . $period->startsOn . ' a ' . $period->endsOn . ') — ' . $period->status) ?>
+                    <?= $escape($period->code . ' — ' . $period->name . ' (' . $period->startsOn . ' a ' . $period->endsOn . ') — ' . ($period->status === 'ACTIVE' ? 'Activo' : 'Inactivo')) ?>
                 </option>
                 <?php endforeach; ?>
             </select>
