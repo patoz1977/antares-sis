@@ -11,6 +11,8 @@ $statusLabels = [
     'COMPLETED' => 'Completada',
     'CANCELLED' => 'Cancelada',
     'NOT STARTED' => 'No iniciada',
+    'PENDING' => 'Pendiente',
+    'NOT_REQUIRED' => 'No requerida',
 ];
 $statusClasses = [
     'ACTIVE' => 'text-bg-success',
@@ -20,6 +22,8 @@ $statusClasses = [
     'COMPLETED' => 'text-bg-success',
     'CANCELLED' => 'text-bg-dark',
     'NOT STARTED' => 'text-bg-light border text-dark',
+    'PENDING' => 'text-bg-warning',
+    'NOT_REQUIRED' => 'text-bg-secondary',
 ];
 $statusLabel = $statusLabels[$statusCode] ?? $statusCode;
 $statusClass = $statusClasses[$statusCode] ?? 'text-bg-light border text-dark';

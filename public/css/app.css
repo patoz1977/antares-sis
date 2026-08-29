@@ -224,6 +224,77 @@ body {
     color: #fff;
 }
 
+.app-context-banner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    padding: clamp(1rem, 2vw, 1.5rem);
+    border: 1px solid var(--app-border);
+    border-left: 0.3rem solid var(--app-primary);
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--app-primary) 6%, white);
+}
+
+.app-context-banner > :last-child {
+    margin-bottom: 0;
+}
+
+.app-section-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.app-section-nav a {
+    padding: 0.45rem 0.75rem;
+    border: 1px solid var(--app-border);
+    border-radius: 999px;
+    background: var(--app-surface);
+    color: var(--app-primary);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.app-section-nav a:hover,
+.app-section-nav a:focus-visible {
+    border-color: var(--app-primary);
+    background: color-mix(in srgb, var(--app-primary) 8%, white);
+}
+
+.app-progress-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.app-progress-grid > li {
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--app-border);
+    border-radius: 0.65rem;
+    background: var(--app-surface);
+}
+
+.app-autosave-status {
+    min-height: 1.5rem;
+    font-weight: 600;
+}
+
+.app-readonly-panel {
+    background: #f8f9fa;
+}
+
+.app-resource-section {
+    margin-bottom: 2rem;
+    scroll-margin-top: 1rem;
+}
+
 .report-nav {
     display: flex;
     flex-wrap: wrap;
