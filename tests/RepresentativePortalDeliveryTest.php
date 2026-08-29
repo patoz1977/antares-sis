@@ -92,17 +92,17 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         $admin = representativePortalFixture(withRepresentative: false, loginIdentifier: 'admin');
         $adminHtml = $admin['controller']->index();
         assertSameValue(403, http_response_code());
-        deliveryAssertContains('Representative Portal unavailable', $adminHtml);
+        deliveryAssertContains('Acceso no autorizado', $adminHtml);
         assertSameValue(false, str_contains($adminHtml, 'action="/logout"'));
         $adminPost = representativePortalPost($admin['controller'], 10);
         assertSameValue(403, http_response_code());
-        deliveryAssertContains('Representative Portal unavailable', $adminPost);
+        deliveryAssertContains('Acceso no autorizado', $adminPost);
         assertSameValue(null, $admin['session']->get('representative_family_context_id'));
 
         $empty = representativePortalFixture();
         $emptyHtml = $empty['controller']->index();
         assertSameValue(403, http_response_code());
-        deliveryAssertContains('No family context is currently available.', $emptyHtml);
+        deliveryAssertContains('No existe una familia autorizada disponible', $emptyHtml);
         assertSameValue(false, str_contains($emptyHtml, 'action="/logout"'));
         assertSameValue(false, str_contains($emptyHtml, 'name="family_id"'));
         assertSameValue(null, $empty['session']->get('representative_family_context_id'));
@@ -115,12 +115,12 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         $html = $fixture['controller']->index();
 
         assertSameValue(200, http_response_code());
-        deliveryAssertContains('Representative Portal', $html);
-        deliveryAssertContains('Current family:', $html);
+        deliveryAssertContains('Portal de representantes', $html);
+        deliveryAssertContains('Familia actual', $html);
         deliveryAssertContains('&lt;Only &amp; Family&gt;', $html);
         assertSameValue(false, str_contains($html, '<Only & Family>'));
         assertSameValue(false, str_contains($html, 'name="family_id"'));
-        assertSameValue(false, str_contains($html, 'Change family'));
+        assertSameValue(false, str_contains($html, 'Cambiar familia'));
         assertSameValue(false, str_contains($html, '>10<'));
         assertSameValue(false, str_contains($html, 'action="/logout"'));
     });
@@ -134,13 +134,13 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         $html = $fixture['controller']->index();
 
         assertSameValue(200, http_response_code());
-        deliveryAssertContains('Select a family', $html);
+        deliveryAssertContains('Seleccionar familia', $html);
         deliveryAssertContains('name="family_id"', $html);
         deliveryAssertContains('Family &lt;A&gt;', $html);
         deliveryAssertContains('Family &amp; B', $html);
         assertSameValue(false, str_contains($html, 'Other Representative'));
-        assertSameValue(false, str_contains($html, 'Current family:'));
-        assertSameValue(false, str_contains($html, 'Change family'));
+        assertSameValue(false, str_contains($html, 'Familia actual'));
+        assertSameValue(false, str_contains($html, 'Cambiar familia'));
     });
 
     $runner->add('Authorized POST selects and changes Family with a 303 redirect', function (): void {
@@ -152,13 +152,14 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         assertSameValue(303, http_response_code());
         assertSameValue(10, $fixture['session']->get('representative_family_context_id'));
         $selected = $fixture['controller']->index();
-        deliveryAssertContains('Current family: <strong>Family A</strong>', $selected);
-        deliveryAssertContains('Change family', $selected);
+        deliveryAssertContains('Familia actual', $selected);
+        deliveryAssertContains('Family A', $selected);
+        deliveryAssertContains('Cambiar familia', $selected);
 
         representativePortalPost($fixture['controller'], 20);
         assertSameValue(303, http_response_code());
         assertSameValue(20, $fixture['session']->get('representative_family_context_id'));
-        deliveryAssertContains('Current family: <strong>Family B</strong>', $fixture['controller']->index());
+        deliveryAssertContains('Family B', $fixture['controller']->index());
         assertSameValue(0, $fixture['families']->saveCalls());
     });
 
@@ -193,7 +194,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         foreach ([20, 30, 999] as $familyId) {
             $html = representativePortalPost($fixture['controller'], $familyId);
             assertSameValue(403, http_response_code());
-            deliveryAssertContains('cannot access the requested', $html);
+            deliveryAssertContains('No puedes acceder al contexto solicitado', $html);
             assertSameValue(false, str_contains($html, (string) $familyId));
             assertSameValue(10, $fixture['session']->get('representative_family_context_id'));
         }
@@ -223,7 +224,8 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         $html = $fixture['controller']->index();
 
         assertSameValue(200, http_response_code());
-        deliveryAssertContains('Current family: <strong>Remaining Family B</strong>', $html);
+        deliveryAssertContains('Familia actual', $html);
+        deliveryAssertContains('Remaining Family B', $html);
         assertSameValue(false, str_contains($html, 'Stale Family A'));
         assertSameValue(false, str_contains($html, 'name="family_id"'));
         assertSameValue(20, $fixture['session']->get('representative_family_context_id'));
@@ -238,7 +240,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         $html = $fixture['controller']->index();
 
         assertSameValue(403, http_response_code());
-        deliveryAssertContains('No family context is currently available.', $html);
+        deliveryAssertContains('No existe una familia autorizada disponible', $html);
         assertSameValue(false, str_contains($html, 'Stale Only Family'));
         assertSameValue(null, $fixture['session']->get('representative_family_context_id'));
     });
@@ -253,11 +255,11 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         familyContextEndRepresentativeMembership($fixture['families'], 10, 33);
         $html = $fixture['controller']->index();
 
-        deliveryAssertContains('Select a family', $html);
+        deliveryAssertContains('Seleccionar familia', $html);
         deliveryAssertContains('Remaining Family B', $html);
         deliveryAssertContains('Remaining Family C', $html);
         assertSameValue(false, str_contains($html, 'Stale Family A'));
-        assertSameValue(false, str_contains($html, 'Current family:'));
+        assertSameValue(false, str_contains($html, 'Familia actual'));
         assertSameValue(null, $fixture['session']->get('representative_family_context_id'));
     });
 

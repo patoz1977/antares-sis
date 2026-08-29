@@ -144,8 +144,9 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         $single = representativeFamilyResourcesFixture();
         $page = representativeFamilyResourcesGet($single['controller']);
         assertSameValue(200, http_response_code());
-        deliveryAssertContains('Manage family resources', $single['portal']->index());
-        deliveryAssertContains('Current family: <strong>Family &lt;A&gt;</strong>', $page);
+        deliveryAssertContains('Recursos familiares', $single['portal']->index());
+        deliveryAssertContains('Familia actual', $page);
+        deliveryAssertContains('Family &lt;A&gt;', $page);
         deliveryAssertContains('&lt;script&gt;Student&lt;/script&gt; &amp; One', $page);
         assertSameValue(false, str_contains($page, '<script>Student</script>'));
         assertSameValue(false, str_contains($page, 'Historical Student'));
@@ -443,7 +444,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
                 representativeFamilyResourcesPickupPost($override),
             );
             assertSameValue(422, http_response_code());
-            deliveryAssertContains('Review the submitted information', $response);
+            deliveryAssertContains('Revisa la información enviada', $response);
             assertSameValue($before, $fixture['families']->saveCalls());
         }
     });

@@ -62,12 +62,12 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
     $runner->add('E009 Representative acknowledgement GET handles no period zero requirements and completion', function (): void {
         $noPeriod = representativeAcknowledgementDeliveryFixture(periods: []);
         $noPeriodHtml = $noPeriod['controller']->index();
-        deliveryAssertContains('No active Academic Period is currently configured.', $noPeriodHtml);
+        deliveryAssertContains('No existe un período académico activo', $noPeriodHtml);
         assertSameValue(false, str_contains($noPeriodHtml, 'acknowledged_requirement_ids'));
 
         $empty = representativeAcknowledgementDeliveryFixture();
         $emptyHtml = $empty['controller']->index();
-        deliveryAssertContains('No institutional acknowledgements are required', $emptyHtml);
+        deliveryAssertContains('Sin requisitos pendientes', $emptyHtml);
         assertSameValue(false, str_contains($emptyHtml, '/complete'));
         assertSameValue(0, $empty['services']['completions']->saveCount);
 
@@ -76,9 +76,9 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
         ]);
         $completed['services']['complete']->handle([10]);
         $completedHtml = $completed['controller']->index();
-        deliveryAssertContains('<strong>Completed</strong>', $completedHtml);
+        deliveryAssertContains('Confirmación completada', $completedHtml);
         deliveryAssertContains('2026-08-14 20:21:22 UTC', $completedHtml);
-        assertSameValue(false, str_contains($completedHtml, 'Confirm I have reviewed'));
+        assertSameValue(false, str_contains($completedHtml, 'Confirmar que revisé'));
     });
 
     $runner->add('E009 Representative acknowledgement POST requires CSRF and uses 303 PRG once', function (): void {
@@ -157,7 +157,7 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
         );
         $pending['families']->seed(familyContextFamily(10, 'Family A', [33]));
         $pendingHtml = $pending['controller']->index();
-        deliveryAssertContains('Institutional Acknowledgements are required', $pendingHtml);
+        deliveryAssertContains('Debes revisar las aceptaciones institucionales', $pendingHtml);
         deliveryAssertContains('/representative/acknowledgements', $pendingHtml);
         assertSameValue(false, str_contains($pendingHtml, 'href="/representative/resources"'));
 
@@ -168,7 +168,7 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
         $noPeriod = representativePortalFixture(academicPeriods: []);
         $noPeriod['families']->seed(familyContextFamily(10, 'Family A', [33]));
         $noPeriodHtml = $noPeriod['controller']->index();
-        deliveryAssertContains('No active Academic Period', $noPeriodHtml);
+        deliveryAssertContains('No existe un período académico activo', $noPeriodHtml);
         assertSameValue(false, str_contains($noPeriodHtml, 'href="/representative/resources"'));
 
         $multiple = representativePortalFixture(
@@ -177,8 +177,8 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
         $multiple['families']->seed(familyContextFamily(10, 'Family A', [33]));
         $multiple['families']->seed(familyContextFamily(20, 'Family B', [33]));
         $multipleHtml = $multiple['controller']->index();
-        deliveryAssertContains('Select a family', $multipleHtml);
-        deliveryAssertContains('Institutional Acknowledgements are required', $multipleHtml);
+        deliveryAssertContains('Seleccionar familia', $multipleHtml);
+        deliveryAssertContains('Debes revisar las aceptaciones institucionales', $multipleHtml);
     });
 
     $runner->add('E009 Representative acknowledgement Delivery remains thin and session-minimal', function (): void {
