@@ -5,29 +5,13 @@ declare(strict_types=1);
 $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 $field = static fn (string $key, mixed $fallback = ''): string => $escape($values[$key] ?? $fallback);
 ?>
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><?= $escape($title ?? 'Institutional Acknowledgements') ?></title>
-</head>
-<body>
-    <h1>Institutional Acknowledgements</h1>
+<header class="app-page-header">
+    <p class="text-uppercase fw-semibold text-primary mb-2">Administración</p>
+    <h1 class="display-6 fw-bold mb-2">Confirmaciones institucionales</h1>
+    <p class="text-body-secondary mb-0">Gestiona los requisitos del período académico seleccionado.</p>
+</header>
 
-    <?php if (($successMessage ?? null) !== null): ?>
-    <p role="status"><?= $escape($successMessage) ?></p>
-    <?php endif; ?>
-
-    <?php if (($errors ?? []) !== []): ?>
-    <div role="alert">
-        <ul>
-            <?php foreach ($errors as $error): ?>
-            <li><?= $escape($error) ?></li>
-            <?php endforeach; ?>
-        </ul>
-    </div>
-    <?php endif; ?>
+    <?php require dirname(__DIR__) . '/components/validation-summary.php'; ?>
 
     <form method="get" action="/institutional-acknowledgements">
         <label for="academic-period">Academic Period</label>
@@ -118,11 +102,3 @@ $field = static fn (string $key, mixed $fallback = ''): string => $escape($value
         <?php endforeach; ?>
     </section>
     <?php endif; ?>
-
-    <p><a href="/">Back to Dashboard</a></p>
-    <form method="post" action="/logout">
-        <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
-        <button type="submit">Sign out</button>
-    </form>
-</body>
-</html>

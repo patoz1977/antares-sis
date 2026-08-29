@@ -7,10 +7,6 @@ $timestamp = static fn (DateTimeImmutable $value): string => $value->format(Date
 ?>
 <h1>Family details</h1>
 
-<?php if (is_string($successMessage ?? null) && $successMessage !== ''): ?>
-<p><?= $escape($successMessage) ?></p>
-<?php endif; ?>
-
 <h2>Family</h2>
 <dl>
     <dt>ID</dt><dd><?= $escape($family->id) ?></dd>

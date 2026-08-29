@@ -25,7 +25,6 @@ $billing = $enrollment->billingInformation;
 $medical = $enrollment->medicalInformation;
 $transport = $enrollment->transportInformation;
 ?>
-<main class="container py-3">
     <header class="mb-4">
         <h1>Administrative Enrollment Review</h1>
         <p><a href="/enrollments">Back to Submitted Enrollment queue</a></p>
@@ -182,4 +181,3 @@ $transport = $enrollment->transportInformation;
         </form>
         <?php endforeach; ?>
     </section>
-</main>

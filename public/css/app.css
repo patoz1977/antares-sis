@@ -1,0 +1,118 @@
+:root {
+    --app-primary: #0d6efd;
+    --app-surface: #ffffff;
+    --app-border: #dce3ea;
+}
+
+body {
+    min-height: 100vh;
+    color: #243447;
+}
+
+.skip-link {
+    position: fixed;
+    z-index: 1100;
+    top: 0.5rem;
+    left: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    background: #fff;
+    color: #111827;
+}
+
+.app-header,
+.app-navbar {
+    background: var(--app-primary);
+}
+
+.app-navbar .navbar-brand,
+.app-navbar .nav-link {
+    color: rgba(255, 255, 255, 0.88);
+}
+
+.app-navbar .navbar-brand:hover,
+.app-navbar .navbar-brand:focus,
+.app-navbar .nav-link:hover,
+.app-navbar .nav-link:focus,
+.app-navbar .nav-link.active {
+    color: #fff;
+}
+
+.app-navbar .nav-link.active {
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-thickness: 0.14rem;
+    text-underline-offset: 0.35rem;
+}
+
+.app-navbar .navbar-toggler {
+    border-color: rgba(255, 255, 255, 0.65);
+}
+
+.app-navbar .navbar-toggler-icon {
+    filter: brightness(0) invert(1);
+}
+
+.app-brand-logo {
+    width: auto;
+    max-width: 10rem;
+    height: 2.25rem;
+    object-fit: contain;
+}
+
+.app-brand-mark {
+    display: inline-grid;
+    width: 2.25rem;
+    height: 2.25rem;
+    flex: 0 0 2.25rem;
+    place-items: center;
+    border-radius: 0.6rem;
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.app-page-header {
+    margin-bottom: 2rem;
+}
+
+.app-module-card {
+    height: 100%;
+    border-color: var(--app-border);
+    transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.app-module-card:hover,
+.app-module-card:focus-within {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1.25rem rgba(36, 52, 71, 0.1);
+}
+
+.app-module-icon {
+    display: inline-grid;
+    width: 2.75rem;
+    height: 2.75rem;
+    place-items: center;
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--app-primary) 12%, white);
+    color: var(--app-primary);
+    font-size: 1.35rem;
+}
+
+.auth-card {
+    max-width: 30rem;
+    margin: 2rem auto;
+}
+
+@media (max-width: 991.98px) {
+    .app-navbar .navbar-collapse {
+        padding-top: 1rem;
+    }
+
+    .app-navbar .nav-link {
+        padding-block: 0.65rem;
+    }
+
+    .app-navbar form .btn {
+        width: 100%;
+        margin-top: 0.5rem;
+    }
+}

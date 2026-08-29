@@ -262,7 +262,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         assertSameValue(false, str_contains($controller, 'logger'));
 
         $dashboard = (string) file_get_contents(dirname(__DIR__) . '/resources/views/dashboard/index.php');
-        e013Contains('Enrollment Reports', $dashboard);
+        e013Contains('Reportes', $dashboard);
         e013Contains('canAccessPersons', $dashboard);
 
         $bootstrap = (string) file_get_contents(dirname(__DIR__) . '/bootstrap/app.php');

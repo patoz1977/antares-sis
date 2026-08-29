@@ -14,13 +14,6 @@ $safeLink = static function (string $url): bool {
 ?>
 <h1>Institutional Acknowledgements</h1>
 
-<?php if (is_string($successMessage ?? null)): ?>
-<p role="status"><?= $escape($successMessage) ?></p>
-<?php endif; ?>
-<?php if (is_string($errorMessage ?? null)): ?>
-<p role="alert"><?= $escape($errorMessage) ?></p>
-<?php endif; ?>
-
 <?php if ($portalState === null): ?>
 <p>No active Academic Period is currently configured.</p>
 <?php else: ?>
@@ -71,8 +64,3 @@ $safeLink = static function (string $url): bool {
 <?php endif; ?>
 
 <p><a href="/representative">Back to Representative Portal</a></p>
-
-<form method="post" action="/logout">
-    <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
-    <button type="submit">Sign out</button>
-</form>

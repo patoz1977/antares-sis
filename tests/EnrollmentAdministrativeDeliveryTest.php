@@ -325,7 +325,7 @@ function registerEnrollmentAdministrativeDeliveryTests(TestRunner $runner): void
         assertSameValue(false, file_exists(dirname(__DIR__) . '/database/migrations/011_create_enrollment_delivery.php'));
 
         $dashboard = (string) file_get_contents(dirname(__DIR__) . '/resources/views/dashboard/index.php');
-        deliveryAssertContains('Manage Enrollments', $dashboard);
+        deliveryAssertContains('Matrículas', $dashboard);
         deliveryAssertContains('canAccessPersons', $dashboard);
     });
 }

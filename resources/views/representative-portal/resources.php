@@ -65,12 +65,6 @@ $pickupName = static function (int $pickupId) use ($resources): string {
 <p><a href="/representative">Change family</a></p>
 <?php endif; ?>
 
-<?php if (is_string($successMessage ?? null) && $successMessage !== ''): ?>
-<p><?= $escape($successMessage) ?></p>
-<?php endif; ?>
-<?php if (is_string($errorMessage ?? null) && $errorMessage !== ''): ?>
-<p role="alert"><?= $escape($errorMessage) ?></p>
-<?php endif; ?>
 <?php if ($errors !== []): ?>
 <div role="alert">
     <p>Review the submitted information.</p>
@@ -434,8 +428,3 @@ $pickupName = static function (int $pickupId) use ($resources): string {
 </section>
 
 <p><a href="/representative">Back to Representative Portal</a></p>
-
-<form method="post" action="/logout">
-    <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
-    <button type="submit">Sign out</button>
-</form>

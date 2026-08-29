@@ -17,14 +17,6 @@ $derivedLoginIdentifier = $person->documentNumber ?? '';
 ?>
 <h1>Manage Representative User</h1>
 
-<?php if (is_string($successMessage ?? null) && $successMessage !== ''): ?>
-<p><?= $escape($successMessage) ?></p>
-<?php endif; ?>
-
-<?php if (is_string($errorMessage ?? null) && $errorMessage !== ''): ?>
-<p><?= $escape($errorMessage) ?></p>
-<?php endif; ?>
-
 <?php if (($errors ?? []) !== []): ?>
 <ul>
 <?php foreach ($errors as $error): ?>

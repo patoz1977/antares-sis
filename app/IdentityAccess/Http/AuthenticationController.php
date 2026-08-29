@@ -36,7 +36,7 @@ final class AuthenticationController extends Controller
         $flashMessage = $this->session->pull(self::FLASH_ERROR_KEY);
 
         return $this->view('auth.login', [
-            'title' => 'Sign in',
+            'title' => 'Iniciar sesión',
             'flashMessage' => is_string($flashMessage) ? $flashMessage : null,
             'csrfToken' => $this->csrf->token(),
         ]);
@@ -47,7 +47,7 @@ final class AuthenticationController extends Controller
         http_response_code(200);
 
         return $this->view('auth.forgot-password', [
-            'title' => 'Forgot password',
+            'title' => 'Ayuda con la contraseña',
         ]);
     }
 
@@ -57,7 +57,7 @@ final class AuthenticationController extends Controller
         $csrfToken = $this->stringInput($input, '_csrf_token');
 
         if (!$this->csrf->isValid($csrfToken)) {
-            $this->session->put(self::FLASH_ERROR_KEY, 'Invalid request.');
+            $this->session->put(self::FLASH_ERROR_KEY, 'Solicitud no válida.');
 
             return $this->redirect('/login', 303);
         }
@@ -83,7 +83,7 @@ final class AuthenticationController extends Controller
         $input = (new Request())->input();
 
         if (!$this->csrf->isValid($this->stringInput($input, '_csrf_token'))) {
-            $this->session->put(self::FLASH_ERROR_KEY, 'Invalid request.');
+            $this->session->put(self::FLASH_ERROR_KEY, 'Solicitud no válida.');
 
             return $this->redirect('/login', 303);
         }
@@ -102,7 +102,7 @@ final class AuthenticationController extends Controller
         $user = $this->getAuthenticatedUser->handle();
 
         return $this->view('dashboard.index', [
-            'title' => 'Dashboard',
+            'title' => 'Inicio',
             'csrfToken' => $this->csrf->token(),
             'canAccessPersons' => $user?->loginIdentifier === 'admin',
         ]);

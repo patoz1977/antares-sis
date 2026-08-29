@@ -65,8 +65,3 @@ $acknowledgements = ($acknowledgementState ?? null) instanceof RepresentativeAck
     <button type="submit">Use family</button>
 </form>
 <?php endif; ?>
-
-<form method="post" action="/logout">
-    <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
-    <button type="submit">Sign out</button>
-</form>

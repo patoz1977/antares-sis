@@ -287,7 +287,7 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
             assertSameValue(false, str_contains($view, $forbidden), $forbidden);
         }
         $dashboard = (string) file_get_contents(dirname(__DIR__) . '/resources/views/dashboard/index.php');
-        deliveryAssertContains('Manage Institutional Acknowledgements', $dashboard);
+        deliveryAssertContains('Confirmaciones institucionales', $dashboard);
         $bootstrap = (string) file_get_contents(dirname(__DIR__) . '/bootstrap/app.php');
         foreach (['InstitutionalAcknowledgementController', 'InstitutionalDocumentsAdministrationMiddleware', 'PdoInstitutionalAcknowledgementAcademicPeriodOptionsProvider'] as $binding) {
             deliveryAssertContains($binding, $bootstrap);

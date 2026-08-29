@@ -93,7 +93,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         $adminHtml = $admin['controller']->index();
         assertSameValue(403, http_response_code());
         deliveryAssertContains('Representative Portal unavailable', $adminHtml);
-        deliveryAssertContains('action="/logout"', $adminHtml);
+        assertSameValue(false, str_contains($adminHtml, 'action="/logout"'));
         $adminPost = representativePortalPost($admin['controller'], 10);
         assertSameValue(403, http_response_code());
         deliveryAssertContains('Representative Portal unavailable', $adminPost);
@@ -103,7 +103,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         $emptyHtml = $empty['controller']->index();
         assertSameValue(403, http_response_code());
         deliveryAssertContains('No family context is currently available.', $emptyHtml);
-        deliveryAssertContains('action="/logout"', $emptyHtml);
+        assertSameValue(false, str_contains($emptyHtml, 'action="/logout"'));
         assertSameValue(false, str_contains($emptyHtml, 'name="family_id"'));
         assertSameValue(null, $empty['session']->get('representative_family_context_id'));
     });
@@ -122,7 +122,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         assertSameValue(false, str_contains($html, 'name="family_id"'));
         assertSameValue(false, str_contains($html, 'Change family'));
         assertSameValue(false, str_contains($html, '>10<'));
-        deliveryAssertContains('action="/logout"', $html);
+        assertSameValue(false, str_contains($html, 'action="/logout"'));
     });
 
     $runner->add('Multiple authorized Families render only escaped authorized selection', function (): void {
@@ -289,8 +289,8 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         deliveryRequest('GET', '/');
         $dashboard = $admin['authentication']->dashboard();
         assertSameValue(200, http_response_code());
-        deliveryAssertContains('Dashboard', $dashboard);
-        deliveryAssertContains('Manage Persons', $dashboard);
+        deliveryAssertContains('Panel administrativo', $dashboard);
+        deliveryAssertContains('href="/persons"', $dashboard);
         assertSameValue(false, str_contains($dashboard, '/representative'));
         assertSameValue(403, representativePortalStatus($admin['portal']));
 
@@ -298,7 +298,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         $formerRepresentative['session']->userId = 11;
         deliveryRequest('GET', '/');
         $formerDashboard = $formerRepresentative['authentication']->dashboard();
-        deliveryAssertContains('Dashboard', $formerDashboard);
+        deliveryAssertContains('Panel administrativo', $formerDashboard);
         assertSameValue(false, str_contains($formerDashboard, '/representative'));
     });
 
