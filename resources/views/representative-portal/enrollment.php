@@ -78,7 +78,6 @@ $autosaveFeedback = static function (string $section) use ($escape): void {
 };
 ?>
 <script src="/js/representative-enrollment.js" defer></script>
-<main class="container py-3">
 <header class="mb-4">
     <h1>Representative Enrollment</h1>
     <p>Current Family: <strong><?= $escape($context->familyDisplayName) ?></strong></p>
@@ -95,12 +94,6 @@ $autosaveFeedback = static function (string $section) use ($escape): void {
     </nav>
 </header>
 
-<?php if (is_string($successMessage ?? null) && $successMessage !== ''): ?>
-<p class="alert alert-success" role="status"><?= $escape($successMessage) ?></p>
-<?php endif; ?>
-<?php if (is_string($errorMessage ?? null) && $errorMessage !== ''): ?>
-<p class="alert alert-warning" role="alert"><?= $escape($errorMessage) ?></p>
-<?php endif; ?>
 <?php if ($sectionErrors !== []): ?>
 <div class="alert alert-danger" role="alert" aria-labelledby="enrollment-errors-heading">
     <h2 id="enrollment-errors-heading" class="h5">Review this section</h2>
@@ -409,9 +402,4 @@ $autosaveFeedback = static function (string $section) use ($escape): void {
 
 <footer class="mt-4">
     <p><a href="<?= $escape($studentLocation) ?>" data-enrollment-navigation>Reload Enrollment information</a></p>
-    <form method="post" action="/logout">
-        <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
-        <button type="submit" class="btn btn-outline-secondary">Sign out</button>
-    </form>
 </footer>
-</main>

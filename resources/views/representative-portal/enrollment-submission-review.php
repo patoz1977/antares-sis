@@ -40,7 +40,6 @@ $authorizedPickups = is_array($authorizedPickups ?? null) ? $authorizedPickups :
 $reviewLocation = '/representative/enrollment/review?student_id=' . $student->student->id;
 $enrollmentLocation = '/representative/enrollment?student_id=' . $student->student->id;
 ?>
-<main class="container py-3">
 <header class="mb-4">
     <h1>Review and Submit Enrollment</h1>
     <p>Review the current information for <strong><?= $escape($student->displayName) ?></strong> before Submission.</p>
@@ -54,13 +53,6 @@ $enrollmentLocation = '/representative/enrollment?student_id=' . $student->stude
         <a href="/representative">Representative Portal</a>
     </nav>
 </header>
-
-<?php if (is_string($successMessage ?? null) && $successMessage !== ''): ?>
-<p class="alert alert-success" role="status"><?= $escape($successMessage) ?></p>
-<?php endif; ?>
-<?php if (is_string($errorMessage ?? null) && $errorMessage !== ''): ?>
-<p class="alert alert-warning" role="alert"><?= $escape($errorMessage) ?></p>
-<?php endif; ?>
 
 <section class="mb-4" aria-labelledby="submission-context-heading">
     <h2 id="submission-context-heading">Enrollment Context</h2>
@@ -226,4 +218,3 @@ $enrollmentLocation = '/representative/enrollment?student_id=' . $student->stude
 <footer class="mt-4">
     <p><a href="<?= $escape($reviewLocation) ?>">Reload current review</a></p>
 </footer>
-</main>

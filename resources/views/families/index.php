@@ -6,14 +6,6 @@ $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, 
 ?>
 <h1>Families</h1>
 
-<?php if (is_string($successMessage ?? null) && $successMessage !== ''): ?>
-<p><?= $escape($successMessage) ?></p>
-<?php endif; ?>
-
-<?php if (is_string($errorMessage ?? null) && $errorMessage !== ''): ?>
-<p role="alert"><?= $escape($errorMessage) ?></p>
-<?php endif; ?>
-
 <p><a href="/families/create">Create Representative and Family</a></p>
 
 <form method="get" action="/families/show">

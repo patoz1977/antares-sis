@@ -7,10 +7,6 @@ $optional = static fn (mixed $value): string => $value === null || $value === ''
 ?>
 <h1>Person details</h1>
 
-<?php if (is_string($successMessage ?? null) && $successMessage !== ''): ?>
-<p><?= $escape($successMessage) ?></p>
-<?php endif; ?>
-
 <dl>
     <dt>ID</dt><dd><?= $escape($person->id) ?></dd>
     <dt>First name</dt><dd><?= $escape($person->firstName) ?></dd>

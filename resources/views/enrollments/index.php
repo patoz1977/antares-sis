@@ -7,19 +7,11 @@ $formatInstant = static fn (DateTimeImmutable $value): string =>
     $value->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
 $items = is_array($items ?? null) ? $items : [];
 ?>
-<main class="container py-3">
     <header class="mb-4">
         <h1>Enrollment Administration</h1>
         <p>Operational queue of Enrollments currently awaiting administrative review.</p>
         <p><a href="/">Back to dashboard</a></p>
     </header>
-
-    <?php if (is_string($successMessage ?? null) && $successMessage !== ''): ?>
-    <p class="alert alert-success" role="status"><?= $escape($successMessage) ?></p>
-    <?php endif; ?>
-    <?php if (is_string($errorMessage ?? null) && $errorMessage !== ''): ?>
-    <p class="alert alert-warning" role="alert"><?= $escape($errorMessage) ?></p>
-    <?php endif; ?>
 
     <?php if ($items === []): ?>
     <p>No Submitted Enrollments are currently awaiting review.</p>
@@ -52,4 +44,3 @@ $items = is_array($items ?? null) ? $items : [];
         </table>
     </div>
     <?php endif; ?>
-</main>

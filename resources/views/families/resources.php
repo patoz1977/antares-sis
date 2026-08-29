@@ -19,12 +19,6 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
     <dt>Status</dt><dd><?= $escape($resources->status) ?></dd>
 </dl>
 
-<?php if (is_string($successMessage ?? null) && $successMessage !== ''): ?>
-<p><?= $escape($successMessage) ?></p>
-<?php endif; ?>
-<?php if (is_string($errorMessage ?? null) && $errorMessage !== ''): ?>
-<p role="alert"><?= $escape($errorMessage) ?></p>
-<?php endif; ?>
 <?php if ($errors !== []): ?>
 <div role="alert">
     <p>Review the submitted information.</p>

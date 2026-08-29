@@ -105,6 +105,8 @@ use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\IdentityAccess\Infrastructure\Session\PhpSessionManager;
 use App\IdentityAccess\Infrastructure\Session\SessionCsrfTokenManager;
 use App\IdentityAccess\Infrastructure\Time\SystemClock;
+use App\Shared\Http\SharedShellDataFactory;
+use App\Shared\Http\WhiteLabelBranding;
 use App\Family\Application\AddStudentToFamily;
 use App\Family\Application\ActivateFamilyAddress;
 use App\Family\Application\ActivateFamilyAuthorizedPickup;
@@ -269,6 +271,8 @@ $databaseConfigValues['charset'] = (string) ($databaseConfigValues['charset'] ??
 $databaseConfig = new DatabaseConfig($databaseConfigValues);
 
 $container = new Container();
+$container->instance(WhiteLabelBranding::class, WhiteLabelBranding::fromConfig($config));
+$container->singleton(SharedShellDataFactory::class, SharedShellDataFactory::class);
 $container->instance(DatabaseConfig::class, $databaseConfig);
 $container->singleton(ConnectionFactory::class, ConnectionFactory::class);
 $container->singleton(ConnectionManager::class, ConnectionManager::class);
