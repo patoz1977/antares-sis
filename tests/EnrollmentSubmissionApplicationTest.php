@@ -508,6 +508,7 @@ function e012CompleteFamily(bool $activeStudentMembership = true): Family
 
     return Family::reconstitute(
         new FamilyId(77),
+        FamilyCodeTestFactory::next(),
         new DisplayName('Authorized Family'),
         FamilyStatus::Active,
         [new FamilyRepresentative(

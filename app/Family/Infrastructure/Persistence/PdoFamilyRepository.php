@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Family\Infrastructure\Persistence;
 
+use App\Family\Domain\Exception\FamilyCodeAlreadyExists;
 use App\Family\Domain\Exception\InvalidFamilyState;
 use App\Family\Domain\AuthorizedPickupAssignment;
 use App\Family\Domain\EmergencyContactAssignment;
@@ -29,6 +30,7 @@ use App\Family\Domain\ValueObject\EmergencyContactInformation;
 use App\Family\Domain\ValueObject\EmergencyContactPriority;
 use App\Family\Domain\ValueObject\FamilyAddressId;
 use App\Family\Domain\ValueObject\FamilyAuthorizedPickupId;
+use App\Family\Domain\ValueObject\FamilyCode;
 use App\Family\Domain\ValueObject\FamilyEmergencyContactId;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\FamilyRepresentativeId;
@@ -45,6 +47,7 @@ use Core\Database\ConnectionManager;
 use DateTimeImmutable;
 use DateTimeZone;
 use PDO;
+use PDOException;
 use RuntimeException;
 use Throwable;
 
@@ -90,6 +93,48 @@ final class PdoFamilyRepository implements FamilyRepository
         }
 
         return $this->findById($id);
+    }
+
+    public function findByCode(FamilyCode $familyCode): ?Family
+    {
+        $statement = $this->connection->prepare(
+            $this->familySelectSql() . ' WHERE f.family_code = :familyCode LIMIT 1'
+        );
+        $statement->execute([':familyCode' => $familyCode->value()]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+
+        return $row === false ? null : $this->mapFamily($row);
+    }
+
+    public function findByCodeForUpdate(FamilyCode $familyCode): ?Family
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('FamilyCode row lock requires an active transaction.');
+        }
+
+        $sql = 'SELECT id, family_code FROM families WHERE family_code = :familyCode';
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= ' FOR UPDATE';
+        }
+        $statement = $this->connection->prepare($sql);
+        $statement->execute([':familyCode' => $familyCode->value()]);
+        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+        if (count($rows) > 1) {
+            throw new RuntimeException('FamilyCode resolved more than one root row for update.');
+        }
+        if ($rows === []) {
+            return null;
+        }
+
+        $lockedCode = new FamilyCode((string) ($rows[0]['family_code'] ?? ''));
+        if (!$lockedCode->equals($familyCode)) {
+            throw new RuntimeException('FamilyCode row lock returned an incoherent functional identity.');
+        }
+
+        return $this->findById(new FamilyId($this->persistedPositiveInt(
+            $rows[0]['id'] ?? null,
+            'Locked Family id',
+        )));
     }
 
     public function findActiveByRepresentativeId(RepresentativeId $representativeId): array
@@ -311,12 +356,22 @@ final class PdoFamilyRepository implements FamilyRepository
     private function insertFamily(Family $family, int $statusId): Family
     {
         $statement = $this->connection->prepare(
-            'INSERT INTO families (display_name, status_id) VALUES (:displayName, :statusId)'
+            'INSERT INTO families (family_code, display_name, status_id) '
+            . 'VALUES (:familyCode, :displayName, :statusId)'
         );
-        $statement->execute([
-            ':displayName' => $family->displayName()->value(),
-            ':statusId' => $statusId,
-        ]);
+        try {
+            $statement->execute([
+                ':familyCode' => $family->familyCode()->value(),
+                ':displayName' => $family->displayName()->value(),
+                ':statusId' => $statusId,
+            ]);
+        } catch (PDOException $exception) {
+            if ($this->isFamilyCodeUniqueViolation($exception)) {
+                throw new FamilyCodeAlreadyExists('FamilyCode already exists.', previous: $exception);
+            }
+
+            throw $exception;
+        }
         $this->requireSingleInsertedRow($statement->rowCount(), 'Family');
 
         $familyId = new FamilyId($this->generatedId('Family'));
@@ -1607,6 +1662,7 @@ final class PdoFamilyRepository implements FamilyRepository
 
             return Family::reconstitute(
                 $familyId,
+                new FamilyCode((string) $row['family_code']),
                 new DisplayName((string) $row['display_name']),
                 $status,
                 $representatives,
@@ -1803,6 +1859,7 @@ final class PdoFamilyRepository implements FamilyRepository
     {
         return $family->id() !== null
             && (int) $row['id'] === $family->id()?->value()
+            && (string) $row['family_code'] === $family->familyCode()->value()
             && (string) $row['display_name'] === $family->displayName()->value()
             && (string) $row['status_type_code'] === self::STATUS_TYPE
             && (string) $row['status_code'] === $family->status()->value;
@@ -1972,10 +2029,30 @@ final class PdoFamilyRepository implements FamilyRepository
 
     private function familySelectSql(): string
     {
-        return 'SELECT f.id, f.display_name, f.status_id, s.code AS status_code, '
+        return 'SELECT f.id, f.family_code, f.display_name, f.status_id, s.code AS status_code, '
             . 'st.code AS status_type_code FROM families f '
             . 'INNER JOIN statuses s ON s.id = f.status_id '
             . 'INNER JOIN status_types st ON st.id = s.status_type_id';
+    }
+
+    private function isFamilyCodeUniqueViolation(PDOException $exception): bool
+    {
+        $sqlState = (string) ($exception->errorInfo[0] ?? $exception->getCode());
+        $driverCode = (int) ($exception->errorInfo[1] ?? 0);
+        $message = $exception->getMessage();
+        $driver = $this->connection->getAttribute(PDO::ATTR_DRIVER_NAME);
+
+        if ($sqlState !== '23000') {
+            return false;
+        }
+        if ($driver === 'mysql') {
+            return $driverCode === 1062 && str_contains($message, 'uq_families_family_code');
+        }
+        if ($driver === 'sqlite') {
+            return $driverCode === 19 && str_contains($message, 'families.family_code');
+        }
+
+        return false;
     }
 
     private function persistedPositiveInt(mixed $value, string $label): int

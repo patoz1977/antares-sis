@@ -6,9 +6,11 @@ namespace App\Family\Application;
 
 use App\Family\Application\Dto\CreateFamilyInput;
 use App\Family\Application\Dto\FamilyOutput;
+use App\Family\Application\Exception\FamilyCodeGenerationFailed;
 use App\Family\Application\Exception\InvalidPersistedFamilyResult;
 use App\Family\Application\Exception\RelationshipTypeNotFound;
 use App\Family\Application\Exception\RepresentativeNotFoundForFamily;
+use App\Family\Domain\Exception\FamilyCodeAlreadyExists;
 use App\Family\Domain\Family;
 use App\Family\Domain\FamilyRepository;
 use App\Family\Domain\ValueObject\DisplayName;
@@ -19,10 +21,13 @@ use App\Representative\Domain\ValueObject\RepresentativeId;
 
 final readonly class CreateFamily
 {
+    private const MAX_CODE_ATTEMPTS = 5;
+
     public function __construct(
         private FamilyRepository $families,
         private RepresentativeRepository $representatives,
         private RelationshipTypeLookup $relationshipTypes,
+        private FamilyCodeGenerator $familyCodes,
     ) {
     }
 
@@ -44,15 +49,32 @@ final readonly class CreateFamily
             $input->initialRepresentativeId
         );
         $relationshipTypeId = new RelationshipTypeId($input->initialRelationshipTypeId);
-        $family = Family::create(
-            $displayName,
-            $input->status,
-            $familyRepresentativeId,
-            $relationshipTypeId,
-            $input->startedAt,
-        );
+        $persisted = null;
+        for ($attempt = 1; $attempt <= self::MAX_CODE_ATTEMPTS; $attempt++) {
+            $familyCode = $this->familyCodes->generate();
+            if ($this->families->findByCode($familyCode) !== null) {
+                continue;
+            }
 
-        $persisted = $this->families->save($family);
+            $family = Family::create(
+                $familyCode,
+                $displayName,
+                $input->status,
+                $familyRepresentativeId,
+                $relationshipTypeId,
+                $input->startedAt,
+            );
+
+            try {
+                $persisted = $this->families->save($family);
+                break;
+            } catch (FamilyCodeAlreadyExists) {
+                continue;
+            }
+        }
+        if ($persisted === null) {
+            throw new FamilyCodeGenerationFailed('FamilyCode could not be allocated after five attempts.');
+        }
         $persistedId = $persisted->id();
         if ($persistedId === null) {
             throw new InvalidPersistedFamilyResult(

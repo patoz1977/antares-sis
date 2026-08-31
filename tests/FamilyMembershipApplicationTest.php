@@ -17,6 +17,8 @@ use App\Family\Application\Dto\FamilyRepresentativeOutput;
 use App\Family\Application\Dto\FamilyStudentOutput;
 use App\Family\Application\EndRepresentativeMembership;
 use App\Family\Application\EndStudentMembership;
+use App\Family\Application\FamilyCodeGenerator;
+use App\Family\Application\Exception\FamilyCodeGenerationFailed;
 use App\Family\Application\Exception\FamilyNotFound;
 use App\Family\Application\Exception\InvalidPersistedFamilyResult;
 use App\Family\Application\Exception\RelationshipTypeNotFound;
@@ -33,6 +35,7 @@ use App\Family\Domain\FamilyRepository;
 use App\Family\Domain\FamilyStatus;
 use App\Family\Domain\FamilyStudent;
 use App\Family\Domain\ValueObject\DisplayName;
+use App\Family\Domain\ValueObject\FamilyCode;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\FamilyRepresentativeId;
 use App\Family\Domain\ValueObject\FamilyStudentId;
@@ -73,6 +76,7 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
             $families,
             $representatives,
             familyRelationshipTypes(),
+            new FamilyCodeTestGenerator(),
         ))->handle(new CreateFamilyInput(
             '  Example Family  ',
             FamilyStatus::Active,
@@ -96,6 +100,7 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
         assertSameValue('2026-08-01 10:11:12.000000', $primary->startedAt->format('Y-m-d H:i:s.u'));
         assertSameValue('America/Guayaquil', $primary->startedAt->getTimezone()->getName());
         assertSameValue(1, $families->saveCalls());
+        assertSameValue(1, preg_match('/\AF[0-9]{8}\z/D', $output->familyCode));
         assertSameValue(true, (new ReflectionClass($output))->isReadOnly());
         assertSameValue(true, (new ReflectionClass($primary))->isReadOnly());
     });
@@ -106,11 +111,39 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
             $families,
             familyRepresentativeRepository(11),
             familyRelationshipTypes(),
+            new FamilyCodeTestGenerator(),
         ))->handle(familyCreateInput(11, FamilyStatus::Inactive));
 
         assertSameValue(FamilyStatus::Inactive, $output->status);
         assertSameValue(true, $output->representatives[0]->isPrimary);
         assertSameValue(true, $output->representatives[0]->isActive);
+    });
+
+    $runner->add('CreateFamily retries only FamilyCode collisions and stops after five candidates', function (): void {
+        $retrying = new InMemoryFamilyApplicationRepository();
+        $retrying->rejectFamilyCodeSaves(1);
+        $created = (new CreateFamily(
+            $retrying,
+            familyRepresentativeRepository(16),
+            familyRelationshipTypes(),
+            new FamilyCodeTestGenerator(),
+        ))->handle(familyCreateInput(16));
+
+        assertSameValue(2, $retrying->saveCalls());
+        assertSameValue($created->id, $retrying->findByCode(new FamilyCode($created->familyCode))?->id()?->value());
+
+        $exhausted = new InMemoryFamilyApplicationRepository();
+        $exhausted->rejectFamilyCodeSaves(5);
+        assertThrows(
+            static fn () => (new CreateFamily(
+                $exhausted,
+                familyRepresentativeRepository(17),
+                familyRelationshipTypes(),
+                new FamilyCodeTestGenerator(),
+            ))->handle(familyCreateInput(17)),
+            FamilyCodeGenerationFailed::class,
+        );
+        assertSameValue(5, $exhausted->saveCalls());
     });
 
     $runner->add('CreateFamily rejects a missing initial Representative without saving', function (): void {
@@ -121,6 +154,7 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
                 $families,
                 new InMemoryRepresentativeApplicationRepository(),
                 familyRelationshipTypes(),
+                new FamilyCodeTestGenerator(),
             ))->handle(familyCreateInput(99)),
             RepresentativeNotFoundForFamily::class,
         );
@@ -135,6 +169,7 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
                 $families,
                 familyRepresentativeRepository(12),
                 new FakeRelationshipTypeLookup([]),
+                new FamilyCodeTestGenerator(),
             ))->handle(familyCreateInput(12)),
             RelationshipTypeNotFound::class,
         );
@@ -156,6 +191,7 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
                 $families,
                 familyRepresentativeRepository(13),
                 familyRelationshipTypes(),
+                new FamilyCodeTestGenerator(),
             ))->handle($input),
             InvalidFamilyState::class,
         );
@@ -171,6 +207,7 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
                 $families,
                 familyRepresentativeRepository(14),
                 familyRelationshipTypes(),
+                new FamilyCodeTestGenerator(),
             ))->handle(familyCreateInput(14)),
             InvalidPersistedFamilyResult::class,
         );
@@ -186,6 +223,7 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
                 $families,
                 familyRepresentativeRepository(15),
                 familyRelationshipTypes(),
+                new FamilyCodeTestGenerator(),
             ))->handle(familyCreateInput(15)),
             InvalidPersistedFamilyResult::class,
         );
@@ -633,6 +671,7 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
         assertSameValue(FamilyRepository::class, $create[0]->getType()?->getName());
         assertSameValue(RepresentativeRepository::class, $create[1]->getType()?->getName());
         assertSameValue(RelationshipTypeLookup::class, $create[2]->getType()?->getName());
+        assertSameValue(FamilyCodeGenerator::class, $create[3]->getType()?->getName());
 
         $addRepresentative = (new ReflectionClass(
             AddRepresentativeToFamily::class
@@ -851,6 +890,7 @@ function familyApplicationAggregate(
 ): Family {
     return Family::reconstitute(
         new FamilyId($familyId),
+        FamilyCodeTestFactory::next(),
         new DisplayName('Family ' . $familyId),
         $status,
         $representatives,

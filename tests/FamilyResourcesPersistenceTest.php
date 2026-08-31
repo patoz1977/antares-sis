@@ -128,7 +128,7 @@ function registerFamilyResourcesPersistenceTests(TestRunner $runner): void
     $runner->add('pdo Family synchronization rejects omitted unknown and cross-Family resources', function (): void {
         [$pdo, $repository, $family] = persistedFamilyResourcesFixture(false);
         $omitted = Family::reconstitute(
-            requiredFamilyPersistenceId($family), $family->displayName(), $family->status(),
+            requiredFamilyPersistenceId($family), $family->familyCode(), $family->displayName(), $family->status(),
             $family->representatives(), $family->students(), [], [], [],
             $family->emergencyContacts(), [], $family->authorizedPickups(), [],
         );
@@ -137,7 +137,7 @@ function registerFamilyResourcesPersistenceTests(TestRunner $runner): void
         $unknownAddress = new FamilyAddress(new FamilyAddressId(99999), new AddressLabel('Unknown'),
             simplePersistedAddress('Unknown'), FamilyResourceStatus::Active);
         $unknown = Family::reconstitute(
-            requiredFamilyPersistenceId($family), $family->displayName(), $family->status(),
+            requiredFamilyPersistenceId($family), $family->familyCode(), $family->displayName(), $family->status(),
             $family->representatives(), $family->students(), [$unknownAddress], [], [],
             $family->emergencyContacts(), [], $family->authorizedPickups(), [],
         );
@@ -147,7 +147,7 @@ function registerFamilyResourcesPersistenceTests(TestRunner $runner): void
         $other->addAddress(new AddressLabel('Other'), simplePersistedAddress('Other'));
         $other = $repository->save($other);
         $foreign = Family::reconstitute(
-            requiredFamilyPersistenceId($family), $family->displayName(), $family->status(),
+            requiredFamilyPersistenceId($family), $family->familyCode(), $family->displayName(), $family->status(),
             $family->representatives(), $family->students(), [$other->addresses()[0]], [], [],
             $family->emergencyContacts(), [], $family->authorizedPickups(), [],
         );
@@ -158,7 +158,7 @@ function registerFamilyResourcesPersistenceTests(TestRunner $runner): void
     $runner->add('pdo Family synchronization rejects omitted and changed persisted assignments', function (): void {
         [, $repository, $family] = persistedFamilyResourcesFixture();
         $omitted = Family::reconstitute(
-            requiredFamilyPersistenceId($family), $family->displayName(), $family->status(),
+            requiredFamilyPersistenceId($family), $family->familyCode(), $family->displayName(), $family->status(),
             $family->representatives(), $family->students(), $family->addresses(), [],
             $family->studentAddressAssignments(), $family->emergencyContacts(),
             $family->emergencyContactAssignments(), $family->authorizedPickups(),
@@ -175,7 +175,7 @@ function registerFamilyResourcesPersistenceTests(TestRunner $runner): void
             null,
         );
         $changed = Family::reconstitute(
-            requiredFamilyPersistenceId($family), $family->displayName(), $family->status(),
+            requiredFamilyPersistenceId($family), $family->familyCode(), $family->displayName(), $family->status(),
             $family->representatives(), $family->students(), $family->addresses(), [$changedRepresentative],
             $family->studentAddressAssignments(), $family->emergencyContacts(),
             $family->emergencyContactAssignments(), $family->authorizedPickups(),
@@ -193,7 +193,7 @@ function registerFamilyResourcesPersistenceTests(TestRunner $runner): void
             null,
         );
         $changed = Family::reconstitute(
-            requiredFamilyPersistenceId($family), $family->displayName(), $family->status(),
+            requiredFamilyPersistenceId($family), $family->familyCode(), $family->displayName(), $family->status(),
             $family->representatives(), $family->students(), $family->addresses(),
             $family->representativeAddressAssignments(), $family->studentAddressAssignments(),
             $family->emergencyContacts(), [$changedPriority], $family->authorizedPickups(),

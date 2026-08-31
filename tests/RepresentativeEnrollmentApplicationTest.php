@@ -383,6 +383,7 @@ function e011PortalFamily(int $familyId = 77, int $studentId = 44): Family
 {
     return Family::reconstitute(
         new FamilyId($familyId),
+        FamilyCodeTestFactory::next(),
         new DisplayName('Authorized Family'),
         FamilyStatus::Active,
         [new FamilyRepresentative(

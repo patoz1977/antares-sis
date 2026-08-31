@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Family\Domain;
 
+use App\Family\Domain\ValueObject\FamilyCode;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\RepresentativeId;
 use App\Family\Domain\ValueObject\StudentId;
@@ -13,6 +14,10 @@ interface FamilyRepository
     public function findById(FamilyId $id): ?Family;
 
     public function findByIdForUpdate(FamilyId $id): ?Family;
+
+    public function findByCode(FamilyCode $familyCode): ?Family;
+
+    public function findByCodeForUpdate(FamilyCode $familyCode): ?Family;
 
     /** @return list<Family> */
     public function findActiveByRepresentativeId(RepresentativeId $representativeId): array;
