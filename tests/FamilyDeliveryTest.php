@@ -129,14 +129,18 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         [$controller] = familyDeliveryController(familyOptions: $options);
         $form = $controller->showCreateRepresentativeFamily();
 
-        foreach (['Datos personales del representante', 'Información del representante', 'Familia y membresía', 'name="_csrf_token"', 'name="started_at"'] as $text) {
+        foreach (['Datos personales del representante', 'Información del representante', 'Acceso del representante', 'Familia y membresía', 'name="_csrf_token"', 'name="started_at"'] as $text) {
             deliveryAssertContains($text, $form);
         }
         deliveryAssertContains('Correo electrónico personal', $form);
         deliveryAssertContains('name="email" type="email" value="" required', $form);
+        deliveryAssertContains('name="initial_password" type="password"', $form);
+        deliveryAssertContains('name="initial_password_confirmation" type="password"', $form);
+        deliveryAssertContains('name="user_status" required', $form);
+        deliveryAssertContains('La contraseña no se conserva después del envío.', $form);
         deliveryAssertContains('&lt;Parent&gt;', $form);
         assertSameValue(false, str_contains($form, '<Parent>'));
-        foreach (['username', 'password', 'Enrollment', 'Student'] as $forbidden) {
+        foreach (['name="username"', 'Enrollment', 'Student'] as $forbidden) {
             assertSameValue(false, str_contains($form, $forbidden));
         }
     });
@@ -150,6 +154,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         assertCompositeTransactionCommitted($environment->transactions);
         assertSameValue(1, $environment->persons->saveCalls());
         assertSameValue(1, $environment->representatives->saveCalls());
+        assertSameValue(1, $environment->users->saveCalls());
         assertSameValue(1, $environment->families->saveCalls());
 
         $created = $environment->families->findActiveByRepresentativeId(
@@ -159,7 +164,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         $primary = $created[0]->primaryRepresentative();
         assertSameValue(true, $primary->isPrimary() && $primary->isActive());
         deliveryAssertContains(
-            'Family and primary Representative created successfully.',
+            'Family, primary Representative and User created successfully.',
             $controller->index(),
         );
     });
@@ -179,9 +184,12 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
                 'email' => '',
                 'work_email' => 'work-only@example.test',
             ],
-            'document pair' => ['document_number' => ''],
+            'complete identification' => ['document_number' => ''],
+            'password confirmation' => ['initial_password_confirmation' => 'different-secret'],
+            'non scalar password' => ['initial_password' => ['invalid']],
+            'User status' => ['user_status' => 'UNKNOWN'],
         ] as $label => $changes) {
-            [$controller, $environment] = familyDeliveryController();
+            [$controller, $environment, $session] = familyDeliveryController();
             deliveryRequest('POST', '/families/create', familyRepresentativeDeliveryInput($changes));
             $response = $controller->createRepresentativeFamily();
 
@@ -194,11 +202,32 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             }
             if ($label === 'non scalar') {
                 deliveryAssertContains('must be a single value', $response);
+            } elseif ($label === 'non scalar password') {
+                deliveryAssertContains('Initial password must be a single value', $response);
             } else {
                 deliveryAssertContains('Ada', $response);
             }
+            assertSameValue(false, str_contains($response, 'initial-secret'));
+            assertSameValue(false, str_contains(serialize($session), 'initial-secret'));
             assertSameValue(0, $environment->persons->saveCalls());
         }
+    });
+
+    $runner->add('Representative delivery maps password failure without retaining secret and rolls back', function (): void {
+        [$controller, $environment, $session] = familyDeliveryController();
+        $before = compositeRepositoryState($environment);
+        deliveryRequest('POST', '/families/create', familyRepresentativeDeliveryInput([
+            'initial_password' => 'four',
+            'initial_password_confirmation' => 'four',
+        ]));
+
+        $response = $controller->createRepresentativeFamily();
+
+        assertSameValue(422, http_response_code());
+        deliveryAssertContains('al menos cinco caracteres', $response);
+        assertSameValue(false, str_contains($response, 'four'));
+        assertSameValue(false, str_contains(serialize($session), 'four'));
+        assertCompositeRollback($environment, $before, 'delivery password policy');
     });
 
     $runner->add('Representative delivery maps known conflicts and preserves atomic rollback', function (): void {
@@ -484,6 +513,9 @@ function familyRepresentativeDeliveryInput(array $overrides = []): array
         'work_phone' => 'work extension',
         'work_email' => 'work@example.test',
         'representative_status' => RepresentativeStatus::Active->value,
+        'initial_password' => 'initial-secret',
+        'initial_password_confirmation' => 'initial-secret',
+        'user_status' => 'ACTIVE',
         'display_name' => 'Delivery Family',
         'family_status' => FamilyStatus::Active->value,
         'relationship_type_id' => '11',

@@ -22,6 +22,11 @@ use App\Family\Domain\ValueObject\FamilyStudentId;
 use App\Family\Domain\ValueObject\RelationshipTypeId;
 use App\Family\Domain\ValueObject\RepresentativeId;
 use App\Family\Domain\ValueObject\StudentId;
+use App\IdentityAccess\Application\CreateRepresentativeUser;
+use App\IdentityAccess\Application\Orchestration\CreateRepresentativeAccess;
+use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
+use App\IdentityAccess\Domain\UserRepository;
+use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\Person\Application\CreatePerson;
 use App\Representative\Application\CreateRepresentative;
 use App\Student\Application\CreateStudent;
@@ -35,6 +40,8 @@ final class CompositeOrchestrationEnvironment
     public readonly InMemoryPersonApplicationRepository $persons;
 
     public readonly InMemoryRepresentativeApplicationRepository $representatives;
+
+    public readonly InMemoryRepresentativeUserRepository $users;
 
     public readonly InMemoryStudentApplicationRepository $students;
 
@@ -51,6 +58,7 @@ final class CompositeOrchestrationEnvironment
         $this->today = self::date('2026-08-05 23:45:00+00:00');
         $this->persons = new InMemoryPersonApplicationRepository($this->today, 101);
         $this->representatives = new InMemoryRepresentativeApplicationRepository(501);
+        $this->users = new InMemoryRepresentativeUserRepository(601);
         $this->students = new InMemoryStudentApplicationRepository(701);
         $this->families = new InMemoryFamilyApplicationRepository(901, 1001, 1101);
         $this->relationshipTypes = new FakeRelationshipTypeLookup([11]);
@@ -59,6 +67,7 @@ final class CompositeOrchestrationEnvironment
         $this->transactions = new InMemoryCompositeTransactionRunner([
             $this->persons,
             $this->representatives,
+            $this->users,
             $this->students,
             $this->families,
         ]);
@@ -67,11 +76,21 @@ final class CompositeOrchestrationEnvironment
     public function representativeFlow(
         ?RelationshipTypeLookup $relationshipTypes = null,
         ?FamilyRepository $families = null,
+        ?UserRepository $users = null,
     ): CreateRepresentativeFamily {
         return new CreateRepresentativeFamily(
             $this->transactions,
-            new CreatePerson($this->persons),
-            new CreateRepresentative($this->persons, $this->representatives),
+            new CreateRepresentativeAccess(
+                new CreatePerson($this->persons),
+                new CreateRepresentative($this->persons, $this->representatives),
+                new CreateRepresentativeUser(
+                    $this->representatives,
+                    $this->persons,
+                    $users ?? $this->users,
+                    new NativePasswordHasher(),
+                    new RepresentativePasswordPolicy(),
+                ),
+            ),
             new CreateFamily(
                 $families ?? $this->families,
                 $this->representatives,

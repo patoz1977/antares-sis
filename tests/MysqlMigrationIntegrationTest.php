@@ -19,6 +19,7 @@ use App\IdentityAccess\Application\Contract\Clock;
 use App\IdentityAccess\Application\Contract\SecurityEventLogger;
 use App\IdentityAccess\Application\Contract\SessionManager;
 use App\IdentityAccess\Application\CreateRepresentativeUser;
+use App\IdentityAccess\Application\Orchestration\CreateRepresentativeAccess;
 use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
 use App\IdentityAccess\Application\GetAuthenticatedUser;
 use App\IdentityAccess\Application\GetAuthorizedFamilies;
@@ -28,6 +29,7 @@ use App\IdentityAccess\Application\SelectAuthorizedFamily;
 use App\IdentityAccess\Application\Dto\ChangeRepresentativeUserPasswordInput;
 use App\IdentityAccess\Application\Dto\CreateRepresentativeUserInput;
 use App\IdentityAccess\Application\Exception\RepresentativeLoginIdentifierAlreadyUsed;
+use App\IdentityAccess\Application\Exception\InvalidRepresentativePassword;
 use App\IdentityAccess\Application\Exception\RepresentativeUserRequiresIdentification;
 use App\IdentityAccess\Application\Exception\FamilyContextNotAuthorized;
 use App\IdentityAccess\Application\Orchestration\UpdatePersonWithRepresentativeUserSync;
@@ -72,6 +74,7 @@ use App\Family\Application\CreateFamilyAddress;
 use App\Family\Application\Dto\CreateFamilyAddressInput;
 use App\Family\Application\GetFamily;
 use App\Family\Application\GetFamilyResources;
+use App\Family\Application\Exception\RelationshipTypeNotFound;
 use App\Family\Application\Orchestration\CreateRepresentativeFamily;
 use App\Family\Application\Orchestration\CreateStudentInFamily;
 use App\Family\Application\Orchestration\Dto\CreateRepresentativeFamilyInput;
@@ -5797,6 +5800,21 @@ try {
         $personRepository,
         $representativeRepository,
     );
+    $representativeUsers = new PdoUserRepository($managerA);
+    $representativePasswordHasher = new NativePasswordHasher();
+    $representativePasswordPolicy = new RepresentativePasswordPolicy();
+    $createRepresentativeUser = new CreateRepresentativeUser(
+        $representativeRepository,
+        $personRepository,
+        $representativeUsers,
+        $representativePasswordHasher,
+        $representativePasswordPolicy,
+    );
+    $createRepresentativeAccess = new CreateRepresentativeAccess(
+        $createPerson,
+        $createRepresentative,
+        $createRepresentativeUser,
+    );
     $createStudent = new CreateStudent($personRepository, $studentRepository);
     $createFamily = new CreateFamily(
         $familyRepository,
@@ -5807,8 +5825,7 @@ try {
     $compositeToday = new DateTimeImmutable('2026-08-04', new DateTimeZone('UTC'));
     $representativeFlow = new CreateRepresentativeFamily(
         $transactions,
-        $createPerson,
-        $createRepresentative,
+        $createRepresentativeAccess,
         $createFamily,
     );
     $representativeFlowOutput = $representativeFlow->handle(
@@ -5833,6 +5850,8 @@ try {
             workPhone: null,
             workEmail: 'composite-work@example.test',
             representativeStatus: RepresentativeStatus::Active,
+            initialPassword: 'composite-initial-secret',
+            userStatus: UserStatus::Active,
             displayName: 'MariaDB Composite Representative Family',
             familyStatus: FamilyStatus::Active,
             relationshipTypeId: $generatedRelationshipTypeId,
@@ -5841,10 +5860,15 @@ try {
         $compositeToday,
     );
     $representativeFlowRow = $identity->prepare(
-        'SELECT p.id AS person_id, p.email, r.id AS representative_id, f.id AS family_id, '
+        'SELECT p.id AS person_id, p.email, r.id AS representative_id, '
+        . 'u.id AS user_id, u.person_id AS user_person_id, u.login_identifier, u.password_hash, '
+        . 'us.code AS user_status_code, ust.code AS user_status_type_code, f.id AS family_id, '
         . 'fr.id AS membership_id, fr.representative_id AS membership_representative_id, '
         . 'fr.relationship_type_id, fr.is_primary, fr.ended_at '
         . 'FROM persons p INNER JOIN representatives r ON r.person_id = p.id '
+        . 'INNER JOIN users u ON u.person_id = p.id '
+        . 'INNER JOIN statuses us ON us.id = u.status_id '
+        . 'INNER JOIN status_types ust ON ust.id = us.status_type_id '
         . 'INNER JOIN family_representatives fr ON fr.representative_id = r.id '
         . 'INNER JOIN families f ON f.id = fr.family_id '
         . 'WHERE p.document_number = :documentNumber AND f.display_name = :displayName'
@@ -5860,6 +5884,16 @@ try {
         && $representativePhysical['email'] === 'composite-representative@example.test'
         && (int) $representativePhysical['representative_id']
             === $representativeFlowOutput->representative->id
+        && (int) $representativePhysical['user_id'] === $representativeFlowOutput->user->userId
+        && (int) $representativePhysical['user_person_id'] === $representativeFlowOutput->person->id
+        && $representativePhysical['login_identifier'] === 'composite-rep-success'
+        && $representativePhysical['password_hash'] !== 'composite-initial-secret'
+        && $representativePasswordHasher->verify(
+            'composite-initial-secret',
+            (string) $representativePhysical['password_hash'],
+        )
+        && $representativePhysical['user_status_type_code'] === 'USER_STATUS'
+        && $representativePhysical['user_status_code'] === 'ACTIVE'
         && (int) $representativePhysical['family_id'] === $representativeFlowOutput->family->id
         && (int) $representativePhysical['membership_id'] > 0
         && (int) $representativePhysical['membership_representative_id']
@@ -5868,7 +5902,7 @@ try {
         && (int) $representativePhysical['is_primary'] === 1
         && $representativePhysical['ended_at'] === null
         && !$connectionA->inTransaction(),
-        'Composite Representative flow did not commit Person, role, Family and primary membership.'
+        'Composite Representative flow did not commit Person, role, User, Family and primary membership.'
     );
 
     $missingEmailPerson = $personRepository->save(new Person(
@@ -5924,7 +5958,7 @@ try {
                 sexId: 1,
                 maritalStatusId: null,
                 educationLevelId: null,
-                email: null,
+                email: '',
                 mobilePhone: null,
                 landlinePhone: null,
                 personStatus: PersonStatus::Active,
@@ -5934,6 +5968,8 @@ try {
                 workPhone: null,
                 workEmail: 'composite-work-does-not-substitute@example.test',
                 representativeStatus: RepresentativeStatus::Active,
+                initialPassword: 'composite-rollback-secret',
+                userStatus: UserStatus::Active,
                 displayName: 'MariaDB Composite Representative Rollback',
                 familyStatus: FamilyStatus::Active,
                 relationshipTypeId: $generatedRelationshipTypeId,
@@ -5949,6 +5985,8 @@ try {
         . '(SELECT COUNT(*) FROM persons WHERE document_number = :personDocumentNumber) AS persons_count, '
         . '(SELECT COUNT(*) FROM representatives r INNER JOIN persons p ON p.id = r.person_id '
         . 'WHERE p.document_number = :representativeDocumentNumber) AS representatives_count, '
+        . '(SELECT COUNT(*) FROM users u INNER JOIN persons p ON p.id = u.person_id '
+        . 'WHERE p.document_number = :userDocumentNumber) AS users_count, '
         . '(SELECT COUNT(*) FROM families WHERE display_name = :familyDisplayName) AS families_count, '
         . '(SELECT COUNT(*) FROM family_representatives fr INNER JOIN families f ON f.id = fr.family_id '
         . 'WHERE f.display_name = :membershipDisplayName) AS memberships_count'
@@ -5956,6 +5994,7 @@ try {
     $representativeRollbackCounts->execute([
         ':personDocumentNumber' => 'COMPOSITE-REP-ROLLBACK',
         ':representativeDocumentNumber' => 'COMPOSITE-REP-ROLLBACK',
+        ':userDocumentNumber' => 'COMPOSITE-REP-ROLLBACK',
         ':familyDisplayName' => 'MariaDB Composite Representative Rollback',
         ':membershipDisplayName' => 'MariaDB Composite Representative Rollback',
     ]);
@@ -5965,11 +6004,162 @@ try {
         && $representativeRollbackRows !== false
         && (int) $representativeRollbackRows['persons_count'] === 0
         && (int) $representativeRollbackRows['representatives_count'] === 0
+        && (int) $representativeRollbackRows['users_count'] === 0
         && (int) $representativeRollbackRows['families_count'] === 0
         && (int) $representativeRollbackRows['memberships_count'] === 0
         && !$connectionA->inTransaction(),
         'Composite Representative failure did not roll back every inserted row.'
     );
+
+    $phase4RepresentativeInput = static function (
+        string $documentNumber,
+        string $password,
+        string $displayName,
+        int $relationshipTypeId,
+    ): CreateRepresentativeFamilyInput {
+        return new CreateRepresentativeFamilyInput(
+            firstName: 'E015',
+            middleName: 'MariaDB',
+            firstSurname: 'Representative',
+            secondSurname: 'Rollback',
+            documentTypeId: 1,
+            documentNumber: $documentNumber,
+            birthDate: new DateTimeImmutable('1988-07-08', new DateTimeZone('UTC')),
+            sexId: 1,
+            maritalStatusId: null,
+            educationLevelId: null,
+            email: strtolower($documentNumber) . '@example.test',
+            mobilePhone: null,
+            landlinePhone: null,
+            personStatus: PersonStatus::Active,
+            occupation: null,
+            companyName: null,
+            position: null,
+            workPhone: null,
+            workEmail: null,
+            representativeStatus: RepresentativeStatus::Active,
+            initialPassword: $password,
+            userStatus: UserStatus::Active,
+            displayName: $displayName,
+            familyStatus: FamilyStatus::Active,
+            relationshipTypeId: $relationshipTypeId,
+            startedAt: new DateTimeImmutable('2026-08-10 12:13:14', new DateTimeZone('UTC')),
+        );
+    };
+    $phase4CreationCounts = static function (
+        PDO $connection,
+        string $documentNumber,
+        string $displayName,
+    ): array {
+        $statement = $connection->prepare(
+            'SELECT '
+            . '(SELECT COUNT(*) FROM persons WHERE document_number = :personDocument) AS persons_count, '
+            . '(SELECT COUNT(*) FROM representatives r INNER JOIN persons p ON p.id = r.person_id '
+            . 'WHERE p.document_number = :representativeDocument) AS representatives_count, '
+            . '(SELECT COUNT(*) FROM users u INNER JOIN persons p ON p.id = u.person_id '
+            . 'WHERE p.document_number = :userDocument) AS users_count, '
+            . '(SELECT COUNT(*) FROM families WHERE display_name = :familyDisplayName) AS families_count, '
+            . '(SELECT COUNT(*) FROM family_representatives fr INNER JOIN families f ON f.id = fr.family_id '
+            . 'WHERE f.display_name = :membershipDisplayName) AS memberships_count'
+        );
+        $statement->execute([
+            ':personDocument' => $documentNumber,
+            ':representativeDocument' => $documentNumber,
+            ':userDocument' => $documentNumber,
+            ':familyDisplayName' => $displayName,
+            ':membershipDisplayName' => $displayName,
+        ]);
+
+        return $statement->fetch(PDO::FETCH_ASSOC) ?: [];
+    };
+    $assertPhase4NoOrphans = static function (array $counts, string $scenario): void {
+        assertIntegration(
+            $counts !== []
+            && (int) $counts['persons_count'] === 0
+            && (int) $counts['representatives_count'] === 0
+            && (int) $counts['users_count'] === 0
+            && (int) $counts['families_count'] === 0
+            && (int) $counts['memberships_count'] === 0,
+            $scenario . ' left a Person, Representative, User, Family or membership orphan.'
+        );
+    };
+
+    $invalidPasswordDocument = 'E015-PHASE4-PASSWORD';
+    $invalidPasswordFamily = 'E015 Phase 4 Password Rollback';
+    $invalidPasswordRejected = false;
+    try {
+        $representativeFlow->handle(
+            $phase4RepresentativeInput(
+                $invalidPasswordDocument,
+                'four',
+                $invalidPasswordFamily,
+                $generatedRelationshipTypeId,
+            ),
+            $compositeToday,
+        );
+    } catch (InvalidRepresentativePassword) {
+        $invalidPasswordRejected = true;
+    }
+    assertIntegration($invalidPasswordRejected, 'E015 invalid password was not rejected.');
+    $assertPhase4NoOrphans(
+        $phase4CreationCounts($identity, $invalidPasswordDocument, $invalidPasswordFamily),
+        'E015 invalid-password rollback',
+    );
+
+    $adminLoginCountBefore = (int) $identity->query(
+        "SELECT COUNT(*) FROM users WHERE normalized_login_identifier = 'admin'"
+    )->fetchColumn();
+    assertIntegration($adminLoginCountBefore === 1, 'E015 duplicate-login probe requires seeded admin login.');
+    $duplicateLoginDocument = 'admin';
+    $duplicateLoginFamily = 'E015 Phase 4 Duplicate Login Rollback';
+    $duplicateLoginRejected = false;
+    try {
+        $representativeFlow->handle(
+            $phase4RepresentativeInput(
+                $duplicateLoginDocument,
+                'valid-secret',
+                $duplicateLoginFamily,
+                $generatedRelationshipTypeId,
+            ),
+            $compositeToday,
+        );
+    } catch (RepresentativeLoginIdentifierAlreadyUsed) {
+        $duplicateLoginRejected = true;
+    }
+    assertIntegration(
+        $duplicateLoginRejected
+        && (int) $identity->query(
+            "SELECT COUNT(*) FROM users WHERE normalized_login_identifier = 'admin'"
+        )->fetchColumn() === $adminLoginCountBefore,
+        'E015 duplicate derived login was not rejected without changing the existing User.'
+    );
+    $assertPhase4NoOrphans(
+        $phase4CreationCounts($identity, $duplicateLoginDocument, $duplicateLoginFamily),
+        'E015 duplicate-login rollback',
+    );
+
+    $familyFailureDocument = 'E015-PHASE4-FAMILY';
+    $familyFailureName = 'E015 Phase 4 Family Rollback';
+    $familyFailureRejected = false;
+    try {
+        $representativeFlow->handle(
+            $phase4RepresentativeInput(
+                $familyFailureDocument,
+                'valid-secret',
+                $familyFailureName,
+                999999999,
+            ),
+            $compositeToday,
+        );
+    } catch (RelationshipTypeNotFound) {
+        $familyFailureRejected = true;
+    }
+    assertIntegration($familyFailureRejected, 'E015 Family-stage failure was not propagated.');
+    $assertPhase4NoOrphans(
+        $phase4CreationCounts($identity, $familyFailureDocument, $familyFailureName),
+        'E015 post-User Family rollback',
+    );
+    assertIntegration(!$connectionA->inTransaction(), 'E015 Phase 4 left a transaction active.');
 
     $studentFlow = new CreateStudentInFamily(
         $transactions,
@@ -6181,16 +6371,6 @@ try {
         'MariaDB did not generate the E007 Representative role identity.'
     );
 
-    $representativeUsers = new PdoUserRepository($managerA);
-    $representativePasswordHasher = new NativePasswordHasher();
-    $representativePasswordPolicy = new RepresentativePasswordPolicy();
-    $createRepresentativeUser = new CreateRepresentativeUser(
-        $representativeRepository,
-        $personRepository,
-        $representativeUsers,
-        $representativePasswordHasher,
-        $representativePasswordPolicy,
-    );
     $missingEmailProvisioningRejected = false;
     try {
         $createRepresentativeUser->handle(new CreateRepresentativeUserInput(
@@ -8006,7 +8186,8 @@ try {
     echo "PASS MySQL FamilyCode exact lookup FOR UPDATE Aggregate roundtrip immutability and rollback\n";
     echo "PASS MySQL Family Resources complete roundtrip AUTO_INCREMENT UTC constraints and rollback\n";
     echo "PASS MySQL Family delivery active catalogs and Application persistence\n";
-    echo "PASS MySQL composite Representative Person role Family atomic commit and rollback\n";
+    echo "PASS MySQL E015 mandatory Representative Person role User Family atomic commit hashing and status\n";
+    echo "PASS MySQL E015 Representative password duplicate-login and post-User Family rollback leave no orphans\n";
     echo "PASS MySQL Representative personal email invariant and work-email non-substitution\n";
     echo "PASS MySQL composite Student Person role membership atomic commit and rollback\n";
     echo "PASS MySQL Representative User email-gated AUTO_INCREMENT provisioning lookup hashing and physical uniqueness\n";
