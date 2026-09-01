@@ -19,6 +19,14 @@ use App\Family\Application\Orchestration\Dto\RepresentativeFamilyOutput;
 use App\Family\Application\Orchestration\Dto\StudentFamilyOutput;
 use App\Family\Domain\Exception\InvalidFamilyState;
 use App\Family\Domain\FamilyStatus;
+use App\IdentityAccess\Application\Exception\InvalidPersistedUserResult;
+use App\IdentityAccess\Application\Exception\InvalidRepresentativePassword;
+use App\IdentityAccess\Application\Exception\RepresentativeLoginIdentifierAlreadyUsed;
+use App\IdentityAccess\Application\Exception\RepresentativeUserAlreadyExists;
+use App\IdentityAccess\Application\Orchestration\CreateRepresentativeAccess;
+use App\IdentityAccess\Domain\UserStatus;
+use App\IdentityAccess\Domain\ValueObject\PersonId as UserPersonId;
+use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\Person\Application\CreatePerson;
 use App\Person\Application\Exception\IdentificationAlreadyUsed;
 use App\Person\Domain\Exception\InvalidPersonState;
@@ -60,11 +68,26 @@ function registerFamilyCompositeOrchestrationTests(TestRunner $runner): void
         assertComposite($output instanceof RepresentativeFamilyOutput, 'Unexpected composite output.');
         assertComposite($output->person->id > 0, 'Person identity was not generated.');
         assertComposite($output->representative->id > 0, 'Representative identity was not generated.');
+        assertComposite($output->user->userId > 0, 'User identity was not generated.');
         assertComposite($output->family->id > 0, 'Family identity was not generated.');
         assertComposite(
             $output->representative->personId === $output->person->id,
             'Representative does not reference the generated Person.'
         );
+        assertComposite($output->user->personId === $output->person->id, 'User does not reference Person.');
+        assertComposite($output->user->loginIdentifier === 'composite-rep-001', 'Login was not derived.');
+        assertComposite($output->user->status === UserStatus::Active, 'User status changed.');
+        $persistedUser = $environment->users->findByPersonId(new UserPersonId($output->person->id));
+        assertComposite($persistedUser !== null, 'User was not persisted for the Representative Person.');
+        assertComposite(
+            (new NativePasswordHasher())->verify(
+                'initial-secret',
+                $persistedUser->passwordHash()->value(),
+            ),
+            'Initial password did not pass through the approved hasher.',
+        );
+        assertComposite(!property_exists($output, 'plainTextPassword'), 'Composite output exposed password.');
+        assertComposite(!property_exists($output->user, 'passwordHash'), 'User output exposed hash.');
         $primary = array_values(array_filter(
             $output->family->representatives,
             static fn ($membership): bool => $membership->isPrimary && $membership->isActive,
@@ -116,7 +139,7 @@ function registerFamilyCompositeOrchestrationTests(TestRunner $runner): void
                 return [
                     $environment->representativeFlow(),
                     compositeRepresentativeInput([
-                        'email' => null,
+                        'email' => '',
                         'workEmail' => 'work-only@example.test',
                     ]),
                     RepresentativeRequiresContactEmail::class,
@@ -139,6 +162,59 @@ function registerFamilyCompositeOrchestrationTests(TestRunner $runner): void
                     compositeRepresentativeInput(),
                     InvalidPersistedRepresentativeResult::class,
                     null,
+                ];
+            },
+            'invalid initial password' => static function (CompositeOrchestrationEnvironment $environment): array {
+                return [
+                    $environment->representativeFlow(),
+                    compositeRepresentativeInput(['initialPassword' => '1234']),
+                    InvalidRepresentativePassword::class,
+                    null,
+                ];
+            },
+            'existing User for generated Person' => static function (
+                CompositeOrchestrationEnvironment $environment,
+            ): array {
+                $environment->users->seed(representativeUserUser(31, 101, 'preexisting-user'));
+
+                return [
+                    $environment->representativeFlow(),
+                    compositeRepresentativeInput(),
+                    RepresentativeUserAlreadyExists::class,
+                    null,
+                ];
+            },
+            'occupied derived login' => static function (CompositeOrchestrationEnvironment $environment): array {
+                $environment->users->seed(representativeUserUser(32, 999, 'composite-rep-001'));
+
+                return [
+                    $environment->representativeFlow(),
+                    compositeRepresentativeInput(),
+                    RepresentativeLoginIdentifierAlreadyUsed::class,
+                    null,
+                ];
+            },
+            'invalid persisted User' => static function (CompositeOrchestrationEnvironment $environment): array {
+                $environment->users->returnWithoutId();
+
+                return [
+                    $environment->representativeFlow(),
+                    compositeRepresentativeInput(),
+                    InvalidPersistedUserResult::class,
+                    null,
+                ];
+            },
+            'simulated physical User restriction' => static function (
+                CompositeOrchestrationEnvironment $environment,
+            ): array {
+                $failure = new RuntimeException('simulated physical User restriction');
+                $repository = new ThrowAfterUserSaveRepository($environment->users, $failure);
+
+                return [
+                    $environment->representativeFlow(users: $repository),
+                    compositeRepresentativeInput(),
+                    RuntimeException::class,
+                    $failure,
                 ];
             },
             'missing RelationshipType' => static function (CompositeOrchestrationEnvironment $environment): array {
@@ -232,6 +308,7 @@ function registerFamilyCompositeOrchestrationTests(TestRunner $runner): void
         assertComposite($output->person->status === PersonStatus::Active, 'Person status changed.');
         assertComposite($output->student->status === StudentStatus::Inactive, 'Student status changed.');
         assertComposite($environment->representatives->saveCalls() === 0, 'Student flow saved Representative.');
+        assertComposite($environment->users->saveCalls() === 0, 'Student flow saved User.');
         assertCompositeTransactionCommitted($environment->transactions);
     });
 
@@ -385,8 +462,7 @@ function registerFamilyCompositeOrchestrationTests(TestRunner $runner): void
         );
         assertComposite($representativeDependencies === [
             TransactionRunner::class,
-            CreatePerson::class,
-            CreateRepresentative::class,
+            CreateRepresentativeAccess::class,
             CreateFamily::class,
         ], 'Representative orchestration dependencies changed.');
         assertComposite($studentDependencies === [
@@ -413,7 +489,6 @@ function registerFamilyCompositeOrchestrationTests(TestRunner $runner): void
             'DELETE ',
             'new DateTimeImmutable',
             'RepresentativeStudent',
-            'User',
             'Enrollment',
             'beginTransaction',
             'commit(',
@@ -449,6 +524,8 @@ function compositeRepresentativeInput(array $changes = []): CreateRepresentative
         'workPhone' => 'work extension',
         'workEmail' => 'work@example.test',
         'representativeStatus' => RepresentativeStatus::Active,
+        'initialPassword' => 'initial-secret',
+        'userStatus' => UserStatus::Active,
         'displayName' => '  Composite Representative Family  ',
         'familyStatus' => FamilyStatus::Inactive,
         'relationshipTypeId' => 11,
@@ -518,18 +595,19 @@ function compositeDate(string $value): DateTimeImmutable
     return new DateTimeImmutable($value, new DateTimeZone('UTC'));
 }
 
-/** @return array{string, string, string, string} */
+/** @return array{string, string, string, string, string} */
 function compositeRepositoryState(CompositeOrchestrationEnvironment $environment): array
 {
     return [
         serialize($environment->persons),
         serialize($environment->representatives),
+        serialize($environment->users),
         serialize($environment->students),
         serialize($environment->families),
     ];
 }
 
-/** @param array{string, string, string, string} $before */
+/** @param array{string, string, string, string, string} $before */
 function assertCompositeRollback(
     CompositeOrchestrationEnvironment $environment,
     array $before,
