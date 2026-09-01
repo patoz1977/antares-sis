@@ -86,6 +86,7 @@ use App\IdentityAccess\Application\Contract\SecurityEventLogger;
 use App\IdentityAccess\Application\Contract\SessionManager;
 use App\IdentityAccess\Application\Contract\TransactionManager;
 use App\IdentityAccess\Application\CreateRepresentativeUser;
+use App\IdentityAccess\Application\Orchestration\CreateRepresentativeAccess;
 use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
 use App\IdentityAccess\Application\GetAuthorizedFamilies;
 use App\IdentityAccess\Application\GetUserByPersonId;
@@ -320,6 +321,7 @@ $container->singleton(GetPerson::class, GetPerson::class);
 $container->singleton(UpdatePerson::class, UpdatePerson::class);
 $container->singleton(GetUserByPersonId::class, GetUserByPersonId::class);
 $container->singleton(CreateRepresentativeUser::class, CreateRepresentativeUser::class);
+$container->singleton(CreateRepresentativeAccess::class, CreateRepresentativeAccess::class);
 $container->singleton(GetAuthenticatedRepresentative::class, GetAuthenticatedRepresentative::class);
 $container->singleton(GetAuthorizedFamilies::class, GetAuthorizedFamilies::class);
 $container->singleton(

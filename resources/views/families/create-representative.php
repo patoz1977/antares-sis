@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Person\Http\PersonFormOption;
+use App\IdentityAccess\Domain\UserStatus;
 use App\Representative\Domain\RepresentativeStatus;
 
 $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
@@ -41,8 +42,8 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
         </div>
         <div>
             <label class="form-label" for="document-type">Tipo de documento</label>
-            <select class="form-select" id="document-type" name="document_type_id">
-                <option value="">Sin documento</option>
+            <select class="form-select" id="document-type" name="document_type_id" required>
+                <option value="">Selecciona una opción</option>
                 <?php foreach ($personOptions->documentTypes as $option): ?>
                 <?php /** @var PersonFormOption $option */ ?>
                 <option value="<?= $escape($option->id) ?>"<?= $selected($values['document_type_id'] ?? '', $option->id) ?>><?= $escape($option->name) ?></option>
@@ -51,7 +52,7 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
         </div>
         <div>
             <label class="form-label" for="document-number">Número de documento</label>
-            <input class="form-control" id="document-number" name="document_number" type="text" value="<?= $escape($values['document_number'] ?? '') ?>">
+            <input class="form-control" id="document-number" name="document_number" type="text" value="<?= $escape($values['document_number'] ?? '') ?>" required>
         </div>
         <div>
             <label class="form-label" for="birth-date">Fecha de nacimiento</label>
@@ -103,6 +104,27 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
                 <option value="<?= $escape($option->code) ?>"<?= $selected($values['person_status'] ?? '', $option->code) ?>><?= $escape($option->name) ?></option>
                 <?php endforeach; ?>
             </select>
+        </div>
+    </fieldset>
+
+    <fieldset class="app-form-section">
+        <legend>Acceso del representante</legend>
+        <p class="text-body-secondary">El identificador de acceso se deriva del número de documento. La contraseña no se conserva después del envío.</p>
+        <div>
+            <label class="form-label" for="user-status">Estado del usuario</label>
+            <select class="form-select" id="user-status" name="user_status" required>
+                <?php foreach (UserStatus::cases() as $status): ?>
+                <option value="<?= $escape($status->value) ?>"<?= $selected($values['user_status'] ?? '', $status->value) ?>><?= $escape($status === UserStatus::Active ? 'Activo' : 'Deshabilitado') ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div>
+            <label class="form-label" for="initial-password">Contraseña inicial</label>
+            <input class="form-control" id="initial-password" name="initial_password" type="password" minlength="5" autocomplete="new-password" required>
+        </div>
+        <div>
+            <label class="form-label" for="initial-password-confirmation">Confirmar contraseña inicial</label>
+            <input class="form-control" id="initial-password-confirmation" name="initial_password_confirmation" type="password" minlength="5" autocomplete="new-password" required>
         </div>
     </fieldset>
 

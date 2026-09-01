@@ -19,6 +19,13 @@ use App\Family\Domain\Exception\InvalidFamilyState;
 use App\Family\Domain\FamilyStatus;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
+use App\IdentityAccess\Application\Exception\InvalidPersistedUserResult;
+use App\IdentityAccess\Application\Exception\InvalidRepresentativePassword;
+use App\IdentityAccess\Application\Exception\RepresentativeLoginIdentifierAlreadyUsed;
+use App\IdentityAccess\Application\Exception\RepresentativeUserAlreadyExists;
+use App\IdentityAccess\Application\Exception\RepresentativeUserPersonNotFound;
+use App\IdentityAccess\Application\Exception\RepresentativeUserRequiresIdentification;
+use App\IdentityAccess\Domain\UserStatus;
 use App\Person\Application\Exception\IdentificationAlreadyUsed;
 use App\Person\Application\Exception\InvalidPersistedPersonResult;
 use App\Person\Domain\Exception\InvalidPersonState;
@@ -155,6 +162,38 @@ final class FamilyController extends Controller
                 $familyOptions,
                 422,
             );
+        } catch (RepresentativeUserPersonNotFound | RepresentativeUserRequiresIdentification) {
+            return $this->representativeFormView(
+                $values,
+                ['La identidad de acceso del representante no pudo resolverse.'],
+                $personOptions,
+                $familyOptions,
+                422,
+            );
+        } catch (RepresentativeUserAlreadyExists) {
+            return $this->representativeFormView(
+                $values,
+                ['La persona representante ya tiene un usuario.'],
+                $personOptions,
+                $familyOptions,
+                422,
+            );
+        } catch (RepresentativeLoginIdentifierAlreadyUsed) {
+            return $this->representativeFormView(
+                $values,
+                ['El identificador de acceso derivado ya está en uso.'],
+                $personOptions,
+                $familyOptions,
+                422,
+            );
+        } catch (InvalidRepresentativePassword) {
+            return $this->representativeFormView(
+                $values,
+                ['La contraseña inicial debe contener al menos cinco caracteres.'],
+                $personOptions,
+                $familyOptions,
+                422,
+            );
         } catch (RelationshipTypeNotFound) {
             return $this->representativeFormView(
                 $values,
@@ -174,6 +213,7 @@ final class FamilyController extends Controller
         } catch (
             InvalidPersistedPersonResult
             | InvalidPersistedRepresentativeResult
+            | InvalidPersistedUserResult
             | InvalidPersistedFamilyResult
         ) {
             return $this->representativeFormView(
@@ -187,7 +227,7 @@ final class FamilyController extends Controller
 
         $this->session->put(
             self::FLASH_SUCCESS_KEY,
-            'Family and primary Representative created successfully.',
+            'Family, primary Representative and User created successfully.',
         );
 
         return $this->redirect('/families/show?id=' . $result->family->id, 303);
@@ -390,6 +430,29 @@ final class FamilyController extends Controller
         if ($person['email'] === null) {
             $errors[] = 'Personal email is required for a Representative.';
         }
+        if ($person['documentTypeId'] === null || $person['documentNumber'] === null) {
+            $errors[] = 'Complete identification is required for a Representative User.';
+        }
+
+        $initialPassword = $this->sensitiveScalar(
+            $input,
+            'initial_password',
+            'Initial password',
+            $errors,
+        );
+        $passwordConfirmation = $this->sensitiveScalar(
+            $input,
+            'initial_password_confirmation',
+            'Initial password confirmation',
+            $errors,
+        );
+        if ($initialPassword !== $passwordConfirmation) {
+            $errors[] = 'Initial password confirmation does not match.';
+        }
+        $userStatus = UserStatus::tryFrom($values['user_status']);
+        if ($userStatus === null) {
+            $errors[] = 'Select a valid User status.';
+        }
 
         $representativeStatus = RepresentativeStatus::tryFrom($values['representative_status']);
         if ($representativeStatus === null) {
@@ -429,6 +492,8 @@ final class FamilyController extends Controller
             'workPhone' => $this->nullableString($values['work_phone']),
             'workEmail' => $workEmail,
             'representativeStatus' => $representativeStatus,
+            'initialPassword' => $initialPassword,
+            'userStatus' => $userStatus,
             'displayName' => $values['display_name'],
             'familyStatus' => $familyStatus,
             'relationshipTypeId' => $relationshipTypeId,
@@ -651,6 +716,7 @@ final class FamilyController extends Controller
             'work_phone' => '',
             'work_email' => '',
             'representative_status' => 'ACTIVE',
+            'user_status' => UserStatus::Active->value,
             'display_name' => '',
             'family_status' => 'ACTIVE',
             'relationship_type_id' => '',
@@ -775,6 +841,22 @@ final class FamilyController extends Controller
         $value = $input[$key] ?? '';
 
         return is_scalar($value) ? trim((string) $value) : '';
+    }
+
+    private function sensitiveScalar(
+        array $input,
+        string $key,
+        string $label,
+        array &$errors,
+    ): string {
+        $value = $input[$key] ?? '';
+        if (!is_string($value)) {
+            $errors[] = $label . ' must be a single value.';
+
+            return '';
+        }
+
+        return $value;
     }
 
     private function positiveInteger(mixed $value): ?int

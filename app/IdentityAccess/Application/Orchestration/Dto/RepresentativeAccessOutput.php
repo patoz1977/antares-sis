@@ -2,20 +2,18 @@
 
 declare(strict_types=1);
 
-namespace App\Family\Application\Orchestration\Dto;
+namespace App\IdentityAccess\Application\Orchestration\Dto;
 
-use App\Family\Application\Dto\FamilyOutput;
 use App\IdentityAccess\Application\Dto\RepresentativeUserOutput;
 use App\Person\Application\Dto\PersonOutput;
 use App\Representative\Application\Dto\RepresentativeOutput;
 
-final readonly class RepresentativeFamilyOutput
+final readonly class RepresentativeAccessOutput
 {
     public function __construct(
         public PersonOutput $person,
         public RepresentativeOutput $representative,
         public RepresentativeUserOutput $user,
-        public FamilyOutput $family,
     ) {
     }
 }
