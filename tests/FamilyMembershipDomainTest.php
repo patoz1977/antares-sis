@@ -10,6 +10,7 @@ use App\Family\Domain\FamilyRepresentative;
 use App\Family\Domain\FamilyStatus;
 use App\Family\Domain\FamilyStudent;
 use App\Family\Domain\ValueObject\DisplayName;
+use App\Family\Domain\ValueObject\FamilyCode;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\FamilyRepresentativeId;
 use App\Family\Domain\ValueObject\FamilyStudentId;
@@ -26,6 +27,23 @@ use TypeError;
 
 function registerFamilyMembershipDomainTests(TestRunner $runner): void
 {
+    $runner->add('FamilyCode trims boundaries and accepts only uppercase F plus eight ASCII digits', function (): void {
+        $zero = new FamilyCode('F00000000');
+        $normal = new FamilyCode('  F00000123  ');
+
+        assertSameValue('F00000000', $zero->value());
+        assertSameValue('F00000123', $normal->value());
+        assertSameValue(true, $normal->equals(new FamilyCode('F00000123')));
+        assertSameValue(false, $normal->equals(new FamilyCode('F99999999')));
+
+        foreach ([
+            '', 'F0000000', 'F000000000', 'f00000123', 'A00000123', '00000123',
+            'F0000 123', 'F00000A23', 'F０００００１２３', 'F0000012ñ',
+        ] as $invalid) {
+            assertThrows(static fn (): FamilyCode => new FamilyCode($invalid), InvalidFamilyState::class);
+        }
+    });
+
     $runner->add('Family membership identities require positive immutable values and compare by value', function (): void {
         $identities = [
             [FamilyId::class, new FamilyId(10), new FamilyId(10), new FamilyId(11)],
@@ -104,12 +122,13 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
 
         assertSameValue(true, $constructor?->isPrivate());
         assertSameValue(
-            ['displayName', 'status', 'initialRepresentativeId', 'initialRelationshipTypeId', 'startedAt'],
+            ['familyCode', 'displayName', 'status', 'initialRepresentativeId', 'initialRelationshipTypeId', 'startedAt'],
             $parameterNames,
         );
         assertSameValue(false, in_array('isPrimary', $parameterNames, true));
         assertThrows(
             static fn (): Family => Family::create(
+                FamilyCodeTestFactory::next(),
                 new DisplayName('Invalid'),
                 FamilyStatus::Active,
                 null,
@@ -269,6 +288,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
         assertThrows(
             static fn (): Family => Family::reconstitute(
                 new FamilyId(1),
+                FamilyCodeTestFactory::next(),
                 new DisplayName('Invalid'),
                 FamilyStatus::Active,
                 [familyRepresentativeMembership(1, true, '2026-01-01', '2026-02-01')],
@@ -282,6 +302,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
         assertThrows(
             static fn (): Family => Family::reconstitute(
                 new FamilyId(1),
+                FamilyCodeTestFactory::next(),
                 new DisplayName('No primary'),
                 FamilyStatus::Active,
                 [familyRepresentativeMembership(1, false)],
@@ -292,6 +313,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
         assertThrows(
             static fn (): Family => Family::reconstitute(
                 new FamilyId(1),
+                FamilyCodeTestFactory::next(),
                 new DisplayName('Two primary'),
                 FamilyStatus::Active,
                 [familyRepresentativeMembership(1, true), familyRepresentativeMembership(2, true)],
@@ -305,6 +327,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
         assertThrows(
             static fn (): Family => Family::reconstitute(
                 new FamilyId(1),
+                FamilyCodeTestFactory::next(),
                 new DisplayName('Duplicate representative'),
                 FamilyStatus::Active,
                 [familyRepresentativeMembership(1, true), familyRepresentativeMembership(1, false)],
@@ -318,6 +341,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
         assertThrows(
             static fn (): Family => Family::reconstitute(
                 new FamilyId(1),
+                FamilyCodeTestFactory::next(),
                 new DisplayName('Duplicate student'),
                 FamilyStatus::Active,
                 [familyRepresentativeMembership(1, true)],
@@ -330,6 +354,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
     $runner->add('Family reconstruction permits repeated historical identities without simultaneous activity', function (): void {
         $family = Family::reconstitute(
             new FamilyId(1),
+            FamilyCodeTestFactory::next(),
             new DisplayName('Historical memberships'),
             FamilyStatus::Active,
             [
@@ -353,6 +378,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
 
     $runner->add('Family updates DisplayName and lifecycle without altering memberships', function (): void {
         $family = familyMembershipFixture();
+        $familyCode = $family->familyCode();
         $originalRepresentative = $family->primaryRepresentative()->representativeId()->value();
 
         $family->updateDisplayName(new DisplayName('Updated Household'));
@@ -362,6 +388,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
         assertSameValue(1, count($family->activeRepresentatives()));
 
         $family->activate();
+        assertSameValue(true, $family->familyCode()->equals($familyCode));
         assertSameValue(FamilyStatus::Active, $family->status());
         assertSameValue($originalRepresentative, $family->primaryRepresentative()->representativeId()->value());
     });
@@ -565,7 +592,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
         );
         sort($studentProperties, SORT_STRING);
 
-        assertSameValue(37, count($phpFiles));
+        assertSameValue(39, count($phpFiles));
         assertSameValue(
             [
                 'addresses',
@@ -574,6 +601,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
                 'displayName',
                 'emergencyContactAssignments',
                 'emergencyContacts',
+                'familyCode',
                 'id',
                 'representativeAddressAssignments',
                 'representatives',
@@ -583,6 +611,9 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
             ],
             $familyProperties,
         );
+        $familyCodeProperty = (new ReflectionClass(Family::class))->getProperty('familyCode');
+        assertSameValue(true, $familyCodeProperty->isReadOnly());
+        assertSameValue(false, method_exists(Family::class, 'updateFamilyCode'));
         assertSameValue(
             ['endedAt', 'id', 'isPrimary', 'relationshipTypeId', 'representativeId', 'startedAt'],
             $representativeProperties,
@@ -615,6 +646,7 @@ function registerFamilyMembershipDomainTests(TestRunner $runner): void
 function familyMembershipFixture(FamilyStatus $status = FamilyStatus::Active): Family
 {
     return Family::create(
+        FamilyCodeTestFactory::next(),
         new DisplayName('Household One'),
         $status,
         new RepresentativeId(101),
@@ -627,6 +659,7 @@ function reconstitutedFamilyFixture(): Family
 {
     return Family::reconstitute(
         new FamilyId(500),
+        FamilyCodeTestFactory::next(),
         new DisplayName('Persisted Household'),
         FamilyStatus::Active,
         [

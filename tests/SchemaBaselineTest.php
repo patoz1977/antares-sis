@@ -52,7 +52,7 @@ function registerSchemaBaselineTests(TestRunner $runner): void
             '001_create_migrations_table', '002_create_status_schema', '003_create_reference_catalogs',
             '004_create_academic_core', '005_create_identity_and_roles', '006_create_family_management',
             '007_create_institutional_documents', '008_create_enrollment', '009_create_submission_snapshots',
-            '010_remove_submission_snapshots',
+            '010_remove_submission_snapshots', '011_add_family_code_to_families',
         ], $versions, 'Migration runner did not load the expected ordered sequence.');
     });
 
@@ -72,6 +72,39 @@ function registerSchemaBaselineTests(TestRunner $runner): void
             baselineCreateStatements($migration009),
             baselineCreateStatements($migration010),
             'Migration 010 down must restore the exact migration 009 schema.',
+        );
+    });
+
+    $runner->add('migration 011 implements the exact FamilyCode upgrade and rollback contract', function (): void {
+        $source = (string) file_get_contents(
+            dirname(__DIR__) . '/database/migrations/011_add_family_code_to_families.php'
+        );
+
+        foreach ([
+            'ADD COLUMN `family_code`',
+            'CHAR(9) CHARACTER SET ascii COLLATE ascii_bin NULL AFTER `id`',
+            'SELECT MAX(`id`) FROM `families`',
+            '> 99_999_999',
+            "CONCAT('F', LPAD(CAST(`id` AS CHAR), 8, '0'))",
+            'CHAR_LENGTH(`family_code`) <> 9',
+            "BINARY `family_code` NOT REGEXP '^F[0-9]{8}$'",
+            'HAVING COUNT(*) > 1',
+            'CHAR(9) CHARACTER SET ascii COLLATE ascii_bin NOT NULL',
+            'ADD UNIQUE KEY `uq_families_family_code` (`family_code`)',
+            'DROP INDEX `uq_families_family_code`',
+            'DROP COLUMN `family_code`',
+        ] as $required) {
+            assertBaselineSame(true, str_contains($source, $required), 'Migration 011 contract is incomplete.');
+        }
+
+        assertBaselineSame(false, str_contains($source, 'DEFAULT'), 'FamilyCode must have no default.');
+        assertBaselineSame(false, str_contains($source, 'CHECK ('), 'FamilyCode format must not use a SQL CHECK.');
+        assertBaselineSame(false, str_contains($source, 'CREATE TABLE'), 'Migration 011 must not add a table.');
+        assertBaselineSame(
+            true,
+            strpos($source, 'DROP INDEX `uq_families_family_code`')
+                < strpos($source, 'DROP COLUMN `family_code`'),
+            'Migration 011 rollback must drop UNIQUE before the column.',
         );
     });
 
@@ -361,7 +394,7 @@ function baselineMigrationSources(): array
 
     $files = [];
     foreach ($entries as $entry) {
-        if (preg_match('/^00[2-8]_.+\.php$/', $entry) === 1) {
+        if (preg_match('/^(?:00[2-8]|011)_.+\.php$/', $entry) === 1) {
             $files[] = $directory . '/' . $entry;
         }
     }
@@ -391,7 +424,12 @@ function baselineTableColumns(string $source, string $table): array
 
     preg_match_all('/^\s*`([^`]+)`\s+/m', $match[1], $columns);
 
-    return $columns[1];
+    $result = $columns[1];
+    if ($table === 'families' && str_contains($source, 'ADD COLUMN `family_code`')) {
+        array_splice($result, 1, 0, ['family_code']);
+    }
+
+    return $result;
 }
 
 /** @return list<string> */
@@ -440,6 +478,13 @@ function baselineTableDefinition(string $source, string $table): string
 
 function baselineColumnDeclaration(string $source, string $table, string $column): string
 {
+    if ($table === 'families' && $column === 'family_code') {
+        return str_contains(
+            $source,
+            'CHAR(9) CHARACTER SET ascii COLLATE ascii_bin NOT NULL',
+        ) ? 'CHAR(9) CHARACTER SET ascii COLLATE ascii_bin NOT NULL' : '';
+    }
+
     if (preg_match("/generalCatalogSql\\('" . preg_quote($table, '/') . "'/", $source) === 1) {
         $generic = [
             'id' => 'BIGINT UNSIGNED NOT NULL AUTO_INCREMENT',

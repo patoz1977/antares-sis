@@ -19,6 +19,7 @@ final readonly class FamilyOutput
      */
     public function __construct(
         public int $id,
+        public string $familyCode,
         public string $displayName,
         public FamilyStatus $status,
         public array $representatives,
@@ -37,6 +38,7 @@ final readonly class FamilyOutput
 
         return new self(
             $id->value(),
+            $family->familyCode()->value(),
             $family->displayName()->value(),
             $family->status(),
             array_map(

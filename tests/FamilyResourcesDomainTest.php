@@ -769,6 +769,7 @@ function registerFamilyResourcesDomainTests(TestRunner $runner): void
 function familyResourcesNewFamily(): Family
 {
     return Family::create(
+        FamilyCodeTestFactory::next(),
         new DisplayName('Resource Family'),
         FamilyStatus::Active,
         new RepresentativeId(101),
@@ -798,6 +799,7 @@ function familyResourcesReconstitute(
 ): Family {
     return Family::reconstitute(
         new FamilyId(500),
+        FamilyCodeTestFactory::next(),
         new DisplayName('Persisted Resource Family'),
         FamilyStatus::Active,
         [

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests;
 
 use App\Family\Domain\Family;
+use App\Family\Domain\Exception\FamilyCodeAlreadyExists;
 use App\Family\Domain\AuthorizedPickupAssignment;
 use App\Family\Domain\EmergencyContactAssignment;
 use App\Family\Domain\FamilyAddress;
@@ -20,6 +21,7 @@ use App\Family\Domain\ValueObject\EmergencyContactAssignmentId;
 use App\Family\Domain\ValueObject\FamilyAddressId;
 use App\Family\Domain\ValueObject\FamilyAuthorizedPickupId;
 use App\Family\Domain\ValueObject\FamilyEmergencyContactId;
+use App\Family\Domain\ValueObject\FamilyCode;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\FamilyRepresentativeId;
 use App\Family\Domain\ValueObject\FamilyStudentId;
@@ -45,6 +47,8 @@ final class InMemoryFamilyApplicationRepository implements FamilyRepository
     private bool $returnWithoutNewStudentMembershipId = false;
 
     private bool $returnWrongFamilyId = false;
+
+    private int $familyCodeCollisions = 0;
 
     private ?string $returnWithoutNewResourceIdentity = null;
 
@@ -109,6 +113,22 @@ final class InMemoryFamilyApplicationRepository implements FamilyRepository
     public function findByIdForUpdate(FamilyId $id): ?Family
     {
         return $this->findById($id);
+    }
+
+    public function findByCode(FamilyCode $familyCode): ?Family
+    {
+        foreach ($this->families as $family) {
+            if ($family->familyCode()->equals($familyCode)) {
+                return $this->copy($family);
+            }
+        }
+
+        return null;
+    }
+
+    public function findByCodeForUpdate(FamilyCode $familyCode): ?Family
+    {
+        return $this->findByCode($familyCode);
     }
 
     public function findActiveByRepresentativeId(RepresentativeId $representativeId): array
@@ -176,6 +196,10 @@ final class InMemoryFamilyApplicationRepository implements FamilyRepository
     public function save(Family $family): Family
     {
         $this->saveCalls++;
+        if ($this->familyCodeCollisions > 0) {
+            $this->familyCodeCollisions--;
+            throw new FamilyCodeAlreadyExists('Simulated FamilyCode collision.');
+        }
         if ($this->returnWithoutFamilyId) {
             return clone $family;
         }
@@ -247,6 +271,7 @@ final class InMemoryFamilyApplicationRepository implements FamilyRepository
         }
         $persisted = Family::reconstitute(
             $familyId,
+            $family->familyCode(),
             $family->displayName(),
             $family->status(),
             $representatives,
@@ -298,6 +323,11 @@ final class InMemoryFamilyApplicationRepository implements FamilyRepository
     public function returnWrongFamilyId(): void
     {
         $this->returnWrongFamilyId = true;
+    }
+
+    public function rejectFamilyCodeSaves(int $attempts): void
+    {
+        $this->familyCodeCollisions = $attempts;
     }
 
     public function returnWithoutNewResourceIdentity(string $resource): void
@@ -497,6 +527,7 @@ final class InMemoryFamilyApplicationRepository implements FamilyRepository
 
         return Family::reconstitute(
             $id,
+            $family->familyCode(),
             $family->displayName(),
             $family->status(),
             $family->representatives(),

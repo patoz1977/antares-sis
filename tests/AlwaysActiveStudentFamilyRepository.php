@@ -6,6 +6,7 @@ namespace Tests;
 
 use App\Family\Domain\Family;
 use App\Family\Domain\FamilyRepository;
+use App\Family\Domain\ValueObject\FamilyCode;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\RepresentativeId;
 use App\Family\Domain\ValueObject\StudentId;
@@ -26,6 +27,16 @@ final readonly class AlwaysActiveStudentFamilyRepository implements FamilyReposi
     public function findByIdForUpdate(FamilyId $id): ?Family
     {
         return $this->delegate->findByIdForUpdate($id);
+    }
+
+    public function findByCode(FamilyCode $familyCode): ?Family
+    {
+        return $this->delegate->findByCode($familyCode);
+    }
+
+    public function findByCodeForUpdate(FamilyCode $familyCode): ?Family
+    {
+        return $this->delegate->findByCodeForUpdate($familyCode);
     }
 
     public function findActiveByRepresentativeId(RepresentativeId $representativeId): array

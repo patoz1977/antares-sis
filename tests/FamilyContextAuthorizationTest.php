@@ -100,6 +100,7 @@ function registerFamilyContextAuthorizationTests(TestRunner $runner): void
         $valid = familyContextFamily(10, 'Valid', [33]);
         $incoherent = familyContextFamily(20, 'Wrong Representative', [99]);
         $unpersisted = Family::create(
+            FamilyCodeTestFactory::next(),
             new DisplayName('Unpersisted'),
             FamilyStatus::Active,
             new FamilyRepresentativeId(33),
@@ -456,6 +457,7 @@ function familyContextFamily(
 
     return Family::reconstitute(
         new FamilyId($id),
+        FamilyCodeTestFactory::next(),
         new DisplayName($displayName),
         $status,
         $memberships,
@@ -502,6 +504,16 @@ function familyContextRepositoryReturning(array $results): FamilyRepository
         }
 
         public function findByIdForUpdate(FamilyId $id): ?Family
+        {
+            return null;
+        }
+
+        public function findByCode(\App\Family\Domain\ValueObject\FamilyCode $familyCode): ?Family
+        {
+            return null;
+        }
+
+        public function findByCodeForUpdate(\App\Family\Domain\ValueObject\FamilyCode $familyCode): ?Family
         {
             return null;
         }

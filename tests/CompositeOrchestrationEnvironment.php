@@ -76,6 +76,7 @@ final class CompositeOrchestrationEnvironment
                 $families ?? $this->families,
                 $this->representatives,
                 $relationshipTypes ?? $this->relationshipTypes,
+                new FamilyCodeTestGenerator(),
             ),
         );
     }
@@ -97,6 +98,7 @@ final class CompositeOrchestrationEnvironment
     {
         return Family::reconstitute(
             new FamilyId($familyId),
+            FamilyCodeTestFactory::next(),
             new DisplayName('Existing Composite Family'),
             FamilyStatus::Active,
             [new FamilyRepresentative(

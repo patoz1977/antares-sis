@@ -13,6 +13,7 @@ use App\Family\Domain\ValueObject\EmergencyContactInformation;
 use App\Family\Domain\ValueObject\EmergencyContactPriority;
 use App\Family\Domain\ValueObject\FamilyAddressId;
 use App\Family\Domain\ValueObject\FamilyAuthorizedPickupId;
+use App\Family\Domain\ValueObject\FamilyCode;
 use App\Family\Domain\ValueObject\FamilyEmergencyContactId;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\FamilyResourceName;
@@ -64,6 +65,7 @@ final class Family
      */
     private function __construct(
         private readonly ?FamilyId $id,
+        private readonly FamilyCode $familyCode,
         private DisplayName $displayName,
         private FamilyStatus $status,
         array $representatives,
@@ -100,6 +102,7 @@ final class Family
     }
 
     public static function create(
+        FamilyCode $familyCode,
         DisplayName $displayName,
         FamilyStatus $status,
         RepresentativeId $initialRepresentativeId,
@@ -117,6 +120,7 @@ final class Family
 
         return new self(
             null,
+            $familyCode,
             $displayName,
             $status,
             [$initialRepresentative],
@@ -144,6 +148,7 @@ final class Family
      */
     public static function reconstitute(
         FamilyId $id,
+        FamilyCode $familyCode,
         DisplayName $displayName,
         FamilyStatus $status,
         array $representatives,
@@ -158,6 +163,7 @@ final class Family
     ): self {
         return new self(
             $id,
+            $familyCode,
             $displayName,
             $status,
             $representatives,
@@ -175,6 +181,11 @@ final class Family
     public function id(): ?FamilyId
     {
         return $this->id;
+    }
+
+    public function familyCode(): FamilyCode
+    {
+        return $this->familyCode;
     }
 
     public function displayName(): DisplayName

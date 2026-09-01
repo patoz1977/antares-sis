@@ -80,6 +80,7 @@ use App\Family\Domain\Family;
 use App\Family\Domain\FamilyRepository;
 use App\Family\Domain\FamilyStatus;
 use App\Family\Domain\FamilyResourceStatus;
+use App\Family\Domain\Exception\FamilyCodeAlreadyExists;
 use App\Family\Domain\ValueObject\Address;
 use App\Family\Domain\ValueObject\AddressLabel;
 use App\Family\Domain\ValueObject\AuthorizedPickupInformation;
@@ -88,6 +89,7 @@ use App\Family\Domain\ValueObject\DocumentTypeId as FamilyDocumentTypeId;
 use App\Family\Domain\ValueObject\EmergencyContactInformation;
 use App\Family\Domain\ValueObject\EmergencyContactPriority;
 use App\Family\Domain\ValueObject\FamilyResourceName;
+use App\Family\Domain\ValueObject\FamilyCode;
 use App\Family\Domain\ValueObject\Geolocation;
 use App\Family\Domain\ValueObject\PickupIdentification;
 use App\Family\Domain\ValueObject\FamilyId;
@@ -282,7 +284,7 @@ function mariaDbFamilyPersistenceDiagnostics(array|false $row, array|false $time
 function mariaDbFamilyPhysicalState(PDO $connection, int $familyId): array
 {
     $family = $connection->prepare(
-        'SELECT id, display_name, status_id, created_at, updated_at FROM families WHERE id = :id'
+        'SELECT id, family_code, display_name, status_id, created_at, updated_at FROM families WHERE id = :id'
     );
     $family->execute([':id' => $familyId]);
     $representatives = $connection->prepare(
@@ -457,6 +459,276 @@ function runMariaDbSubmissionSnapshotRemovalMigrationScenario(PDO $connection): 
     assertIntegration(
         $remainingTables === [],
         'MariaDB migration 010 reapply left legacy snapshot tables: ' . implode(', ', $remainingTables)
+    );
+}
+
+function assertMariaDbFamilyCodeSchema(PDO $connection): void
+{
+    $column = $connection->query(
+        "SELECT data_type, character_maximum_length, character_set_name, collation_name, "
+        . "is_nullable, column_default FROM information_schema.columns "
+        . "WHERE table_schema = DATABASE() AND table_name = 'families' AND column_name = 'family_code'"
+    )->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $column !== false
+        && $column['data_type'] === 'char'
+        && (int) $column['character_maximum_length'] === 9
+        && $column['character_set_name'] === 'ascii'
+        && $column['collation_name'] === 'ascii_bin'
+        && $column['is_nullable'] === 'NO'
+        && $column['column_default'] === null,
+        'MariaDB FamilyCode column does not match the exact CHAR(9) ASCII binary NOT NULL contract.'
+    );
+
+    $index = $connection->query(
+        "SELECT non_unique, column_name, seq_in_index FROM information_schema.statistics "
+        . "WHERE table_schema = DATABASE() AND table_name = 'families' "
+        . "AND index_name = 'uq_families_family_code' ORDER BY seq_in_index"
+    )->fetchAll(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $index === [['non_unique' => 0, 'column_name' => 'family_code', 'seq_in_index' => 1]]
+        || $index === [['non_unique' => '0', 'column_name' => 'family_code', 'seq_in_index' => '1']],
+        'MariaDB FamilyCode UNIQUE index does not match the approved single-column contract.'
+    );
+}
+
+function runMariaDbMigrationsThrough010(PDO $connection): void
+{
+    $migrationFiles = [
+        '001_create_migrations_table.php',
+        '002_create_status_schema.php',
+        '003_create_reference_catalogs.php',
+        '004_create_academic_core.php',
+        '005_create_identity_and_roles.php',
+        '006_create_family_management.php',
+        '007_create_institutional_documents.php',
+        '008_create_enrollment.php',
+        '009_create_submission_snapshots.php',
+        '010_remove_submission_snapshots.php',
+    ];
+    foreach ($migrationFiles as $migrationFile) {
+        require_once dirname(__DIR__) . '/database/migrations/' . $migrationFile;
+    }
+    $migrations = [
+        new CreateMigrationsTable(),
+        new CreateStatusSchema(),
+        new CreateReferenceCatalogs(),
+        new CreateAcademicCore(),
+        new CreateIdentityAndRoles(),
+        new CreateFamilyManagement(),
+        new CreateInstitutionalDocuments(),
+        new CreateEnrollment(),
+        new CreateSubmissionSnapshots(),
+        new CreateRemoveSubmissionSnapshots(),
+    ];
+    foreach ($migrations as $migration) {
+        $migration->up($connection);
+        $record = $connection->prepare(
+            'INSERT INTO migrations (migration, batch) VALUES (:migration, 1)'
+        );
+        $record->execute([':migration' => $migration->version()]);
+    }
+    foreach ([
+        new \Database\Seeders\StatusTypeSeeder(),
+        new \Database\Seeders\StatusSeeder(),
+        new AdminSeeder(),
+    ] as $seeder) {
+        $seeder->run($connection);
+    }
+    assertIntegration(
+        (int) $connection->query('SELECT COUNT(*) FROM migrations')->fetchColumn() === 10,
+        'Legacy FamilyCode fixture did not stop at the exact migration-010 baseline.'
+    );
+}
+
+function runMariaDbFamilyCodeLegacyUpgradeScenario(PDO $connection): void
+{
+    $migration = new CreateAddFamilyCodeToFamilies();
+
+    $statusId = (int) $connection->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE'"
+    )->fetchColumn();
+    assertIntegration($statusId > 0, 'Legacy FamilyCode upgrade fixture requires GENERAL_STATUS ACTIVE.');
+    $connection->exec(
+        "INSERT INTO sexes (code, name, is_active) VALUES ('E015_LEGACY', 'E015 legacy fixture', TRUE)"
+    );
+    $sexId = (int) $connection->lastInsertId();
+    $connection->exec(
+        "INSERT INTO relationship_types (code, name, is_active) "
+        . "VALUES ('E015_LEGACY', 'E015 legacy fixture', TRUE)"
+    );
+    $relationshipTypeId = (int) $connection->lastInsertId();
+    $insertPerson = $connection->prepare(
+        'INSERT INTO persons (first_name, first_surname, birth_date, sex_id, status_id) '
+        . 'VALUES (:firstName, :firstSurname, :birthDate, :sexId, :statusId)'
+    );
+    $insertPerson->execute([
+        ':firstName' => 'Legacy', ':firstSurname' => 'Representative', ':birthDate' => '1980-01-01',
+        ':sexId' => $sexId, ':statusId' => $statusId,
+    ]);
+    $representativePersonId = (int) $connection->lastInsertId();
+    $connection->prepare(
+        'INSERT INTO representatives (person_id, status_id) VALUES (:personId, :statusId)'
+    )->execute([':personId' => $representativePersonId, ':statusId' => $statusId]);
+    $representativeId = (int) $connection->lastInsertId();
+    $insertPerson->execute([
+        ':firstName' => 'Legacy', ':firstSurname' => 'Student', ':birthDate' => '2015-01-01',
+        ':sexId' => $sexId, ':statusId' => $statusId,
+    ]);
+    $studentPersonId = (int) $connection->lastInsertId();
+    $connection->prepare(
+        'INSERT INTO students (person_id, institutional_code, admission_date, status_id) '
+        . 'VALUES (:personId, :institutionalCode, :admissionDate, :statusId)'
+    )->execute([
+        ':personId' => $studentPersonId,
+        ':institutionalCode' => 'E015-LEGACY-STUDENT',
+        ':admissionDate' => '2025-09-01',
+        ':statusId' => $statusId,
+    ]);
+    $studentId = (int) $connection->lastInsertId();
+
+    $insert = $connection->prepare(
+        'INSERT INTO families (display_name, status_id) VALUES (:displayName, :statusId)'
+    );
+    $legacyFamilies = [];
+    foreach (['Legacy Family Alpha', 'Legacy Family Beta'] as $displayName) {
+        $insert->execute([':displayName' => $displayName, ':statusId' => $statusId]);
+        $id = (int) $connection->lastInsertId();
+        assertIntegration($id > 0, 'Legacy Family fixture did not receive AUTO_INCREMENT identity.');
+        $legacyFamilies[$id] = $displayName;
+    }
+    $familyIds = array_keys($legacyFamilies);
+    $connection->prepare(
+        'INSERT INTO family_representatives '
+        . '(family_id, representative_id, relationship_type_id, is_primary, started_at) '
+        . 'VALUES (:familyId, :representativeId, :relationshipTypeId, TRUE, :startedAt)'
+    )->execute([
+        ':familyId' => $familyIds[0],
+        ':representativeId' => $representativeId,
+        ':relationshipTypeId' => $relationshipTypeId,
+        ':startedAt' => '2026-08-01 00:00:00',
+    ]);
+    $familyRepresentativeId = (int) $connection->lastInsertId();
+    $connection->prepare(
+        'INSERT INTO family_students (family_id, student_id, started_at) '
+        . 'VALUES (:familyId, :studentId, :startedAt)'
+    )->execute([
+        ':familyId' => $familyIds[1],
+        ':studentId' => $studentId,
+        ':startedAt' => '2026-08-01 00:00:00',
+    ]);
+    $familyStudentId = (int) $connection->lastInsertId();
+
+    $migration->up($connection);
+    assertMariaDbFamilyCodeSchema($connection);
+
+    $rows = $connection->query(
+        'SELECT id, family_code, display_name, status_id FROM families ORDER BY id'
+    )->fetchAll(PDO::FETCH_ASSOC);
+    assertIntegration(count($rows) === 2, 'FamilyCode legacy upgrade changed the Family row count.');
+    foreach ($rows as $row) {
+        $id = (int) $row['id'];
+        assertIntegration(
+            array_key_exists($id, $legacyFamilies)
+            && $row['family_code'] === sprintf('F%08d', $id)
+            && $row['display_name'] === $legacyFamilies[$id]
+            && (int) $row['status_id'] === $statusId,
+            'FamilyCode legacy upgrade did not preserve data or deterministically backfill from FamilyId.'
+        );
+    }
+    $preservedMemberships = $connection->query(
+        'SELECT '
+        . '(SELECT COUNT(*) FROM family_representatives WHERE id = ' . $familyRepresentativeId
+        . ' AND family_id = ' . $familyIds[0] . ' AND representative_id = ' . $representativeId . ') + '
+        . '(SELECT COUNT(*) FROM family_students WHERE id = ' . $familyStudentId
+        . ' AND family_id = ' . $familyIds[1] . ' AND student_id = ' . $studentId . ')'
+    )->fetchColumn();
+    assertIntegration(
+        (int) $preservedMemberships === 2,
+        'FamilyCode legacy upgrade did not preserve membership identities and foreign-key ownership.'
+    );
+
+    $firstCode = (string) $rows[0]['family_code'];
+    $exactCase = $connection->prepare('SELECT COUNT(*) FROM families WHERE family_code = :familyCode');
+    $exactCase->execute([':familyCode' => strtolower($firstCode)]);
+    assertIntegration(
+        (int) $exactCase->fetchColumn() === 0,
+        'FamilyCode legacy upgrade did not preserve exact ASCII-binary case behavior.'
+    );
+    assertMariaDbStatementRejected(
+        $connection,
+        'INSERT INTO families (family_code, display_name, status_id) '
+            . 'VALUES (:familyCode, :displayName, :statusId)',
+        [':familyCode' => $firstCode, ':displayName' => 'Duplicate FamilyCode', ':statusId' => $statusId],
+        'MariaDB FamilyCode legacy upgrade did not enforce physical uniqueness.'
+    );
+
+    $migration->down($connection);
+    $columnCountAfterRollback = (int) $connection->query(
+        "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+        . "AND table_name = 'families' AND column_name = 'family_code'"
+    )->fetchColumn();
+    $membershipCountAfterRollback = (int) $connection->query(
+        'SELECT (SELECT COUNT(*) FROM family_representatives) + (SELECT COUNT(*) FROM family_students)'
+    )->fetchColumn();
+    assertIntegration(
+        $columnCountAfterRollback === 0
+        && (int) $connection->query('SELECT COUNT(*) FROM families')->fetchColumn() === 2
+        && $membershipCountAfterRollback === 2,
+        'Migration 011 rollback did not remove only FamilyCode while preserving legacy Families and memberships.'
+    );
+    $migration->up($connection);
+    assertMariaDbFamilyCodeSchema($connection);
+    assertIntegration(
+        (int) $connection->query(
+            "SELECT COUNT(*) FROM families WHERE family_code REGEXP '^F[0-9]{8}$'"
+        )->fetchColumn() === 2,
+        'Migration 011 reapply did not restore deterministic FamilyCodes after rollback.'
+    );
+
+    $nextBatch = (int) $connection->query(
+        'SELECT COALESCE(MAX(batch), 0) + 1 FROM migrations'
+    )->fetchColumn();
+    $recordMigration = $connection->prepare(
+        'INSERT INTO migrations (migration, batch) VALUES (:migration, :batch)'
+    );
+    $recordMigration->execute([
+        ':migration' => '011_add_family_code_to_families',
+        ':batch' => $nextBatch,
+    ]);
+}
+
+function runMariaDbFamilyCodeRangeGuardScenario(PDO $connection): void
+{
+    $migration = new CreateAddFamilyCodeToFamilies();
+    $statusId = (int) $connection->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE'"
+    )->fetchColumn();
+    $connection->prepare(
+        'INSERT INTO families (id, display_name, status_id) VALUES (100000000, :displayName, :statusId)'
+    )->execute([':displayName' => 'Unrepresentable legacy Family', ':statusId' => $statusId]);
+
+    $rejected = false;
+    try {
+        $migration->up($connection);
+    } catch (RuntimeException $exception) {
+        $rejected = $exception->getMessage() === 'FamilyCode backfill cannot represent an existing FamilyId.';
+    }
+    assertIntegration($rejected, 'Migration 011 did not fail closed for an unrepresentable legacy FamilyId.');
+
+    $partialColumn = $connection->query(
+        "SELECT is_nullable FROM information_schema.columns WHERE table_schema = DATABASE() "
+        . "AND table_name = 'families' AND column_name = 'family_code'"
+    )->fetchColumn();
+    $uniqueCount = (int) $connection->query(
+        "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() "
+        . "AND table_name = 'families' AND index_name = 'uq_families_family_code'"
+    )->fetchColumn();
+    assertIntegration(
+        $partialColumn === 'YES' && $uniqueCount === 0,
+        'Migration 011 range rejection advanced beyond its nullable staging column.'
     );
 }
 
@@ -1202,6 +1474,16 @@ function runMariaDbEnrollmentActiveFamilyCaptureScenario(
             return $this->delegate->findByIdForUpdate($id);
         }
 
+        public function findByCode(\App\Family\Domain\ValueObject\FamilyCode $familyCode): ?Family
+        {
+            return $this->delegate->findByCode($familyCode);
+        }
+
+        public function findByCodeForUpdate(\App\Family\Domain\ValueObject\FamilyCode $familyCode): ?Family
+        {
+            return $this->delegate->findByCodeForUpdate($familyCode);
+        }
+
         public function findActiveByRepresentativeId(FamilyRepresentativeReference $representativeId): array
         {
             return $this->delegate->findActiveByRepresentativeId($representativeId);
@@ -1312,6 +1594,7 @@ function runMariaDbEnrollmentActiveFamilyCaptureScenario(
     );
 
     $familyB = Family::create(
+        \Tests\FamilyCodeTestFactory::next(),
         new DisplayName('E010 Corrective Family B'),
         FamilyStatus::Active,
         new FamilyRepresentativeReference($representativeId),
@@ -3016,8 +3299,14 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
         ':workEmail' => 'e013.work@example.test', ':statusId' => $generalActive,
     ]);
     $representativeId = (int) $connection->lastInsertId();
-    $connection->prepare('INSERT INTO families (display_name, status_id) VALUES (:name, :statusId)')
-        ->execute([':name' => 'E013 Current Family', ':statusId' => $generalActive]);
+    $connection->prepare(
+        'INSERT INTO families (family_code, display_name, status_id) '
+        . 'VALUES (:familyCode, :name, :statusId)'
+    )->execute([
+        ':familyCode' => 'F91300001',
+        ':name' => 'E013 Current Family',
+        ':statusId' => $generalActive,
+    ]);
     $familyId = (int) $connection->lastInsertId();
     $connection->prepare(
         'INSERT INTO family_students (family_id, student_id, started_at) VALUES (:familyId, :studentId, :startedAt)'
@@ -3291,6 +3580,8 @@ echo sprintf(
 
 $suffix = bin2hex(random_bytes(5));
 $identityDatabase = $databasePrefix . '_identity_' . $suffix;
+$familyCodeUpgradeDatabase = $databasePrefix . '_code_upgrade_' . $suffix;
+$familyCodeRangeDatabase = $databasePrefix . '_code_range_' . $suffix;
 $cleanupProbePrefix = $databasePrefix . '_cleanup_' . $suffix;
 $cleanupProbeDatabase = $cleanupProbePrefix . '_first';
 
@@ -3333,15 +3624,17 @@ try {
         'Partial-creation cleanup left a disposable database behind.'
     );
 
-    assertIntegration(
-        preg_match('/^[a-z][a-z0-9_]{2,30}_identity_[a-f0-9]{10}$/', $identityDatabase) === 1,
-        'Unsafe disposable database name.'
-    );
-    $server->exec(sprintf(
-        'CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
-        $identityDatabase
-    ));
-    $createdDatabases[] = $identityDatabase;
+    foreach ([$identityDatabase, $familyCodeUpgradeDatabase, $familyCodeRangeDatabase] as $database) {
+        assertIntegration(
+            preg_match('/^[a-z][a-z0-9_]+$/', $database) === 1 && strlen($database) <= 64,
+            'Unsafe disposable database name.'
+        );
+        $server->exec(sprintf(
+            'CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
+            $database
+        ));
+        $createdDatabases[] = $database;
+    }
 
     $identity = new PDO(
         sprintf('mysql:host=%s;port=%d;dbname=%s;charset=%s', $host, $port, $identityDatabase, $charset),
@@ -3372,6 +3665,30 @@ try {
     $managerA = new ConnectionManager(new ConnectionFactory(), $databaseConfig);
     (new MigrationRunner($managerA))->run();
     $connectionA = $managerA->connection();
+
+    $managerForDatabase = static function (string $database) use (
+        $host,
+        $port,
+        $username,
+        $password,
+        $charset,
+    ): ConnectionManager {
+        return new ConnectionManager(new ConnectionFactory(), new DatabaseConfig([
+            'driver' => 'mysql',
+            'host' => $host,
+            'port' => $port,
+            'database' => $database,
+            'username' => $username,
+            'password' => $password,
+            'charset' => $charset,
+        ]));
+    };
+    $familyCodeUpgradeManager = $managerForDatabase($familyCodeUpgradeDatabase);
+    runMariaDbMigrationsThrough010($familyCodeUpgradeManager->connection());
+    runMariaDbFamilyCodeLegacyUpgradeScenario($familyCodeUpgradeManager->connection());
+    $familyCodeRangeManager = $managerForDatabase($familyCodeRangeDatabase);
+    runMariaDbMigrationsThrough010($familyCodeRangeManager->connection());
+    runMariaDbFamilyCodeRangeGuardScenario($familyCodeRangeManager->connection());
 
     runMariaDbSubmissionSnapshotRemovalMigrationScenario($identity);
 
@@ -3405,6 +3722,7 @@ try {
         $physicalForeignKeyCount === 53,
         sprintf('Expected 53 physical foreign keys; MariaDB reported %d.', $physicalForeignKeyCount)
     );
+    assertMariaDbFamilyCodeSchema($identity);
 
     $familyResourceTables = [
         'authorized_pickup_assignments',
@@ -3579,12 +3897,18 @@ try {
         );
     }
 
-    assertIntegration((int) $identity->query('SELECT COUNT(*) FROM migrations')->fetchColumn() === 10, 'Not all baseline migrations were recorded.');
+    assertIntegration((int) $identity->query('SELECT COUNT(*) FROM migrations')->fetchColumn() === 11, 'Not all baseline migrations were recorded.');
     assertIntegration(
         (int) $identity->query(
             "SELECT COUNT(*) FROM migrations WHERE migration = '010_remove_submission_snapshots'"
         )->fetchColumn() === 1,
         'MariaDB migration 010 was not recorded exactly once.'
+    );
+    assertIntegration(
+        (int) $identity->query(
+            "SELECT COUNT(*) FROM migrations WHERE migration = '011_add_family_code_to_families'"
+        )->fetchColumn() === 1,
+        'MariaDB migration 011 was not recorded exactly once.'
     );
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM status_types')->fetchColumn() === 3, 'Status type baseline is incomplete.');
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM statuses')->fetchColumn() === 8, 'Status baseline is incomplete.');
@@ -3625,6 +3949,13 @@ try {
         "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
         . "WHERE st.code = 'USER_STATUS' AND s.code = 'DISABLED'"
     )->fetchColumn();
+    assertMariaDbStatementRejected(
+        $identity,
+        'INSERT INTO families (family_code, display_name, status_id) '
+            . 'VALUES (NULL, :displayName, :statusId)',
+        [':displayName' => 'Null FamilyCode Probe', ':statusId' => $generalStatusId],
+        'MariaDB families.family_code did not enforce NOT NULL physically.'
+    );
 
     $identity->beginTransaction();
     try {
@@ -4836,7 +5167,9 @@ try {
 
     $familyRepository = new PdoFamilyRepository($managerA);
     $familyStartedAt = new DateTimeImmutable('2026-08-01 10:11:12-05:00');
+    $firstFamilyCode = new FamilyCode('F81500001');
     $newFamily = Family::create(
+        $firstFamilyCode,
         new DisplayName('Disposable Family One'),
         FamilyStatus::Active,
         new FamilyRepresentativeReference($generatedRepresentativeId->value()),
@@ -4862,7 +5195,8 @@ try {
         && $initialFamilyRepresentative->id() !== null
         && $initialFamilyRepresentative->id()->value() > 0
         && $initialFamilyRepresentative->isActive()
-        && $initialFamilyRepresentative->isPrimary(),
+        && $initialFamilyRepresentative->isPrimary()
+        && $persistedFamily->familyCode()->equals($firstFamilyCode),
         'MariaDB did not atomically generate Family and its active primary membership identities.'
     );
     assertIntegration(
@@ -4871,6 +5205,48 @@ try {
         && $persistedFamily->students()[0]->id() !== null
         && $persistedFamily->students()[0]->id()->value() > 0,
         'Family repository did not reconstruct every generated membership identity.'
+    );
+    assertIntegration(
+        $familyRepository->findByCode($firstFamilyCode)?->id()?->equals($generatedFamilyId) === true,
+        'MariaDB exact FamilyCode lookup did not reconstruct the complete Aggregate.'
+    );
+    $lowercaseCodeLookup = $identity->prepare(
+        'SELECT COUNT(*) FROM families WHERE family_code = :familyCode'
+    );
+    $lowercaseCodeLookup->execute([':familyCode' => strtolower($firstFamilyCode->value())]);
+    assertIntegration(
+        (int) $lowercaseCodeLookup->fetchColumn() === 0,
+        'MariaDB FamilyCode lookup did not preserve exact ASCII-binary case behavior.'
+    );
+    $connectionA->beginTransaction();
+    try {
+        $lockedByCode = $familyRepository->findByCodeForUpdate($firstFamilyCode);
+        assertIntegration(
+            $lockedByCode?->id()?->equals($generatedFamilyId) === true,
+            'MariaDB FamilyCode FOR UPDATE lookup did not lock and reconstruct the expected Aggregate.'
+        );
+    } finally {
+        if ($connectionA->inTransaction()) {
+            $connectionA->rollBack();
+        }
+    }
+
+    $duplicateFamilyCodeRejected = false;
+    try {
+        $familyRepository->save(Family::create(
+            $firstFamilyCode,
+            new DisplayName('Duplicate FamilyCode'),
+            FamilyStatus::Active,
+            new FamilyRepresentativeReference($secondRepresentativeId->value()),
+            new RelationshipTypeId($generatedRelationshipTypeId),
+            new DateTimeImmutable('2026-08-01 16:00:00', new DateTimeZone('UTC')),
+        ));
+    } catch (FamilyCodeAlreadyExists) {
+        $duplicateFamilyCodeRejected = true;
+    }
+    assertIntegration(
+        $duplicateFamilyCodeRejected,
+        'MariaDB FamilyCode UNIQUE collision was not mapped to the exact Domain exception.'
     );
 
     $familyTimestampStatement = $identity->prepare(
@@ -5009,6 +5385,7 @@ try {
 
     $familyCountBeforeResourceRollback = (int) $identity->query('SELECT COUNT(*) FROM families')->fetchColumn();
     $resourceRollback = Family::create(
+        \Tests\FamilyCodeTestFactory::next(),
         new DisplayName('Family Resource Rollback'),
         FamilyStatus::Active,
         new FamilyRepresentativeReference($secondRepresentativeId->value()),
@@ -5031,7 +5408,8 @@ try {
     }
     assertIntegration(
         $resourceRollbackRejected
-        && (int) $identity->query('SELECT COUNT(*) FROM families')->fetchColumn() === $familyCountBeforeResourceRollback,
+        && (int) $identity->query('SELECT COUNT(*) FROM families')->fetchColumn() === $familyCountBeforeResourceRollback
+        && $familyRepository->findByCode($resourceRollback->familyCode()) === null,
         'Family resource failure did not roll back the owned transaction atomically.'
     );
 
@@ -5066,6 +5444,7 @@ try {
     );
 
     $secondFamily = $familyRepository->save(Family::create(
+        \Tests\FamilyCodeTestFactory::next(),
         new DisplayName('Disposable Family Two'),
         FamilyStatus::Inactive,
         new FamilyRepresentativeReference($generatedRepresentativeId->value()),
@@ -5234,6 +5613,7 @@ try {
     $updatedFamily = $familyRepository->save($persistedFamily);
     assertIntegration(
         $updatedFamily->displayName()->value() === 'Disposable Family Updated'
+        && $updatedFamily->familyCode()->equals($firstFamilyCode)
         && $updatedFamily->status() === FamilyStatus::Inactive
         && count($updatedFamily->representatives()) === 2
         && count($updatedFamily->activeRepresentatives()) === 1
@@ -5321,6 +5701,7 @@ try {
     $familyCountBeforeRollback = (int) $identity->query('SELECT COUNT(*) FROM families')->fetchColumn();
     try {
         $familyRepository->save(Family::create(
+            \Tests\FamilyCodeTestFactory::next(),
             new DisplayName('Rollback Probe Family'),
             FamilyStatus::Active,
             new FamilyRepresentativeReference($secondRepresentativeId->value()),
@@ -5421,6 +5802,7 @@ try {
         $familyRepository,
         $representativeRepository,
         $relationshipTypes,
+        new \App\Family\Infrastructure\Generation\RandomFamilyCodeGenerator(),
     );
     $compositeToday = new DateTimeImmutable('2026-08-04', new DateTimeZone('UTC'));
     $representativeFlow = new CreateRepresentativeFamily(
@@ -5664,6 +6046,16 @@ try {
         public function findByIdForUpdate(FamilyId $id): ?Family
         {
             return $this->delegate->findByIdForUpdate($id);
+        }
+
+        public function findByCode(\App\Family\Domain\ValueObject\FamilyCode $familyCode): ?Family
+        {
+            return $this->delegate->findByCode($familyCode);
+        }
+
+        public function findByCodeForUpdate(\App\Family\Domain\ValueObject\FamilyCode $familyCode): ?Family
+        {
+            return $this->delegate->findByCodeForUpdate($familyCode);
         }
 
         public function findActiveByRepresentativeId(
@@ -6450,6 +6842,7 @@ try {
     echo "PASS MySQL authenticated Representative access resolution read-only identity and fail-closed behavior\n";
 
     $phase4FamilyA = Family::create(
+        \Tests\FamilyCodeTestFactory::next(),
         new DisplayName('E007 Phase 4 Family A'),
         FamilyStatus::Inactive,
         new FamilyRepresentativeReference($secondRepresentativeId->value()),
@@ -6491,6 +6884,7 @@ try {
     );
 
     $phase4FamilyB = Family::create(
+        \Tests\FamilyCodeTestFactory::next(),
         new DisplayName('E007 Phase 4 Family B'),
         FamilyStatus::Active,
         new FamilyRepresentativeReference($secondRepresentativeId->value()),
@@ -7590,6 +7984,7 @@ try {
         . $physicalForeignKeyCount . " foreign keys\n";
     echo "PASS MySQL clean migration creates the exact 31-table domain baseline plus migrations metadata\n";
     echo "PASS MySQL migration 010 removes legacy snapshot tables and supports rollback plus reapply\n";
+    echo "PASS MySQL migration 011 FamilyCode fresh schema legacy backfill range guard and physical uniqueness\n";
     echo "PASS MySQL Institutional Acknowledgements AUTO_INCREMENT UTC constraints ownership and rollback\n";
     echo "PASS MySQL Institutional Acknowledgements repository roundtrip AUTO_INCREMENT UTC transactions and history\n";
     echo "PASS MySQL Institutional Acknowledgements administrator AcademicPeriod provider context hardening and Application persistence\n";
@@ -7608,6 +8003,7 @@ try {
     echo "PASS MySQL Family atomic AUTO_INCREMENT creation and complete Aggregate reconstruction\n";
     echo "PASS MySQL Family Representative and Student active lookups and historical membership\n";
     echo "PASS MySQL Family physical uniqueness UTC status mapping and transactional rollback\n";
+    echo "PASS MySQL FamilyCode exact lookup FOR UPDATE Aggregate roundtrip immutability and rollback\n";
     echo "PASS MySQL Family Resources complete roundtrip AUTO_INCREMENT UTC constraints and rollback\n";
     echo "PASS MySQL Family delivery active catalogs and Application persistence\n";
     echo "PASS MySQL composite Representative Person role Family atomic commit and rollback\n";

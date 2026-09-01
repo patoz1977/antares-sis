@@ -377,7 +377,7 @@ function registerFamilyResourcesApplicationTests(TestRunner $runner): void
             assertSameValue(true, (new ReflectionClass($class))->isReadOnly());
         }
         assertSameValue(
-            ['id', 'displayName', 'status', 'representatives', 'students'],
+            ['id', 'familyCode', 'displayName', 'status', 'representatives', 'students'],
             array_map(
                 static fn ($property): string => $property->getName(),
                 (new ReflectionClass(FamilyOutput::class))->getProperties(),
@@ -403,6 +403,7 @@ function familyResourcesApplicationAggregate(): Family
 {
     return Family::reconstitute(
         new FamilyId(500),
+        FamilyCodeTestFactory::next(),
         new DisplayName('Resource Application Family'),
         FamilyStatus::Active,
         [

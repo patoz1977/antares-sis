@@ -692,6 +692,7 @@ function representativeFamilyResourcesFamily(int $familyId, string $displayName,
 
     return Family::reconstitute(
         new FamilyId($familyId),
+        FamilyCodeTestFactory::next(),
         new DisplayName($displayName),
         FamilyStatus::Active,
         [

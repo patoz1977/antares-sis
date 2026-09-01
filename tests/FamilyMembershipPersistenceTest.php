@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\Family\Domain\Exception\FamilyCodeAlreadyExists;
 use App\Family\Domain\Family;
 use App\Family\Domain\FamilyRepresentative;
 use App\Family\Domain\FamilyRepository;
 use App\Family\Domain\FamilyStatus;
 use App\Family\Domain\FamilyStudent;
 use App\Family\Domain\ValueObject\DisplayName;
+use App\Family\Domain\ValueObject\FamilyCode;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\FamilyRepresentativeId;
 use App\Family\Domain\ValueObject\FamilyStudentId;
@@ -42,6 +44,8 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
                 'findActiveByRepresentativeId',
                 'findActiveByStudentId',
                 'findActiveByStudentIdForUpdate',
+                'findByCode',
+                'findByCodeForUpdate',
                 'findById',
                 'findByIdForUpdate',
                 'save',
@@ -107,6 +111,46 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
         $source = familyPersistenceSource('app/Family/Infrastructure/Persistence/PdoFamilyRepository.php');
         assertSameValue(true, str_contains($source, 'SELECT id FROM families WHERE id = :id'));
         assertSameValue(true, str_contains($source, "\$sql .= ' FOR UPDATE'"));
+    });
+
+    $runner->add('pdo FamilyCode lookup is exact and its row lock requires caller transaction', function (): void {
+        $pdo = sqliteFamilyDatabase();
+        insertRawFamily($pdo, 104, 1, 'Code Lookup A', 1, '2026-01-01 00:00:00');
+        insertRawFamily($pdo, 105, 1, 'Code Lookup B', 2, '2026-01-01 00:00:00');
+        $repository = familyPersistenceRepositoryWithPdo($pdo);
+
+        $familyCode = new FamilyCode(' F00000104 ');
+        assertSameValue(104, $repository->findByCode($familyCode)?->id()?->value());
+        assertSameValue('F00000104', $repository->findByCode($familyCode)?->familyCode()->value());
+        assertSameValue(null, $repository->findByCode(new FamilyCode('F00000106')));
+        assertThrows(
+            static fn (): ?Family => $repository->findByCodeForUpdate($familyCode),
+            RuntimeException::class,
+        );
+
+        $pdo->beginTransaction();
+        assertSameValue(104, $repository->findByCodeForUpdate($familyCode)?->id()?->value());
+        assertSameValue(null, $repository->findByCodeForUpdate(new FamilyCode('F00000106')));
+        assertSameValue(true, $pdo->inTransaction());
+        $pdo->rollBack();
+    });
+
+    $runner->add('pdo FamilyCode physical uniqueness maps only the exact root collision', function (): void {
+        $pdo = sqliteFamilyDatabase();
+        insertRawFamily($pdo, 106, 1, 'Existing Code', 1, '2026-01-01 00:00:00');
+        $repository = familyPersistenceRepositoryWithPdo($pdo);
+        $duplicate = Family::create(
+            new FamilyCode('F00000106'),
+            new DisplayName('Duplicate Code'),
+            FamilyStatus::Active,
+            new RepresentativeId(2),
+            new RelationshipTypeId(1),
+            familyPersistenceTime('2026-02-01 00:00:00'),
+        );
+
+        assertThrows(static fn (): Family => $repository->save($duplicate), FamilyCodeAlreadyExists::class);
+        assertSameValue(1, (int) $pdo->query('SELECT COUNT(*) FROM families')->fetchColumn());
+        assertSameValue(false, $pdo->inTransaction());
     });
 
     $runner->add('pdo Family repository rejects wrong or unsupported GENERAL_STATUS', function (): void {
@@ -316,7 +360,10 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
 
     $runner->add('pdo Family inserts use distinct positive database identities without sequence assumptions', function (): void {
         $pdo = sqliteFamilyDatabase();
-        $pdo->exec("INSERT INTO families (id, display_name, status_id) VALUES (50, 'Sequence Gap', 1)");
+        $pdo->exec(
+            "INSERT INTO families (id, family_code, display_name, status_id) "
+            . "VALUES (50, 'F00000050', 'Sequence Gap', 1)"
+        );
         $pdo->exec('DELETE FROM families WHERE id = 50');
         $repository = familyPersistenceRepositoryWithPdo($pdo);
 
@@ -465,6 +512,7 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
 
         $omitted = Family::reconstitute(
             requiredFamilyPersistenceId($persisted),
+            $persisted->familyCode(),
             $persisted->displayName(),
             $persisted->status(),
             [$primary],
@@ -474,6 +522,7 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
 
         $unknown = Family::reconstitute(
             requiredFamilyPersistenceId($persisted),
+            $persisted->familyCode(),
             $persisted->displayName(),
             $persisted->status(),
             [$primary],
@@ -496,6 +545,7 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
 
         $invalid = Family::reconstitute(
             requiredFamilyPersistenceId($first),
+            $first->familyCode(),
             $first->displayName(),
             $first->status(),
             [$foreignPrimary],
@@ -515,6 +565,7 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
 
         $duplicate = Family::reconstitute(
             requiredFamilyPersistenceId($family),
+            $family->familyCode(),
             $family->displayName(),
             $family->status(),
             [$primary, $additional, new FamilyRepresentative(
@@ -560,6 +611,7 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
             );
             $invalid = Family::reconstitute(
                 requiredFamilyPersistenceId($family),
+                $family->familyCode(),
                 $family->displayName(),
                 $family->status(),
                 [$changedPrimary, $changedAdditional],
@@ -586,6 +638,7 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
             );
             $invalid = Family::reconstitute(
                 requiredFamilyPersistenceId($family),
+                $family->familyCode(),
                 $family->displayName(),
                 $family->status(),
                 $family->representatives(),
@@ -617,6 +670,7 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
         );
         $reactivation = Family::reconstitute(
             new FamilyId(170),
+            $family->familyCode(),
             $family->displayName(),
             $family->status(),
             [$family->primaryRepresentative(), $reactivatedRepresentative],
@@ -632,6 +686,7 @@ function registerFamilyMembershipPersistenceTests(TestRunner $runner): void
         );
         $changedEnd = Family::reconstitute(
             new FamilyId(170),
+            $family->familyCode(),
             $family->displayName(),
             $family->status(),
             $family->representatives(),
@@ -707,7 +762,8 @@ function sqliteFamilyDatabase(bool $enforceAggregateConstraints = true): PDO
         . 'CREATE TABLE relationship_types (id INTEGER PRIMARY KEY);'
         . 'CREATE TABLE document_types (id INTEGER PRIMARY KEY);'
         . 'CREATE TABLE families ('
-        . 'id INTEGER PRIMARY KEY AUTOINCREMENT, display_name TEXT NOT NULL, status_id INTEGER NOT NULL, '
+        . 'id INTEGER PRIMARY KEY AUTOINCREMENT, family_code TEXT NOT NULL UNIQUE, '
+        . 'display_name TEXT NOT NULL, status_id INTEGER NOT NULL, '
         . 'created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, '
         . 'updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, '
         . 'FOREIGN KEY (status_id) REFERENCES statuses(id));'
@@ -843,6 +899,7 @@ function newFamilyPersistenceFixture(
     string $displayName = 'Persistence Family',
 ): Family {
     return Family::create(
+        FamilyCodeTestFactory::next(),
         new DisplayName($displayName),
         $status,
         new RepresentativeId($representativeId),
@@ -877,10 +934,12 @@ function insertRawFamily(
     bool $isPrimary = true,
 ): void {
     $family = $pdo->prepare(
-        'INSERT INTO families (id, display_name, status_id) VALUES (:id, :displayName, :statusId)'
+        'INSERT INTO families (id, family_code, display_name, status_id) '
+        . 'VALUES (:id, :familyCode, :displayName, :statusId)'
     );
     $family->execute([
         ':id' => $familyId,
+        ':familyCode' => sprintf('F%08d', $familyId),
         ':displayName' => $displayName,
         ':statusId' => $statusId,
     ]);

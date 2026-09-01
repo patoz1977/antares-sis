@@ -162,6 +162,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         $wrong = familyResourcesApplicationAggregate();
         $wrongIdentity = \App\Family\Domain\Family::reconstitute(
             new \App\Family\Domain\ValueObject\FamilyId(501),
+            $wrong->familyCode(),
             $wrong->displayName(),
             $wrong->status(),
             $wrong->representatives(),
@@ -186,6 +187,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         $aggregate = familyResourcesApplicationAggregate();
         $escapedRepository->seed(\App\Family\Domain\Family::reconstitute(
             $aggregate->id(),
+            $aggregate->familyCode(),
             new \App\Family\Domain\ValueObject\DisplayName('<script>alert(1)</script>'),
             $aggregate->status(),
             $aggregate->representatives(),

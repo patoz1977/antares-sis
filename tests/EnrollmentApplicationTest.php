@@ -482,6 +482,7 @@ function e010Family(int $id): Family
 {
     return Family::reconstitute(
         new FamilyId($id),
+        FamilyCodeTestFactory::next(),
         new DisplayName('Family ' . $id),
         FamilyStatus::Active,
         [new FamilyRepresentative(
@@ -750,6 +751,16 @@ final class E010FamilyRepository implements FamilyRepository
     public function findByIdForUpdate(FamilyId $id): ?Family
     {
         return $this->findById($id);
+    }
+
+    public function findByCode(\App\Family\Domain\ValueObject\FamilyCode $familyCode): ?Family
+    {
+        return $this->family?->familyCode()->equals($familyCode) === true ? $this->family : null;
+    }
+
+    public function findByCodeForUpdate(\App\Family\Domain\ValueObject\FamilyCode $familyCode): ?Family
+    {
+        return $this->findByCode($familyCode);
     }
 
     public function findActiveByRepresentativeId(RepresentativeId $representativeId): array
