@@ -11,7 +11,8 @@
         "antares"
     ],
     "require": {
-        "php": "^8.2"
+        "php": "^8.2",
+        "openspout/openspout": "~4.28.5"
     },
     "require-dev": {},
     "scripts": {
