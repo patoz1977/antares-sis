@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\IdentityAccess\Infrastructure\Persistence;
 
+use App\IdentityAccess\Application\LockingUserRepository;
 use App\IdentityAccess\Domain\User;
-use App\IdentityAccess\Domain\UserRepository;
 use App\IdentityAccess\Domain\UserStatus;
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
 use App\IdentityAccess\Domain\ValueObject\PasswordHash;
@@ -17,7 +17,7 @@ use DateTimeZone;
 use PDO;
 use RuntimeException;
 
-final class PdoUserRepository implements UserRepository
+final class PdoUserRepository implements LockingUserRepository
 {
     private const STATUS_TYPE = 'USER_STATUS';
 
@@ -76,6 +76,22 @@ final class PdoUserRepository implements UserRepository
         $statement = $this->connection->prepare(
             $this->selectSql() . ' WHERE u.person_id = :personId LIMIT 1'
         );
+        $statement->execute([':personId' => $personId->value()]);
+
+        return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));
+    }
+
+    public function findByPersonIdForUpdate(PersonId $personId): ?User
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('User Person row lock requires an active transaction.');
+        }
+
+        $sql = $this->selectSql() . ' WHERE u.person_id = :personId LIMIT 1';
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+            $sql .= ' FOR UPDATE';
+        }
+        $statement = $this->connection->prepare($sql);
         $statement->execute([':personId' => $personId->value()]);
 
         return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));

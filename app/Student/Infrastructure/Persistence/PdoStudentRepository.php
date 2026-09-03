@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Student\Infrastructure\Persistence;
 
+use App\Student\Application\LockingStudentRepository;
 use App\Student\Domain\Exception\InvalidStudentState;
 use App\Student\Domain\Student;
-use App\Student\Domain\StudentRepository;
 use App\Student\Domain\StudentStatus;
 use App\Student\Domain\ValueObject\AdmissionDate;
 use App\Student\Domain\ValueObject\InstitutionalCode;
@@ -18,7 +18,7 @@ use DateTimeZone;
 use PDO;
 use RuntimeException;
 
-final class PdoStudentRepository implements StudentRepository
+final class PdoStudentRepository implements LockingStudentRepository
 {
     private const STATUS_TYPE = 'GENERAL_STATUS';
 
@@ -39,6 +39,11 @@ final class PdoStudentRepository implements StudentRepository
         return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));
     }
 
+    public function findByIdForUpdate(StudentId $id): ?Student
+    {
+        return $this->findOneForUpdate('s.id = :identity', $id->value());
+    }
+
     public function findByPersonId(PersonId $personId): ?Student
     {
         $statement = $this->connection->prepare(
@@ -49,12 +54,42 @@ final class PdoStudentRepository implements StudentRepository
         return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));
     }
 
+    public function findByPersonIdForUpdate(PersonId $personId): ?Student
+    {
+        return $this->findOneForUpdate('s.person_id = :identity', $personId->value());
+    }
+
     public function findByInstitutionalCode(InstitutionalCode $institutionalCode): ?Student
     {
         $statement = $this->connection->prepare(
             $this->selectSql() . ' WHERE s.institutional_code = :institutionalCode LIMIT 1'
         );
         $statement->execute([':institutionalCode' => $institutionalCode->value()]);
+
+        return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));
+    }
+
+    public function findByInstitutionalCodeForUpdate(
+        InstitutionalCode $institutionalCode,
+    ): ?Student {
+        return $this->findOneForUpdate(
+            's.institutional_code = :identity',
+            $institutionalCode->value(),
+        );
+    }
+
+    private function findOneForUpdate(string $condition, int|string $identity): ?Student
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('Student row lock requires an active transaction.');
+        }
+
+        $sql = $this->selectSql() . ' WHERE ' . $condition . ' LIMIT 1';
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= ' FOR UPDATE';
+        }
+        $statement = $this->connection->prepare($sql);
+        $statement->execute([':identity' => $identity]);
 
         return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));
     }

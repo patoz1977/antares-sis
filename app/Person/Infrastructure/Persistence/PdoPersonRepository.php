@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Person\Infrastructure\Persistence;
 
+use App\Person\Application\LockingPersonRepository;
 use App\Person\Domain\Person;
-use App\Person\Domain\PersonRepository;
 use App\Person\Domain\PersonStatus;
 use App\Person\Domain\ValueObject\ContactInformation;
 use App\Person\Domain\ValueObject\Identification;
@@ -17,7 +17,7 @@ use DateTimeZone;
 use PDO;
 use RuntimeException;
 
-final class PdoPersonRepository implements PersonRepository
+final class PdoPersonRepository implements LockingPersonRepository
 {
     private const STATUS_TYPE = 'GENERAL_STATUS';
 
@@ -76,6 +76,25 @@ final class PdoPersonRepository implements PersonRepository
         ]);
 
         return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));
+    }
+
+    public function findByIdentificationForUpdate(Identification $identification): ?Person
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('Person identification row lock requires an active transaction.');
+        }
+
+        $sql = 'SELECT id FROM persons WHERE identification_key = :identificationKey LIMIT 1';
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= ' FOR UPDATE';
+        }
+        $statement = $this->connection->prepare($sql);
+        $statement->execute([
+            ':identificationKey' => $this->identificationKey($identification),
+        ]);
+        $id = $statement->fetchColumn();
+
+        return $id === false ? null : $this->findById(new PersonId((int) $id));
     }
 
     public function save(Person $person): Person

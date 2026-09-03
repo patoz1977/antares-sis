@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\IdentityAccess\Application\LockingUserRepository;
 use App\IdentityAccess\Domain\User;
-use App\IdentityAccess\Domain\UserRepository;
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
 use App\IdentityAccess\Domain\ValueObject\PersonId;
 use App\IdentityAccess\Domain\ValueObject\UserId;
 use RuntimeException;
 use Throwable;
 
-final class InMemoryRepresentativeUserRepository implements UserRepository
+final class InMemoryRepresentativeUserRepository implements LockingUserRepository
 {
     /** @var array<int, User> */
     private array $users = [];
@@ -68,6 +68,11 @@ final class InMemoryRepresentativeUserRepository implements UserRepository
         }
 
         return null;
+    }
+
+    public function findByPersonIdForUpdate(PersonId $personId): ?User
+    {
+        return $this->findByPersonId($personId);
     }
 
     public function save(User $user): User

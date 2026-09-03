@@ -9,6 +9,7 @@ use App\Family\Application\CreateFamily;
 use App\Family\Application\GetFamily;
 use App\Family\Application\Orchestration\CreateRepresentativeFamily;
 use App\Family\Application\Orchestration\CreateStudentInFamily;
+use App\Family\Application\Orchestration\StudentFamilyCoordinator;
 use App\Family\Application\RelationshipTypeLookup;
 use App\Family\Domain\Family;
 use App\Family\Domain\FamilyRepresentative;
@@ -28,8 +29,10 @@ use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
 use App\IdentityAccess\Domain\UserRepository;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\Person\Application\CreatePerson;
+use App\Person\Application\GetPerson;
 use App\Representative\Application\CreateRepresentative;
 use App\Student\Application\CreateStudent;
+use App\Student\Application\GetStudent;
 use DateTimeImmutable;
 use DateTimeZone;
 
@@ -82,6 +85,7 @@ final class CompositeOrchestrationEnvironment
             $this->transactions,
             new CreateRepresentativeAccess(
                 new CreatePerson($this->persons),
+                new GetPerson($this->persons),
                 new CreateRepresentative($this->persons, $this->representatives),
                 new CreateRepresentativeUser(
                     $this->representatives,
@@ -107,9 +111,13 @@ final class CompositeOrchestrationEnvironment
         return new CreateStudentInFamily(
             $this->transactions,
             new GetFamily($familyRepository),
-            new CreatePerson($this->persons),
-            new CreateStudent($this->persons, $this->students),
-            new AddStudentToFamily($familyRepository, $this->students),
+            new StudentFamilyCoordinator(
+                new CreatePerson($this->persons),
+                new GetPerson($this->persons),
+                new CreateStudent($this->persons, $this->students),
+                new GetStudent($this->students),
+                new AddStudentToFamily($familyRepository, $this->students),
+            ),
         );
     }
 

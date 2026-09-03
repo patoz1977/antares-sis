@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\Person\Application\LockingPersonRepository;
 use App\Person\Domain\Person;
-use App\Person\Domain\PersonRepository;
 use App\Person\Domain\ValueObject\Identification;
 use App\Person\Domain\ValueObject\PersonId;
 use DateTimeImmutable;
 use RuntimeException;
 
-final class InMemoryPersonApplicationRepository implements PersonRepository
+final class InMemoryPersonApplicationRepository implements LockingPersonRepository
 {
     /** @var array<int, Person> */
     private array $persons = [];
@@ -58,6 +58,11 @@ final class InMemoryPersonApplicationRepository implements PersonRepository
         }
 
         return null;
+    }
+
+    public function findByIdentificationForUpdate(Identification $identification): ?Person
+    {
+        return $this->findByIdentification($identification);
     }
 
     public function save(Person $person): Person
