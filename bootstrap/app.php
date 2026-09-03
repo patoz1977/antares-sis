@@ -26,8 +26,16 @@ use App\AcademicCore\Infrastructure\Persistence\PdoAcademicPlacementReferencePro
 use App\BulkImport\Application\ApplyBulkImport;
 use App\BulkImport\Application\Catalog\BulkImportCatalogResolver;
 use App\BulkImport\Application\Contract\BulkImportWorkbookReader;
+use App\BulkImport\Application\Delivery\BulkImportDeliverySession;
 use App\BulkImport\Application\Planning\BulkImportMatcher;
 use App\BulkImport\Application\PreviewBulkImport;
+use App\BulkImport\Http\BulkImportApplyController;
+use App\BulkImport\Http\BulkImportController;
+use App\BulkImport\Http\BulkImportErrorCsvWriter;
+use App\BulkImport\Http\BulkImportTemplateController;
+use App\BulkImport\Http\BulkImportTemplateFile;
+use App\BulkImport\Http\BulkImportTemporaryFileStore;
+use App\BulkImport\Infrastructure\Filesystem\LocalBulkImportTemporaryFileStore;
 use App\BulkImport\Infrastructure\Persistence\PdoBulkImportCatalogResolver;
 use App\BulkImport\Infrastructure\Xlsx\OpenSpoutBulkImportWorkbookReader;
 use App\Enrollment\Application\Administrative\CancelEnrollment;
@@ -356,6 +364,25 @@ $container->singleton(BulkImportCatalogResolver::class, PdoBulkImportCatalogReso
 $container->singleton(BulkImportMatcher::class, BulkImportMatcher::class);
 $container->singleton(PreviewBulkImport::class, PreviewBulkImport::class);
 $container->singleton(ApplyBulkImport::class, ApplyBulkImport::class);
+$container->singleton(BulkImportDeliverySession::class, BulkImportDeliverySession::class);
+$container->instance(
+    BulkImportTemporaryFileStore::class,
+    new LocalBulkImportTemporaryFileStore(
+        $root . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'bulk-import',
+        $root . DIRECTORY_SEPARATOR . 'public',
+    ),
+);
+$container->instance(
+    BulkImportTemplateFile::class,
+    new BulkImportTemplateFile(
+        $root . DIRECTORY_SEPARATOR . 'resources' . DIRECTORY_SEPARATOR . 'templates'
+            . DIRECTORY_SEPARATOR . 'bulk-import' . DIRECTORY_SEPARATOR . 'e015-family-import-v1.xlsx',
+    ),
+);
+$container->singleton(BulkImportErrorCsvWriter::class, BulkImportErrorCsvWriter::class);
+$container->singleton(BulkImportController::class, BulkImportController::class);
+$container->singleton(BulkImportApplyController::class, BulkImportApplyController::class);
+$container->singleton(BulkImportTemplateController::class, BulkImportTemplateController::class);
 $container->singleton(AcademicPeriodRepository::class, PdoAcademicPeriodRepository::class);
 $container->singleton(AcademicPlacementReferenceProvider::class, PdoAcademicPlacementReferenceProvider::class);
 $container->singleton(GetActiveAcademicPeriod::class, GetActiveAcademicPeriod::class);

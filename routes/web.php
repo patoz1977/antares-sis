@@ -5,6 +5,9 @@ declare(strict_types=1);
 use App\IdentityAccess\Http\AuthenticationController;
 use App\IdentityAccess\Http\RepresentativePortalController;
 use App\IdentityAccess\Http\RepresentativeUserController;
+use App\BulkImport\Http\BulkImportApplyController;
+use App\BulkImport\Http\BulkImportController;
+use App\BulkImport\Http\BulkImportTemplateController;
 use App\Enrollment\Http\AdministrativeEnrollmentController;
 use App\Enrollment\Http\EnrollmentAdministrationMiddleware;
 use App\Enrollment\Http\EnrollmentReportingController;
@@ -28,6 +31,9 @@ use Core\Routing\Router;
 $authenticationController = $app->container()->make(AuthenticationController::class);
 $representativePortalController = $app->container()->make(RepresentativePortalController::class);
 $representativeUserController = $app->container()->make(RepresentativeUserController::class);
+$bulkImportController = $app->container()->make(BulkImportController::class);
+$bulkImportApplyController = $app->container()->make(BulkImportApplyController::class);
+$bulkImportTemplateController = $app->container()->make(BulkImportTemplateController::class);
 $administrativeEnrollmentController = $app->container()->make(AdministrativeEnrollmentController::class);
 $enrollmentReportingController = $app->container()->make(EnrollmentReportingController::class);
 $representativeEnrollmentController = $app->container()->make(RepresentativeEnrollmentController::class);
@@ -72,6 +78,36 @@ $router->get('/forgot-password', [$authenticationController, 'showForgotPassword
 $router->post('/login', [$authenticationController, 'login']);
 $router->post('/logout', [$authenticationController, 'logout']);
 $router->get('/', [$authenticationController, 'dashboard'], AuthenticationMiddleware::class);
+$router->get(
+    '/admin/bulk-import',
+    [$bulkImportController, 'index'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->get(
+    '/admin/bulk-import/template',
+    [$bulkImportTemplateController, 'download'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->get(
+    '/admin/bulk-import/result',
+    [$bulkImportController, 'result'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->get(
+    '/admin/bulk-import/errors.csv',
+    [$bulkImportController, 'errorsCsv'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->post(
+    '/admin/bulk-import/preview',
+    [$bulkImportController, 'preview'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->post(
+    '/admin/bulk-import/apply',
+    [$bulkImportApplyController, 'apply'],
+    $enrollmentAdministrationMiddleware,
+);
 $router->get(
     '/enrollments',
     [$administrativeEnrollmentController, 'index'],

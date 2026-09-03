@@ -10,6 +10,7 @@ class Request
     private string $uri;
     private array $query;
     private array $input;
+    private array $files;
     private array $server;
 
     public function __construct()
@@ -18,6 +19,7 @@ class Request
         $this->method = strtoupper((string) ($this->server['REQUEST_METHOD'] ?? 'GET'));
         $this->query = $_GET;
         $this->input = $this->method === 'GET' ? $_GET : $_POST;
+        $this->files = $_FILES;
 
         $uri = (string) ($this->server['REQUEST_URI'] ?? '/');
         $this->uri = (string) (parse_url($uri, PHP_URL_PATH) ?: '/');
@@ -41,6 +43,11 @@ class Request
     public function input(): array
     {
         return $this->input;
+    }
+
+    public function files(): array
+    {
+        return $this->files;
     }
 
     public function server(): array
