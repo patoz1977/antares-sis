@@ -185,7 +185,7 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
 
         assertSameValue('admin', $shell->context);
         assertSameValue(
-            ['Inicio', 'Personas', 'Familias', 'Confirmaciones institucionales', 'Matrículas', 'Reportes'],
+            ['Inicio', 'Personas', 'Familias', 'Importación masiva', 'Confirmaciones institucionales', 'Matrículas', 'Reportes'],
             array_column($shell->navigation, 'label'),
         );
         assertSameValue('delivery-csrf', $shell->logoutCsrfToken);
