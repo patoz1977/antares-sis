@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Representative\Infrastructure\Persistence;
 
+use App\Representative\Application\LockingRepresentativeRepository;
 use App\Representative\Domain\Representative;
-use App\Representative\Domain\RepresentativeRepository;
 use App\Representative\Domain\RepresentativeStatus;
 use App\Representative\Domain\ValueObject\EmploymentInformation;
 use App\Representative\Domain\ValueObject\PersonId;
@@ -14,7 +14,7 @@ use Core\Database\ConnectionManager;
 use PDO;
 use RuntimeException;
 
-final class PdoRepresentativeRepository implements RepresentativeRepository
+final class PdoRepresentativeRepository implements LockingRepresentativeRepository
 {
     private const STATUS_TYPE = 'GENERAL_STATUS';
 
@@ -69,6 +69,23 @@ final class PdoRepresentativeRepository implements RepresentativeRepository
         $statement->execute([':personId' => $personId->value()]);
 
         return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));
+    }
+
+    public function findByPersonIdForUpdate(PersonId $personId): ?Representative
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('Representative Person row lock requires an active transaction.');
+        }
+
+        $sql = 'SELECT id FROM representatives WHERE person_id = :personId LIMIT 1';
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+            $sql .= ' FOR UPDATE';
+        }
+        $statement = $this->connection->prepare($sql);
+        $statement->execute([':personId' => $personId->value()]);
+        $id = $statement->fetchColumn();
+
+        return $id === false ? null : $this->findById(new RepresentativeId((int) $id));
     }
 
     public function save(Representative $representative): Representative
