@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\Student\Application\LockingStudentRepository;
 use App\Student\Domain\Student;
-use App\Student\Domain\StudentRepository;
 use App\Student\Domain\ValueObject\InstitutionalCode;
 use App\Student\Domain\ValueObject\PersonId;
 use App\Student\Domain\ValueObject\StudentId;
 use RuntimeException;
 
-final class InMemoryStudentApplicationRepository implements StudentRepository
+final class InMemoryStudentApplicationRepository implements LockingStudentRepository
 {
     /** @var array<int, Student> */
     private array $students = [];
@@ -40,6 +40,11 @@ final class InMemoryStudentApplicationRepository implements StudentRepository
         return isset($this->students[$id->value()]) ? clone $this->students[$id->value()] : null;
     }
 
+    public function findByIdForUpdate(StudentId $id): ?Student
+    {
+        return $this->findById($id);
+    }
+
     public function findByPersonId(PersonId $personId): ?Student
     {
         foreach ($this->students as $student) {
@@ -51,6 +56,11 @@ final class InMemoryStudentApplicationRepository implements StudentRepository
         return null;
     }
 
+    public function findByPersonIdForUpdate(PersonId $personId): ?Student
+    {
+        return $this->findByPersonId($personId);
+    }
+
     public function findByInstitutionalCode(InstitutionalCode $institutionalCode): ?Student
     {
         foreach ($this->students as $student) {
@@ -60,6 +70,12 @@ final class InMemoryStudentApplicationRepository implements StudentRepository
         }
 
         return null;
+    }
+
+    public function findByInstitutionalCodeForUpdate(
+        InstitutionalCode $institutionalCode,
+    ): ?Student {
+        return $this->findByInstitutionalCode($institutionalCode);
     }
 
     public function save(Student $student): Student

@@ -13,6 +13,7 @@ use App\Family\Application\Exception\StudentAlreadyHasActiveFamily;
 use App\Family\Application\GetFamily;
 use App\Family\Application\Orchestration\CreateRepresentativeFamily;
 use App\Family\Application\Orchestration\CreateStudentInFamily;
+use App\Family\Application\Orchestration\StudentFamilyCoordinator;
 use App\Family\Application\Orchestration\Dto\CreateRepresentativeFamilyInput;
 use App\Family\Application\Orchestration\Dto\CreateStudentInFamilyInput;
 use App\Family\Application\Orchestration\Dto\RepresentativeFamilyOutput;
@@ -468,9 +469,7 @@ function registerFamilyCompositeOrchestrationTests(TestRunner $runner): void
         assertComposite($studentDependencies === [
             TransactionRunner::class,
             GetFamily::class,
-            CreatePerson::class,
-            CreateStudent::class,
-            AddStudentToFamily::class,
+            StudentFamilyCoordinator::class,
         ], 'Student orchestration dependencies changed.');
 
         $source = compositeOrchestrationSource();

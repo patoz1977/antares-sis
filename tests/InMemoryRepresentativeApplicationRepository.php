@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\Representative\Application\LockingRepresentativeRepository;
 use App\Representative\Domain\Representative;
-use App\Representative\Domain\RepresentativeRepository;
 use App\Representative\Domain\ValueObject\PersonId;
 use App\Representative\Domain\ValueObject\RepresentativeId;
 use RuntimeException;
 
-final class InMemoryRepresentativeApplicationRepository implements RepresentativeRepository
+final class InMemoryRepresentativeApplicationRepository implements LockingRepresentativeRepository
 {
     /** @var array<int, Representative> */
     private array $representatives = [];
@@ -55,6 +55,11 @@ final class InMemoryRepresentativeApplicationRepository implements Representativ
         }
 
         return null;
+    }
+
+    public function findByPersonIdForUpdate(PersonId $personId): ?Representative
+    {
+        return $this->findByPersonId($personId);
     }
 
     public function save(Representative $representative): Representative

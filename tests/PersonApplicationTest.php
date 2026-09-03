@@ -11,6 +11,7 @@ use App\Person\Application\Exception\IdentificationAlreadyUsed;
 use App\Person\Application\Exception\InvalidPersistedPersonResult;
 use App\Person\Application\Exception\PersonNotFound;
 use App\Person\Application\GetPerson;
+use App\Person\Application\LockingPersonRepository;
 use App\Person\Application\UpdatePerson;
 use App\Person\Domain\Exception\InvalidPersonState;
 use App\Person\Domain\Person;
@@ -387,13 +388,14 @@ function registerPersonApplicationTests(TestRunner $runner): void
                 $files[] = $file->getPathname();
             }
         }
-        assertSameValue(9, count($files));
+        assertSameValue(10, count($files));
 
         $source = implode("\n", array_map(static fn (string $file): string => (string) file_get_contents($file), $files));
         foreach (['PDO', '\\Infrastructure\\', '\\Http\\', '\\Controllers\\', '\\Views\\'] as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden));
         }
-        assertSameValue(0, preg_match_all('/\binterface\s+[A-Za-z_]/', $source));
+        assertSameValue(1, preg_match_all('/\binterface\s+[A-Za-z_]/', $source));
+        assertSameValue(true, interface_exists(LockingPersonRepository::class));
     });
 }
 

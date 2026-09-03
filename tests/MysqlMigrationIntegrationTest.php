@@ -116,6 +116,9 @@ use App\Person\Infrastructure\Persistence\PdoPersonRepository;
 use App\Person\Infrastructure\Persistence\PdoPersonFormOptionsProvider;
 use App\Representative\Domain\Representative;
 use App\Representative\Domain\RepresentativeStatus;
+use Tests\MariaDbBeforeTransactionRunner;
+use Tests\MariaDbBulkImportWorkbookReader;
+use Tests\MariaDbFailOneFamilyAfterSaveRepository;
 use App\Representative\Domain\ValueObject\EmploymentInformation;
 use App\Representative\Domain\ValueObject\PersonId as RepresentativePersonId;
 use App\Representative\Application\CreateRepresentative;
@@ -3523,6 +3526,1035 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
     }
 }
 
+function mariaDbE015Phase6Workbook(
+    string $familyCode,
+    string $displayName,
+    ?string $password = 'ClaveSegura9',
+    string $representativeDocument = 'E015-P6-REP-001',
+    string $studentCode = 'E015-P6-STUDENT-001',
+    ?string $studentDocument = null,
+    bool $isPrimary = true,
+    string $representativeSexCode = 'TEST',
+    string $studentSexCode = 'TEST',
+    string $relationshipTypeCode = 'DISPOSABLE_TEST_RELATIONSHIP',
+    ?DateTimeImmutable $representativeStartedAt = null,
+    ?DateTimeImmutable $studentStartedAt = null,
+): \App\BulkImport\Application\Dto\BulkImportWorkbook {
+    $code = new FamilyCode($familyCode);
+    $representativeStartedAt ??= new DateTimeImmutable(
+        '2026-09-01 12:13:14',
+        new DateTimeZone('UTC'),
+    );
+    $studentStartedAt ??= new DateTimeImmutable(
+        '2026-09-01 12:13:15',
+        new DateTimeZone('UTC'),
+    );
+
+    return new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        [new \App\BulkImport\Application\Dto\FamilyWorkbookRow(2, $code, $displayName)],
+        [new \App\BulkImport\Application\Dto\RepresentativeWorkbookRow(
+            2,
+            $code,
+            'E015',
+            'MariaDB',
+            'Representative',
+            'Phase6',
+            new DateTimeImmutable('1985-01-02', new DateTimeZone('UTC')),
+            $representativeSexCode,
+            'TEST',
+            $representativeDocument,
+            'e015.phase6@example.test',
+            $relationshipTypeCode,
+            $isPrimary,
+            $representativeStartedAt,
+            $password === null
+                ? null
+                : new \App\BulkImport\Application\Dto\SensitivePlaintextPassword($password),
+        )],
+        [new \App\BulkImport\Application\Dto\StudentWorkbookRow(
+            2,
+            $code,
+            'E015',
+            null,
+            'Student',
+            'Phase6',
+            new DateTimeImmutable('2015-03-04', new DateTimeZone('UTC')),
+            $studentSexCode,
+            $studentDocument === null ? null : 'TEST',
+            $studentDocument,
+            new InstitutionalCode($studentCode),
+            new DateTimeImmutable('2026-09-01', new DateTimeZone('UTC')),
+            $studentStartedAt,
+        )],
+    );
+}
+
+function runMariaDbBulkImportApplicationScenario(
+    ConnectionManager $manager,
+    PDO $connection,
+): void {
+    $persons = new PdoPersonRepository($manager);
+    $representatives = new PdoRepresentativeRepository($manager);
+    $users = new PdoUserRepository($manager);
+    $students = new PdoStudentRepository($manager);
+    $families = new PdoFamilyRepository($manager);
+    $policy = new RepresentativePasswordPolicy();
+    $reader = new MariaDbBulkImportWorkbookReader(
+        mariaDbE015Phase6Workbook('F92600001', 'E015 Phase 6 MariaDB Family'),
+    );
+    $matcher = new \App\BulkImport\Application\Planning\BulkImportMatcher(
+        new \App\BulkImport\Infrastructure\Persistence\PdoBulkImportCatalogResolver($manager),
+        $persons,
+        $representatives,
+        $users,
+        $students,
+        $families,
+        $policy,
+    );
+    $createPerson = new CreatePerson($persons);
+    $getPerson = new \App\Person\Application\GetPerson($persons);
+    $createRepresentative = new CreateRepresentative($persons, $representatives);
+    $hasher = new NativePasswordHasher();
+    $createUser = new CreateRepresentativeUser(
+        $representatives,
+        $persons,
+        $users,
+        $hasher,
+        $policy,
+    );
+    $createAccess = new CreateRepresentativeAccess(
+        $createPerson,
+        $getPerson,
+        $createRepresentative,
+        $createUser,
+    );
+    $relationshipTypes = new PdoRelationshipTypeLookup($manager);
+    $createFamily = new CreateFamily(
+        $families,
+        $representatives,
+        $relationshipTypes,
+        new \App\Family\Infrastructure\Generation\RandomFamilyCodeGenerator(),
+    );
+    $studentCoordinator = new \App\Family\Application\Orchestration\StudentFamilyCoordinator(
+        $createPerson,
+        $getPerson,
+        new CreateStudent($persons, $students),
+        new \App\Student\Application\GetStudent($students),
+        new AddStudentToFamily($families, $students),
+    );
+    $apply = new \App\BulkImport\Application\ApplyBulkImport(
+        $reader,
+        $matcher,
+        new PdoTransactionRunner($manager),
+        $createAccess,
+        $createRepresentative,
+        $createUser,
+        $createFamily,
+        new \App\Family\Application\AddRepresentativeToFamily(
+            $families,
+            $representatives,
+            $relationshipTypes,
+        ),
+        $studentCoordinator,
+    );
+    $preview = new \App\BulkImport\Application\PreviewBulkImport($reader, $matcher);
+    $trackedTables = [
+        'persons',
+        'representatives',
+        'users',
+        'students',
+        'families',
+        'family_representatives',
+        'family_students',
+    ];
+    $counts = static function () use ($connection, $trackedTables): array {
+        $result = [];
+        foreach ($trackedTables as $table) {
+            $result[$table] = (int) $connection->query(
+                sprintf('SELECT COUNT(*) FROM %s', $table),
+            )->fetchColumn();
+        }
+
+        return $result;
+    };
+    $before = $counts();
+    $previewResult = $preview->handle('canonical-workbook');
+    assertIntegration(
+        $previewResult->families === 1
+        && $previewResult->new === 3
+        && $previewResult->conflicts === 0
+        && $counts() === $before,
+        'E015 Phase 6 Preview was not read-only or did not classify the complete new Family.'
+    );
+
+    $first = $apply->handle(
+        'canonical-workbook',
+        new DateTimeImmutable('2026-09-02', new DateTimeZone('UTC')),
+    );
+    assertIntegration(
+        count($first->families) === 1
+        && $first->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::New,
+        'E015 Phase 6 Apply did not commit the complete new Family.'
+    );
+    $familyId = (int) $connection->query(
+        "SELECT id FROM families WHERE family_code = 'F92600001'"
+    )->fetchColumn();
+    $physical = $connection->query(
+        "SELECT p.id AS person_id, r.id AS representative_id, u.id AS user_id, "
+        . "u.password_hash, s.id AS student_id, fr.id AS representative_membership_id, "
+        . "fs.id AS student_membership_id, fr.is_primary, "
+        . "DATE_FORMAT(fr.started_at, '%Y-%m-%d %H:%i:%s') AS representative_started_at, "
+        . "DATE_FORMAT(fs.started_at, '%Y-%m-%d %H:%i:%s') AS student_started_at "
+        . "FROM families f "
+        . "INNER JOIN family_representatives fr ON fr.family_id = f.id AND fr.ended_at IS NULL "
+        . "INNER JOIN representatives r ON r.id = fr.representative_id "
+        . "INNER JOIN persons p ON p.id = r.person_id "
+        . "INNER JOIN users u ON u.person_id = p.id "
+        . "INNER JOIN family_students fs ON fs.family_id = f.id AND fs.ended_at IS NULL "
+        . "INNER JOIN students s ON s.id = fs.student_id "
+        . "WHERE f.family_code = 'F92600001'"
+    )->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $familyId > 0
+        && $physical !== false
+        && (int) $physical['person_id'] > 0
+        && (int) $physical['representative_id'] > 0
+        && (int) $physical['user_id'] > 0
+        && (int) $physical['student_id'] > 0
+        && (int) $physical['representative_membership_id'] > 0
+        && (int) $physical['student_membership_id'] > 0
+        && (int) $physical['is_primary'] === 1
+        && $physical['representative_started_at'] === '2026-09-01 12:13:14'
+        && $physical['student_started_at'] === '2026-09-01 12:13:15'
+        && $physical['password_hash'] !== 'ClaveSegura9'
+        && $hasher->verify('ClaveSegura9', $physical['password_hash']),
+        'E015 Phase 6 physical Aggregate AUTO_INCREMENT UTC status or password evidence failed.'
+    );
+
+    $afterFirst = $counts();
+    $originalHash = (string) $physical['password_hash'];
+    $reader->replace(mariaDbE015Phase6Workbook(
+        'F92600001',
+        'E015 Phase 6 MariaDB Family',
+        'OtraClaveValida9',
+    ));
+    $second = $apply->handle(
+        'canonical-workbook',
+        new DateTimeImmutable('2026-09-02', new DateTimeZone('UTC')),
+    );
+    $currentHash = (string) $connection->query(
+        "SELECT u.password_hash FROM users u INNER JOIN persons p ON p.id = u.person_id "
+        . "WHERE p.document_number = 'E015-P6-REP-001'"
+    )->fetchColumn();
+    assertIntegration(
+        count($second->families) === 1
+        && $second->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::AlreadyExists
+        && $counts() === $afterFirst
+        && $currentHash === $originalHash,
+        'E015 Phase 6 exact reimport duplicated data or replaced an existing password.'
+    );
+
+    $existingBase = mariaDbE015Phase6Workbook(
+        'F92600001',
+        'E015 Phase 6 MariaDB Family',
+        'IgnoredExisting9',
+    );
+    $additional = mariaDbE015Phase6Workbook(
+        'F92600001',
+        'E015 Phase 6 MariaDB Family',
+        'NuevaClave9',
+        'E015-P6-REP-002',
+        'E015-P6-STUDENT-002',
+        null,
+        false,
+    );
+    $reader->replace(new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        $existingBase->families,
+        [$existingBase->representatives[0], $additional->representatives[0]],
+        [$existingBase->students[0], $additional->students[0]],
+    ));
+    $beforeExistingFamilyAdditions = $counts();
+    $existingFamilyAdditions = $apply->handle(
+        'canonical-workbook',
+        new DateTimeImmutable('2026-09-02', new DateTimeZone('UTC')),
+    );
+    $afterExistingFamilyAdditions = $counts();
+    assertIntegration(
+        $existingFamilyAdditions->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::New
+        && $afterExistingFamilyAdditions['persons'] === $beforeExistingFamilyAdditions['persons'] + 2
+        && $afterExistingFamilyAdditions['representatives']
+            === $beforeExistingFamilyAdditions['representatives'] + 1
+        && $afterExistingFamilyAdditions['users'] === $beforeExistingFamilyAdditions['users'] + 1
+        && $afterExistingFamilyAdditions['students'] === $beforeExistingFamilyAdditions['students'] + 1
+        && $afterExistingFamilyAdditions['families'] === $beforeExistingFamilyAdditions['families']
+        && $afterExistingFamilyAdditions['family_representatives']
+            === $beforeExistingFamilyAdditions['family_representatives'] + 1
+        && $afterExistingFamilyAdditions['family_students']
+            === $beforeExistingFamilyAdditions['family_students'] + 1,
+        'E015 Phase 6 existing Family additions did not create exactly one Representative and Student.'
+    );
+
+    $today = new DateTimeImmutable('2026-09-02', new DateTimeZone('UTC'));
+    $seedPerson = static function (
+        string $document,
+        CreatePerson $createPerson,
+        DateTimeImmutable $today,
+    ): int {
+        return $createPerson->handle(new \App\Person\Application\Dto\CreatePersonInput(
+            'Existing',
+            null,
+            'Person',
+            null,
+            1,
+            $document,
+            new DateTimeImmutable('1984-04-05', new DateTimeZone('UTC')),
+            1,
+            null,
+            null,
+            'existing.person@example.test',
+            null,
+            null,
+            PersonStatus::Active,
+        ), $today)->id;
+    };
+
+    $existingPersonId = $seedPerson('E015-P6-REP-003', $createPerson, $today);
+    $reader->replace(mariaDbE015Phase6Workbook(
+        'F92600003',
+        'E015 Existing Person Family',
+        'ClavePersona9',
+        'E015-P6-REP-003',
+        'E015-P6-STUDENT-003',
+    ));
+    $beforeExistingPerson = $counts();
+    $existingPersonResult = $apply->handle('canonical-workbook', $today);
+    $afterExistingPerson = $counts();
+    assertIntegration(
+        $existingPersonId > 0
+        && $existingPersonResult->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::New
+        && $afterExistingPerson['persons'] === $beforeExistingPerson['persons'] + 1
+        && $afterExistingPerson['representatives'] === $beforeExistingPerson['representatives'] + 1
+        && $afterExistingPerson['users'] === $beforeExistingPerson['users'] + 1,
+        'E015 Phase 6 did not reuse an existing Person for a new Representative and User.'
+    );
+
+    $existingRepresentativePersonId = $seedPerson('E015-P6-REP-004', $createPerson, $today);
+    $existingRepresentative = $createRepresentative->handle(new CreateRepresentativeInput(
+        $existingRepresentativePersonId,
+        null,
+        null,
+        null,
+        null,
+        null,
+        RepresentativeStatus::Active,
+    ));
+    $reader->replace(mariaDbE015Phase6Workbook(
+        'F92600004',
+        'E015 Existing Representative Family',
+        'ClaveAcceso9',
+        'E015-P6-REP-004',
+        'E015-P6-STUDENT-004',
+    ));
+    $beforeMissingUser = $counts();
+    $missingUserResult = $apply->handle('canonical-workbook', $today);
+    $afterMissingUser = $counts();
+    assertIntegration(
+        $existingRepresentative->id > 0
+        && $missingUserResult->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::New
+        && $afterMissingUser['persons'] === $beforeMissingUser['persons'] + 1
+        && $afterMissingUser['representatives'] === $beforeMissingUser['representatives']
+        && $afterMissingUser['users'] === $beforeMissingUser['users'] + 1,
+        'E015 Phase 6 did not provision the missing User for an existing Representative.'
+    );
+
+    $existingRepresentativeBase = mariaDbE015Phase6Workbook(
+        'F92600004',
+        'E015 Existing Representative Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-004',
+        'E015-P6-STUDENT-004',
+    );
+    $multiRoleStudent = mariaDbE015Phase6Workbook(
+        'F92600004',
+        'E015 Existing Representative Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-004',
+        'E015-P6-STUDENT-MULTI',
+        'E015-P6-REP-004',
+    );
+    $reader->replace(new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        $existingRepresentativeBase->families,
+        $existingRepresentativeBase->representatives,
+        [$existingRepresentativeBase->students[0], $multiRoleStudent->students[0]],
+    ));
+    $beforeMultiRole = $counts();
+    $multiRoleResult = $apply->handle('canonical-workbook', $today);
+    $afterMultiRole = $counts();
+    assertIntegration(
+        $multiRoleResult->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::New
+        && $afterMultiRole['persons'] === $beforeMultiRole['persons']
+        && $afterMultiRole['students'] === $beforeMultiRole['students'] + 1
+        && (int) $connection->query(
+            "SELECT COUNT(*) FROM representatives r INNER JOIN students s ON s.person_id = r.person_id "
+            . "INNER JOIN persons p ON p.id = r.person_id WHERE p.document_number = 'E015-P6-REP-004'"
+        )->fetchColumn() === 1,
+        'E015 Phase 6 did not reuse one existing Representative Person for the Student multi-role.'
+    );
+
+    $reader->replace(mariaDbE015Phase6Workbook(
+        'F92600005',
+        'E015 Shared Representative Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-004',
+        'E015-P6-STUDENT-005',
+    ));
+    $beforeSharedRepresentative = $counts();
+    $sharedRepresentative = $apply->handle('canonical-workbook', $today);
+    $afterSharedRepresentative = $counts();
+    assertIntegration(
+        $sharedRepresentative->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::New
+        && $afterSharedRepresentative['persons'] === $beforeSharedRepresentative['persons'] + 1
+        && $afterSharedRepresentative['representatives'] === $beforeSharedRepresentative['representatives']
+        && $afterSharedRepresentative['users'] === $beforeSharedRepresentative['users']
+        && $afterSharedRepresentative['families'] === $beforeSharedRepresentative['families'] + 1,
+        'E015 Phase 6 did not reuse one Representative and User across two Families.'
+    );
+
+    $familyA = mariaDbE015Phase6Workbook(
+        'F92600011',
+        'E015 Isolation A',
+        'ClaveA9',
+        'E015-P6-REP-A',
+        'E015-P6-STUDENT-A',
+    );
+    $familyB = mariaDbE015Phase6Workbook(
+        'F92600012',
+        'E015 Isolation B',
+        'ClaveB9',
+        'E015-P6-REP-B',
+        'E015-P6-STUDENT-B',
+    );
+    $familyC = mariaDbE015Phase6Workbook(
+        'F92600013',
+        'E015 Isolation C',
+        'ClaveC9',
+        'E015-P6-REP-C',
+        'E015-P6-STUDENT-C',
+    );
+    $isolationReader = new MariaDbBulkImportWorkbookReader(
+        new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+            [$familyC->families[0], $familyB->families[0], $familyA->families[0]],
+            [$familyC->representatives[0], $familyB->representatives[0], $familyA->representatives[0]],
+            [$familyC->students[0], $familyB->students[0], $familyA->students[0]],
+        ),
+    );
+    $failingFamilies = new MariaDbFailOneFamilyAfterSaveRepository($families, 'F92600012');
+    $isolationMatcher = new \App\BulkImport\Application\Planning\BulkImportMatcher(
+        new \App\BulkImport\Infrastructure\Persistence\PdoBulkImportCatalogResolver($manager),
+        $persons,
+        $representatives,
+        $users,
+        $students,
+        $failingFamilies,
+        $policy,
+    );
+    $isolationStudentCoordinator = new \App\Family\Application\Orchestration\StudentFamilyCoordinator(
+        $createPerson,
+        $getPerson,
+        new CreateStudent($persons, $students),
+        new \App\Student\Application\GetStudent($students),
+        new AddStudentToFamily($failingFamilies, $students),
+    );
+    $isolationApply = new \App\BulkImport\Application\ApplyBulkImport(
+        $isolationReader,
+        $isolationMatcher,
+        new PdoTransactionRunner($manager),
+        $createAccess,
+        $createRepresentative,
+        $createUser,
+        new CreateFamily(
+            $failingFamilies,
+            $representatives,
+            $relationshipTypes,
+            new \App\Family\Infrastructure\Generation\RandomFamilyCodeGenerator(),
+        ),
+        new \App\Family\Application\AddRepresentativeToFamily(
+            $failingFamilies,
+            $representatives,
+            $relationshipTypes,
+        ),
+        $isolationStudentCoordinator,
+    );
+    $beforeIsolation = $counts();
+    $isolation = $isolationApply->handle('canonical-workbook', $today);
+    $afterIsolation = $counts();
+    assertIntegration(
+        array_map(static fn ($item): string => $item->familyCode, $isolation->families)
+            === ['F92600011', 'F92600012', 'F92600013']
+        && array_map(static fn ($item) => $item->classification, $isolation->families) === [
+            \App\BulkImport\Application\Dto\BulkImportClassification::New,
+            \App\BulkImport\Application\Dto\BulkImportClassification::Conflict,
+            \App\BulkImport\Application\Dto\BulkImportClassification::New,
+        ]
+        && $afterIsolation['persons'] === $beforeIsolation['persons'] + 4
+        && $afterIsolation['representatives'] === $beforeIsolation['representatives'] + 2
+        && $afterIsolation['users'] === $beforeIsolation['users'] + 2
+        && $afterIsolation['students'] === $beforeIsolation['students'] + 2
+        && $afterIsolation['families'] === $beforeIsolation['families'] + 2
+        && $afterIsolation['family_representatives']
+            === $beforeIsolation['family_representatives'] + 2
+        && $afterIsolation['family_students'] === $beforeIsolation['family_students'] + 2
+        && $families->findByCode(new FamilyCode('F92600011')) !== null
+        && $families->findByCode(new FamilyCode('F92600012')) === null
+        && $families->findByCode(new FamilyCode('F92600013')) !== null
+        && !str_contains($isolation->families[1]->message, 'Synthetic'),
+        'E015 Phase 6 FamilyCode ordering rollback isolation or safe failure mapping failed.'
+    );
+
+    $assertConflictWithoutWrites = static function (
+        \App\BulkImport\Application\Dto\BulkImportWorkbook $workbook,
+        string $label,
+    ) use ($reader, $apply, $counts, $today): void {
+        $reader->replace($workbook);
+        $beforeConflict = $counts();
+        $result = $apply->handle('canonical-workbook', $today);
+        assertIntegration(
+            count($result->families) === 1
+            && $result->families[0]->classification
+                === \App\BulkImport\Application\Dto\BulkImportClassification::Conflict
+            && $counts() === $beforeConflict,
+            'E015 Phase 6 conflict scenario changed physical rows: ' . $label,
+        );
+    };
+
+    $membershipMismatch = mariaDbE015Phase6Workbook(
+        'F92600001',
+        'E015 Phase 6 MariaDB Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-001',
+        'E015-P6-STUDENT-001',
+        null,
+        true,
+        'TEST',
+        'TEST',
+        'DISPOSABLE_TEST_RELATIONSHIP',
+        new DateTimeImmutable('2026-09-01 12:13:19', new DateTimeZone('UTC')),
+    );
+    $assertConflictWithoutWrites(new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        $membershipMismatch->families,
+        $membershipMismatch->representatives,
+        [],
+    ), 'Representative membership mismatch');
+
+    $primaryReplacement = mariaDbE015Phase6Workbook(
+        'F92600001',
+        'E015 Phase 6 MariaDB Family',
+        'ClavePrimary9',
+        'E015-P6-REP-PRIMARY-REPLACEMENT',
+        'E015-P6-UNUSED-PRIMARY',
+    );
+    $assertConflictWithoutWrites(new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        $primaryReplacement->families,
+        $primaryReplacement->representatives,
+        [],
+    ), 'Primary replacement');
+
+    $studentIdentificationMismatch = mariaDbE015Phase6Workbook(
+        'F92600001',
+        'E015 Phase 6 MariaDB Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-001',
+        'E015-P6-STUDENT-001',
+        'E015-P6-WRONG-STUDENT-DOCUMENT',
+    );
+    $assertConflictWithoutWrites(new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        $studentIdentificationMismatch->families,
+        [],
+        $studentIdentificationMismatch->students,
+    ), 'Student identification mismatch');
+
+    $studentMembershipMismatch = mariaDbE015Phase6Workbook(
+        'F92600001',
+        'E015 Phase 6 MariaDB Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-001',
+        'E015-P6-STUDENT-001',
+        null,
+        true,
+        'TEST',
+        'TEST',
+        'DISPOSABLE_TEST_RELATIONSHIP',
+        null,
+        new DateTimeImmutable('2026-09-01 12:13:20', new DateTimeZone('UTC')),
+    );
+    $assertConflictWithoutWrites(new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        $studentMembershipMismatch->families,
+        [],
+        $studentMembershipMismatch->students,
+    ), 'Student membership startedAt mismatch');
+
+    $studentOtherFamily = mariaDbE015Phase6Workbook(
+        'F92600006',
+        'E015 Student Other Family',
+        'ClaveOtra9',
+        'E015-P6-REP-006',
+        'E015-P6-STUDENT-001',
+    );
+    $assertConflictWithoutWrites($studentOtherFamily, 'Student active in another Family');
+
+    $inactiveCatalog = mariaDbE015Phase6Workbook(
+        'F92600007',
+        'E015 Inactive Catalog Family',
+        'ClaveCatalogo9',
+        'E015-P6-REP-007',
+        'E015-P6-STUDENT-007',
+        null,
+        true,
+        'TEST',
+        'TEST',
+        'DISPOSABLE_INACTIVE_RELATIONSHIP',
+    );
+    $assertConflictWithoutWrites($inactiveCatalog, 'inactive catalog');
+
+    $activeGeneralStatusId = (int) $connection->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE'"
+    )->fetchColumn();
+    $inactiveGeneralStatusId = (int) $connection->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'INACTIVE'"
+    )->fetchColumn();
+    $disabledUserStatusId = (int) $connection->query(
+        "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'USER_STATUS' AND s.code = 'DISABLED'"
+    )->fetchColumn();
+
+    $makeRacedApply = static function (
+        MariaDbBulkImportWorkbookReader $raceReader,
+        MariaDbBeforeTransactionRunner $raceRunner,
+    ) use (
+        $matcher,
+        $createAccess,
+        $createRepresentative,
+        $createUser,
+        $createFamily,
+        $families,
+        $representatives,
+        $relationshipTypes,
+        $studentCoordinator,
+    ): \App\BulkImport\Application\ApplyBulkImport {
+        return new \App\BulkImport\Application\ApplyBulkImport(
+            $raceReader,
+            $matcher,
+            $raceRunner,
+            $createAccess,
+            $createRepresentative,
+            $createUser,
+            $createFamily,
+            new \App\Family\Application\AddRepresentativeToFamily(
+                $families,
+                $representatives,
+                $relationshipTypes,
+            ),
+            $studentCoordinator,
+        );
+    };
+
+    $familyRacePrimaryPersonId = $seedPerson('E015-P6-FAMILY-RACE-OWNER', $createPerson, $today);
+    $familyRacePrimary = $createRepresentative->handle(new CreateRepresentativeInput(
+        $familyRacePrimaryPersonId,
+        null,
+        null,
+        null,
+        null,
+        null,
+        RepresentativeStatus::Active,
+    ));
+    $familyRaceRelationshipTypeId = (int) $connection->query(
+        "SELECT id FROM relationship_types WHERE code = 'DISPOSABLE_TEST_RELATIONSHIP'"
+    )->fetchColumn();
+    $familyRaceWorkbook = mariaDbE015Phase6Workbook(
+        'F92600021',
+        'E015 Family Race',
+        'ClaveRace9',
+        'E015-P6-REP-RACE-FAMILY',
+        'E015-P6-STUDENT-RACE-FAMILY',
+    );
+    $familyRaceReader = new MariaDbBulkImportWorkbookReader($familyRaceWorkbook);
+    $familyRaceRunner = new MariaDbBeforeTransactionRunner(
+        new PdoTransactionRunner($manager),
+        static function () use (
+            $createFamily,
+            $familyRacePrimary,
+            $familyRaceRelationshipTypeId,
+        ): void {
+            $createFamily->handleWithCode(new \App\Family\Application\Dto\CreateFamilyWithCodeInput(
+                'F92600021',
+                'E015 Family Race',
+                \App\Family\Domain\FamilyStatus::Active,
+                $familyRacePrimary->id,
+                $familyRaceRelationshipTypeId,
+                new DateTimeImmutable('2026-09-01 10:00:00', new DateTimeZone('UTC')),
+            ));
+        },
+    );
+    $beforeFamilyRace = $counts();
+    $familyRace = $makeRacedApply($familyRaceReader, $familyRaceRunner)->handle(
+        'canonical-workbook',
+        $today,
+    );
+    $afterFamilyRace = $counts();
+    assertIntegration(
+        $familyRaceRunner->calls() === 1
+        && $familyRace->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::Conflict
+        && $familyRace->families[0]->issues[0]->category
+            === \App\BulkImport\Application\Dto\BulkImportIssueCategory::ConcurrentChange
+        && $afterFamilyRace['families'] === $beforeFamilyRace['families'] + 1
+        && $afterFamilyRace['persons'] === $beforeFamilyRace['persons']
+        && $afterFamilyRace['family_representatives']
+            === $beforeFamilyRace['family_representatives'] + 1
+        && $afterFamilyRace['family_students'] === $beforeFamilyRace['family_students'],
+        'E015 Phase 6 Family-created-after-matching race was not rejected without partial import writes.'
+    );
+
+    $personRaceWorkbook = mariaDbE015Phase6Workbook(
+        'F92600022',
+        'E015 Person Race',
+        'ClaveRace9',
+        'E015-P6-REP-RACE-PERSON',
+        'E015-P6-STUDENT-RACE-PERSON',
+    );
+    $personRaceReader = new MariaDbBulkImportWorkbookReader($personRaceWorkbook);
+    $personRaceRunner = new MariaDbBeforeTransactionRunner(
+        new PdoTransactionRunner($manager),
+        static function () use ($connection, $activeGeneralStatusId): void {
+            $insert = $connection->prepare(
+                'INSERT INTO persons '
+                . '(first_name, first_surname, document_type_id, document_number, birth_date, sex_id, email, status_id) '
+                . 'VALUES (:firstName, :firstSurname, 1, :documentNumber, :birthDate, 2, :email, :statusId)'
+            );
+            $insert->execute([
+                ':firstName' => 'Concurrent',
+                ':firstSurname' => 'Identity',
+                ':documentNumber' => 'E015-P6-REP-RACE-PERSON',
+                ':birthDate' => '1980-01-01',
+                ':email' => 'concurrent.identity@example.test',
+                ':statusId' => $activeGeneralStatusId,
+            ]);
+        },
+    );
+    $beforePersonRace = $counts();
+    $personRace = $makeRacedApply($personRaceReader, $personRaceRunner)->handle(
+        'canonical-workbook',
+        $today,
+    );
+    $afterPersonRace = $counts();
+    assertIntegration(
+        $personRaceRunner->calls() === 1
+        && $personRace->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::Conflict
+        && $personRace->families[0]->issues[0]->category
+            === \App\BulkImport\Application\Dto\BulkImportIssueCategory::ConcurrentChange
+        && $afterPersonRace['persons'] === $beforePersonRace['persons'] + 1
+        && $afterPersonRace['families'] === $beforePersonRace['families'],
+        'E015 Phase 6 Person-identity race was not revalidated under locks.'
+    );
+
+    $loginRaceOwnerId = $seedPerson('E015-P6-LOGIN-RACE-OWNER', $createPerson, $today);
+    $loginRaceWorkbook = mariaDbE015Phase6Workbook(
+        'F92600023',
+        'E015 Login Race',
+        'ClaveRace9',
+        'E015-P6-REP-RACE-LOGIN',
+        'E015-P6-STUDENT-RACE-LOGIN',
+    );
+    $loginRaceReader = new MariaDbBulkImportWorkbookReader($loginRaceWorkbook);
+    $loginRaceRunner = new MariaDbBeforeTransactionRunner(
+        new PdoTransactionRunner($manager),
+        static function () use ($connection, $loginRaceOwnerId): void {
+            $hash = password_hash('LoginRaceOwner9', PASSWORD_DEFAULT);
+            assertIntegration(is_string($hash), 'Unable to create disposable login-race hash.');
+            $activeUserStatusId = (int) $connection->query(
+                "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+                . "WHERE st.code = 'USER_STATUS' AND s.code = 'ACTIVE'"
+            )->fetchColumn();
+            $insert = $connection->prepare(
+                'INSERT INTO users '
+                . '(person_id, login_identifier, normalized_login_identifier, password_hash, status_id) '
+                . 'VALUES (:personId, :login, :normalizedLogin, :passwordHash, :statusId)'
+            );
+            $insert->execute([
+                ':personId' => $loginRaceOwnerId,
+                ':login' => 'E015-P6-REP-RACE-LOGIN',
+                ':normalizedLogin' => 'e015-p6-rep-race-login',
+                ':passwordHash' => $hash,
+                ':statusId' => $activeUserStatusId,
+            ]);
+        },
+    );
+    $beforeLoginRace = $counts();
+    $loginRace = $makeRacedApply($loginRaceReader, $loginRaceRunner)->handle(
+        'canonical-workbook',
+        $today,
+    );
+    $afterLoginRace = $counts();
+    assertIntegration(
+        $loginRaceRunner->calls() === 1
+        && $loginRace->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::Conflict
+        && $loginRace->families[0]->issues[0]->category
+            === \App\BulkImport\Application\Dto\BulkImportIssueCategory::ConcurrentChange
+        && $afterLoginRace['users'] === $beforeLoginRace['users'] + 1
+        && $afterLoginRace['families'] === $beforeLoginRace['families'],
+        'E015 Phase 6 LoginIdentifier race was not revalidated under locks.'
+    );
+
+    $studentRaceWorkbook = mariaDbE015Phase6Workbook(
+        'F92600024',
+        'E015 Student Race',
+        'ClaveRace9',
+        'E015-P6-REP-RACE-STUDENT',
+        'E015-P6-STUDENT-RACE',
+    );
+    $studentRaceReader = new MariaDbBulkImportWorkbookReader($studentRaceWorkbook);
+    $studentRaceRunner = new MariaDbBeforeTransactionRunner(
+        new PdoTransactionRunner($manager),
+        static function () use ($connection, $activeGeneralStatusId): void {
+            $insertPerson = $connection->prepare(
+                'INSERT INTO persons (first_name, first_surname, birth_date, sex_id, status_id) '
+                . 'VALUES (:firstName, :firstSurname, :birthDate, 1, :statusId)'
+            );
+            $insertPerson->execute([
+                ':firstName' => 'Concurrent',
+                ':firstSurname' => 'Student',
+                ':birthDate' => '2014-02-03',
+                ':statusId' => $activeGeneralStatusId,
+            ]);
+            $personId = (int) $connection->lastInsertId();
+            $insertStudent = $connection->prepare(
+                'INSERT INTO students (person_id, institutional_code, admission_date, status_id) '
+                . 'VALUES (:personId, :institutionalCode, :admissionDate, :statusId)'
+            );
+            $insertStudent->execute([
+                ':personId' => $personId,
+                ':institutionalCode' => 'E015-P6-STUDENT-RACE',
+                ':admissionDate' => '2026-09-01',
+                ':statusId' => $activeGeneralStatusId,
+            ]);
+        },
+    );
+    $beforeStudentRace = $counts();
+    $studentRace = $makeRacedApply($studentRaceReader, $studentRaceRunner)->handle(
+        'canonical-workbook',
+        $today,
+    );
+    $afterStudentRace = $counts();
+    assertIntegration(
+        $studentRaceRunner->calls() === 1
+        && $studentRace->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::New
+        && $afterStudentRace['persons'] === $beforeStudentRace['persons'] + 2
+        && $afterStudentRace['students'] === $beforeStudentRace['students'] + 1
+        && $afterStudentRace['families'] === $beforeStudentRace['families'] + 1
+        && $afterStudentRace['family_students'] === $beforeStudentRace['family_students'] + 1
+        && (int) $connection->query(
+            "SELECT COUNT(*) FROM students WHERE institutional_code = 'E015-P6-STUDENT-RACE'"
+        )->fetchColumn() === 1,
+        'E015 Phase 6 Student-code race did not reuse the concurrent Student without duplication.'
+    );
+
+    $connection->exec(
+        "UPDATE families SET status_id = {$inactiveGeneralStatusId} WHERE family_code = 'F92600005'"
+    );
+    $assertConflictWithoutWrites(mariaDbE015Phase6Workbook(
+        'F92600005',
+        'E015 Shared Representative Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-004',
+        'E015-P6-STUDENT-005',
+    ), 'inactive Family');
+    $connection->exec(
+        "UPDATE families SET status_id = {$activeGeneralStatusId} WHERE family_code = 'F92600005'"
+    );
+
+    $connection->exec(
+        "UPDATE persons SET sex_id = 2 WHERE document_number = 'E015-P6-REP-003'"
+    );
+    $assertConflictWithoutWrites(mariaDbE015Phase6Workbook(
+        'F92600003',
+        'E015 Existing Person Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-003',
+        'E015-P6-STUDENT-003',
+    ), 'Person Sex mismatch');
+    $connection->exec(
+        "UPDATE persons SET sex_id = 1 WHERE document_number = 'E015-P6-REP-003'"
+    );
+
+    $connection->exec(
+        "UPDATE persons SET status_id = {$inactiveGeneralStatusId} "
+        . "WHERE document_number = 'E015-P6-REP-002'"
+    );
+    $inactivePersonWorkbook = mariaDbE015Phase6Workbook(
+        'F92600001',
+        'E015 Phase 6 MariaDB Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-002',
+        'E015-P6-UNUSED-INACTIVE-PERSON',
+        null,
+        false,
+    );
+    $assertConflictWithoutWrites(new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        $inactivePersonWorkbook->families,
+        $inactivePersonWorkbook->representatives,
+        [],
+    ), 'inactive Person');
+
+    $connection->exec(
+        "UPDATE representatives r INNER JOIN persons p ON p.id = r.person_id "
+        . "SET r.status_id = {$inactiveGeneralStatusId} WHERE p.document_number = 'E015-P6-REP-004'"
+    );
+    $inactiveRepresentativeWorkbook = mariaDbE015Phase6Workbook(
+        'F92600004',
+        'E015 Existing Representative Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-004',
+        'E015-P6-UNUSED-INACTIVE-REP',
+    );
+    $assertConflictWithoutWrites(new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        $inactiveRepresentativeWorkbook->families,
+        $inactiveRepresentativeWorkbook->representatives,
+        [],
+    ), 'inactive Representative');
+
+    $connection->exec(
+        "UPDATE users u INNER JOIN persons p ON p.id = u.person_id "
+        . "SET u.status_id = {$disabledUserStatusId} WHERE p.document_number = 'E015-P6-REP-003'"
+    );
+    $disabledUserWorkbook = mariaDbE015Phase6Workbook(
+        'F92600003',
+        'E015 Existing Person Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-003',
+        'E015-P6-UNUSED-DISABLED-USER',
+    );
+    $assertConflictWithoutWrites(new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        $disabledUserWorkbook->families,
+        $disabledUserWorkbook->representatives,
+        [],
+    ), 'non-access-capable User');
+
+    $connection->exec(
+        "UPDATE students SET status_id = {$inactiveGeneralStatusId} "
+        . "WHERE institutional_code = 'E015-P6-STUDENT-002'"
+    );
+    $inactiveStudentWorkbook = mariaDbE015Phase6Workbook(
+        'F92600001',
+        'E015 Phase 6 MariaDB Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-001',
+        'E015-P6-STUDENT-002',
+    );
+    $assertConflictWithoutWrites(new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        $inactiveStudentWorkbook->families,
+        [],
+        $inactiveStudentWorkbook->students,
+    ), 'inactive Student');
+
+    $connection->exec(
+        "UPDATE persons p INNER JOIN students s ON s.person_id = p.id "
+        . "SET p.status_id = {$inactiveGeneralStatusId} "
+        . "WHERE s.institutional_code = 'E015-P6-STUDENT-005'"
+    );
+    $inactiveStudentPersonWorkbook = mariaDbE015Phase6Workbook(
+        'F92600005',
+        'E015 Shared Representative Family',
+        'IgnoredExisting9',
+        'E015-P6-REP-004',
+        'E015-P6-STUDENT-005',
+    );
+    $assertConflictWithoutWrites(new \App\BulkImport\Application\Dto\BulkImportWorkbook(
+        $inactiveStudentPersonWorkbook->families,
+        [],
+        $inactiveStudentPersonWorkbook->students,
+    ), 'inactive Student Person');
+
+    $loginOwnerPersonId = $seedPerson('E015-P6-LOGIN-OWNER', $createPerson, $today);
+    $loginOwnerHash = password_hash('OwnerPassword9', PASSWORD_DEFAULT);
+    assertIntegration(is_string($loginOwnerHash), 'Unable to create disposable login-owner hash.');
+    $insertLoginOwner = $connection->prepare(
+        'INSERT INTO users '
+        . '(person_id, login_identifier, normalized_login_identifier, password_hash, status_id) '
+        . 'VALUES (:personId, :login, :normalizedLogin, :passwordHash, :statusId)'
+    );
+    $insertLoginOwner->execute([
+        ':personId' => $loginOwnerPersonId,
+        ':login' => 'E015-P6-REP-LOGIN',
+        ':normalizedLogin' => 'e015-p6-rep-login',
+        ':passwordHash' => $loginOwnerHash,
+        ':statusId' => (int) $connection->query(
+            "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+            . "WHERE st.code = 'USER_STATUS' AND s.code = 'ACTIVE'"
+        )->fetchColumn(),
+    ]);
+    $assertConflictWithoutWrites(mariaDbE015Phase6Workbook(
+        'F92600008',
+        'E015 Login Collision Family',
+        'ClaveLogin9',
+        'E015-P6-REP-LOGIN',
+        'E015-P6-STUDENT-008',
+    ), 'LoginIdentifier owned by another Person');
+
+    $assertConflictWithoutWrites(mariaDbE015Phase6Workbook(
+        'F92600009',
+        'E015 Invalid Password Family',
+        'bad',
+        'E015-P6-REP-009',
+        'E015-P6-STUDENT-009',
+    ), 'invalid password for new User');
+
+    $reader->replace(mariaDbE015Phase6Workbook('F92600001', 'Conflict Name'));
+    $beforeDisplayNameConflict = $counts();
+    $conflict = $apply->handle(
+        'canonical-workbook',
+        new DateTimeImmutable('2026-09-02', new DateTimeZone('UTC')),
+    );
+    assertIntegration(
+        $conflict->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::Conflict
+        && $counts() === $beforeDisplayNameConflict,
+        'E015 Phase 6 conflict did not preserve the previously committed Family exactly.'
+    );
+
+    $reader->replace(mariaDbE015Phase6Workbook(
+        'F92600002',
+        'E015 Phase 6 Missing Password',
+        null,
+    ));
+    $beforeMissingPassword = $counts();
+    $missingPassword = $apply->handle(
+        'canonical-workbook',
+        new DateTimeImmutable('2026-09-02', new DateTimeZone('UTC')),
+    );
+    assertIntegration(
+        $missingPassword->families[0]->classification
+            === \App\BulkImport\Application\Dto\BulkImportClassification::Conflict
+        && $counts() === $beforeMissingPassword
+        && (int) $connection->query(
+            "SELECT COUNT(*) FROM families WHERE family_code = 'F92600002'"
+        )->fetchColumn() === 0,
+        'E015 Phase 6 missing-password conflict left partial physical data.'
+    );
+}
+
 $requiredNonEmptyEnvironment = [
     'E0041_DB_HOST',
     'E0041_DB_PORT',
@@ -5812,6 +6844,7 @@ try {
     );
     $createRepresentativeAccess = new CreateRepresentativeAccess(
         $createPerson,
+        new \App\Person\Application\GetPerson($personRepository),
         $createRepresentative,
         $createRepresentativeUser,
     );
@@ -6164,9 +7197,13 @@ try {
     $studentFlow = new CreateStudentInFamily(
         $transactions,
         new GetFamily($familyRepository),
-        $createPerson,
-        $createStudent,
-        new AddStudentToFamily($familyRepository, $studentRepository),
+        new \App\Family\Application\Orchestration\StudentFamilyCoordinator(
+            $createPerson,
+            new \App\Person\Application\GetPerson($personRepository),
+            $createStudent,
+            new \App\Student\Application\GetStudent($studentRepository),
+            new AddStudentToFamily($familyRepository, $studentRepository),
+        ),
     );
     $studentFlowOutput = $studentFlow->handle(
         new CreateStudentInFamilyInput(
@@ -6280,9 +7317,13 @@ try {
     $studentRollbackFlow = new CreateStudentInFamily(
         $transactions,
         new GetFamily($failingFamilyRepository),
-        $createPerson,
-        $createStudent,
-        new AddStudentToFamily($failingFamilyRepository, $studentRepository),
+        new \App\Family\Application\Orchestration\StudentFamilyCoordinator(
+            $createPerson,
+            new \App\Person\Application\GetPerson($personRepository),
+            $createStudent,
+            new \App\Student\Application\GetStudent($studentRepository),
+            new AddStudentToFamily($failingFamilyRepository, $studentRepository),
+        ),
     );
     $familyStateBeforeStudentRollback = mariaDbFamilyPhysicalState(
         $identity,
@@ -8158,6 +9199,7 @@ try {
         $submissionFamilyId,
     );
     runMariaDbEnrollmentReportingScenario($managerA, $connectionA);
+    runMariaDbBulkImportApplicationScenario($managerA, $connectionA);
 
     echo 'MariaDB version: ' . $mariaDbVersion . "\n";
     echo 'Physical inventory: ' . count($actualTables) . ' tables including migrations metadata; '
@@ -8188,6 +9230,7 @@ try {
     echo "PASS MySQL Family delivery active catalogs and Application persistence\n";
     echo "PASS MySQL E015 mandatory Representative Person role User Family atomic commit hashing and status\n";
     echo "PASS MySQL E015 Representative password duplicate-login and post-User Family rollback leave no orphans\n";
+    echo "PASS MySQL E015 Phase 6 Preview Apply AUTO_INCREMENT UTC idempotency conflict rollback and password retention\n";
     echo "PASS MySQL Representative personal email invariant and work-email non-substitution\n";
     echo "PASS MySQL composite Student Person role membership atomic commit and rollback\n";
     echo "PASS MySQL Representative User email-gated AUTO_INCREMENT provisioning lookup hashing and physical uniqueness\n";
