@@ -5,6 +5,7 @@ declare(strict_types=1);
 $modules = [
     ['href' => '/persons', 'icon' => 'bi-person-vcard', 'title' => 'Personas', 'description' => 'Crear y mantener la información de personas.'],
     ['href' => '/families', 'icon' => 'bi-people', 'title' => 'Familias', 'description' => 'Gestionar familias y sus integrantes.'],
+    ['href' => '/admin/bulk-import', 'icon' => 'bi-file-earmark-arrow-up', 'title' => 'Importación masiva', 'description' => 'Validar y aplicar la plantilla oficial de familias.'],
     ['href' => '/institutional-acknowledgements', 'icon' => 'bi-file-earmark-check', 'title' => 'Confirmaciones institucionales', 'description' => 'Configurar confirmaciones por período académico.'],
     ['href' => '/enrollments', 'icon' => 'bi-journal-check', 'title' => 'Matrículas', 'description' => 'Revisar y administrar matrículas enviadas.'],
     ['href' => '/reports/enrollments', 'icon' => 'bi-bar-chart', 'title' => 'Reportes', 'description' => 'Consultar los reportes básicos de matrícula.'],

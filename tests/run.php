@@ -68,6 +68,7 @@ require __DIR__ . '/UiUxClosureTest.php';
 require __DIR__ . '/BulkImportXlsxFixtureFactory.php';
 require __DIR__ . '/BulkImportXlsxInfrastructureTest.php';
 require __DIR__ . '/BulkImportApplicationTest.php';
+require __DIR__ . '/BulkImportDeliveryTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
@@ -128,6 +129,7 @@ require __DIR__ . '/SchemaBaselineTest.php';
 \Tests\registerUiUxClosureTests($runner);
 \Tests\registerBulkImportXlsxInfrastructureTests($runner);
 \Tests\registerBulkImportApplicationTests($runner);
+\Tests\registerBulkImportDeliveryTests($runner);
 \Tests\registerSchemaBaselineTests($runner);
 
 ob_start();

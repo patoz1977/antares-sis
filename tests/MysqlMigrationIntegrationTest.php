@@ -4553,6 +4553,531 @@ function runMariaDbBulkImportApplicationScenario(
         )->fetchColumn() === 0,
         'E015 Phase 6 missing-password conflict left partial physical data.'
     );
+
+    runMariaDbBulkImportDeliveryScenario($manager, $connection);
+}
+
+function runMariaDbBulkImportDeliveryScenario(
+    ConnectionManager $manager,
+    PDO $connection,
+): void {
+    $persons = new PdoPersonRepository($manager);
+    $representatives = new PdoRepresentativeRepository($manager);
+    $users = new PdoUserRepository($manager);
+    $students = new PdoStudentRepository($manager);
+    $families = new PdoFamilyRepository($manager);
+    $policy = new RepresentativePasswordPolicy();
+    $today = new DateTimeImmutable('2026-09-02', new DateTimeZone('UTC'));
+    $reader = new \App\BulkImport\Infrastructure\Xlsx\OpenSpoutBulkImportWorkbookReader(
+        new \App\BulkImport\Infrastructure\Xlsx\XlsxContainerPreflightInspector(),
+        new \App\BulkImport\Application\ValidateBulkImportWorkbook($policy, $today),
+    );
+    $matcher = new \App\BulkImport\Application\Planning\BulkImportMatcher(
+        new \App\BulkImport\Infrastructure\Persistence\PdoBulkImportCatalogResolver($manager),
+        $persons,
+        $representatives,
+        $users,
+        $students,
+        $families,
+        $policy,
+    );
+    $createPerson = new CreatePerson($persons);
+    $getPerson = new \App\Person\Application\GetPerson($persons);
+    $createRepresentative = new CreateRepresentative($persons, $representatives);
+    $hasher = new NativePasswordHasher();
+    $createUser = new CreateRepresentativeUser(
+        $representatives,
+        $persons,
+        $users,
+        $hasher,
+        $policy,
+    );
+    $createAccess = new CreateRepresentativeAccess(
+        $createPerson,
+        $getPerson,
+        $createRepresentative,
+        $createUser,
+    );
+    $relationshipTypes = new PdoRelationshipTypeLookup($manager);
+    $createFamily = new CreateFamily(
+        $families,
+        $representatives,
+        $relationshipTypes,
+        new \App\Family\Infrastructure\Generation\RandomFamilyCodeGenerator(),
+    );
+    $studentCoordinator = new \App\Family\Application\Orchestration\StudentFamilyCoordinator(
+        $createPerson,
+        $getPerson,
+        new CreateStudent($persons, $students),
+        new \App\Student\Application\GetStudent($students),
+        new AddStudentToFamily($families, $students),
+    );
+    $apply = new \App\BulkImport\Application\ApplyBulkImport(
+        $reader,
+        $matcher,
+        new PdoTransactionRunner($manager),
+        $createAccess,
+        $createRepresentative,
+        $createUser,
+        $createFamily,
+        new \App\Family\Application\AddRepresentativeToFamily(
+            $families,
+            $representatives,
+            $relationshipTypes,
+        ),
+        $studentCoordinator,
+    );
+    $preview = new \App\BulkImport\Application\PreviewBulkImport($reader, $matcher);
+
+    $session = new \Tests\BulkImportDeliverySessionManager(1);
+    $clock = new \Tests\BulkImportDeliveryClock(
+        new DateTimeImmutable('2026-09-02 12:00:00', new DateTimeZone('UTC')),
+    );
+    $deliverySession = new \App\BulkImport\Application\Delivery\BulkImportDeliverySession(
+        $session,
+        $clock,
+    );
+    $csrf = new \App\IdentityAccess\Infrastructure\Session\SessionCsrfTokenManager($session);
+    $temporaryDirectory = sys_get_temp_dir() . DIRECTORY_SEPARATOR
+        . 'antares-e015-phase7-' . bin2hex(random_bytes(8));
+    $temporaryFiles = new \App\BulkImport\Infrastructure\Filesystem\LocalBulkImportTemporaryFileStore(
+        $temporaryDirectory,
+        dirname(__DIR__) . DIRECTORY_SEPARATOR . 'public',
+        static fn (string $source, string $destination): bool => copy($source, $destination),
+    );
+    $controller = new \App\BulkImport\Http\BulkImportController(
+        $preview,
+        $temporaryFiles,
+        $deliverySession,
+        new \App\BulkImport\Http\BulkImportErrorCsvWriter(),
+        $csrf,
+        $session,
+        new PdoPersonFormOptionsProvider($manager),
+        new PdoFamilyFormOptionsProvider($manager),
+    );
+    $applyController = new \App\BulkImport\Http\BulkImportApplyController(
+        $apply,
+        $temporaryFiles,
+        $deliverySession,
+        $csrf,
+        $session,
+        $clock,
+    );
+    $templateController = new \App\BulkImport\Http\BulkImportTemplateController(
+        new \App\BulkImport\Http\BulkImportTemplateFile(
+            dirname(__DIR__) . '/resources/templates/bulk-import/e015-family-import-v1.xlsx',
+        ),
+    );
+
+    $trackedTables = [
+        'persons', 'representatives', 'users', 'students', 'families',
+        'family_representatives', 'family_students',
+    ];
+    $counts = static function () use ($connection, $trackedTables): array {
+        $result = [];
+        foreach ($trackedTables as $table) {
+            $result[$table] = (int) $connection->query(
+                sprintf('SELECT COUNT(*) FROM %s', $table),
+            )->fetchColumn();
+        }
+
+        return $result;
+    };
+    $temporaryCount = static fn (): int => count(glob($temporaryDirectory . '/*.xlsx') ?: []);
+    $request = static function (
+        string $method,
+        string $uri,
+        array $post = [],
+        array $files = [],
+    ): void {
+        $_SERVER['REQUEST_METHOD'] = $method;
+        $_SERVER['REQUEST_URI'] = $uri;
+        $_GET = $method === 'GET' ? $post : [];
+        $_POST = $method === 'POST' ? $post : [];
+        $_FILES = $files;
+        http_response_code(200);
+    };
+    $upload = static fn (string $path): array => ['workbook' => [
+        'name' => 'familias.xlsx',
+        'type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'tmp_name' => $path,
+        'error' => UPLOAD_ERR_OK,
+        'size' => (int) filesize($path),
+    ]];
+    $fixtureFactory = new \Tests\BulkImportXlsxFixtureFactory();
+    $workbook = static function (
+        string $fileName,
+        string $familyCode,
+        string $displayName,
+        string $representativeDocument,
+        string $studentCode,
+        string $password,
+    ) use ($fixtureFactory): string {
+        $sheets = $fixtureFactory->validSheets();
+        $sheets['Familias'][1][0] = $familyCode;
+        $sheets['Familias'][1][1] = $displayName;
+        $sheets['Representantes'][1][0] = $familyCode;
+        $sheets['Representantes'][1][6] = 'TEST';
+        $sheets['Representantes'][1][7] = 'TEST';
+        $sheets['Representantes'][1][8] = $representativeDocument;
+        $sheets['Representantes'][1][9] = strtolower($familyCode) . '@example.test';
+        $sheets['Representantes'][1][10] = 'DISPOSABLE_TEST_RELATIONSHIP';
+        $sheets['Representantes'][1][13] = $password;
+        $sheets['Estudiantes'][1][0] = $familyCode;
+        $sheets['Estudiantes'][1][6] = 'TEST';
+        $sheets['Estudiantes'][1][9] = $studentCode;
+
+        return $fixtureFactory->writeWorkbook($fileName, $sheets);
+    };
+
+    $password = 'E015-SENTINEL-SECRET-9271!';
+    $source = $workbook(
+        'phase7-success.xlsx',
+        'F92700001',
+        'Familia Phase 7',
+        'E015-P7-REP-001',
+        'E015-P7-STUDENT-001',
+        $password,
+    );
+    set_error_handler(static function (int $severity, string $message): bool {
+        return $severity === E_WARNING
+            && str_starts_with($message, 'Cannot modify header information');
+    });
+
+    try {
+        $before = $counts();
+        $request('GET', '/admin/bulk-import');
+        $index = $controller->index();
+        assertIntegration(
+            http_response_code() === 200
+            && str_contains($index, 'Importación masiva')
+            && str_contains($index, 'DISPOSABLE_TEST_RELATIONSHIP'),
+            'E015 Phase 7 MariaDB administrative page did not expose the safe active catalog help.'
+        );
+        $request('GET', '/admin/bulk-import/template');
+        $template = $templateController->download();
+        assertIntegration(
+            http_response_code() === 200
+            && $template !== ''
+            && str_starts_with($template, 'PK'),
+            'E015 Phase 7 MariaDB template download did not return the fixed XLSX artifact.'
+        );
+
+        $request('POST', '/admin/bulk-import/preview', ['_csrf_token' => 'invalid'], $upload($source));
+        $invalidCsrf = $controller->preview();
+        assertIntegration(
+            http_response_code() === 403
+            && str_contains($invalidCsrf, 'no pudo verificarse')
+            && $counts() === $before
+            && $temporaryCount() === 0,
+            'E015 Phase 7 MariaDB invalid Preview CSRF changed state or left a temporary file.'
+        );
+
+        $previewCsrf = $csrf->token();
+        $request('POST', '/admin/bulk-import/preview', ['_csrf_token' => $previewCsrf], $upload($source));
+        $previewHtml = $controller->preview();
+        preg_match('/name="preview_token" value="([a-f0-9]{64})"/', $previewHtml, $tokenMatch);
+        preg_match('/name="_csrf_token" value="([a-f0-9]{64})"/', $previewHtml, $csrfMatch);
+        $token = $tokenMatch[1] ?? '';
+        $applyCsrf = $csrfMatch[1] ?? '';
+        $serverState = $session->get('_e015_bulk_import_preview');
+        assertIntegration(
+            http_response_code() === 200
+            && strlen($token) === 64
+            && strlen($applyCsrf) === 64
+            && is_array($serverState)
+            && ($serverState['token'] ?? null) === $token
+            && ($serverState['actor_id'] ?? null) === 1
+            && ($serverState['expires_at'] ?? 0) - ($serverState['issued_at'] ?? 0) === 900
+            && ($serverState['digest'] ?? null) === hash_file('sha256', $source)
+            && str_contains($previewHtml, 'Nuevo')
+            && !str_contains($previewHtml, $password)
+            && !str_contains($previewHtml, 'E015-P7-REP-001')
+            && !str_contains($previewHtml, (string) hash_file('sha256', $source))
+            && !str_contains($previewHtml, $source)
+            && $counts() === $before
+            && $temporaryCount() === 0,
+            'E015 Phase 7 MariaDB Preview was unsafe, stateful, non-expiring or left a temporary file.'
+        );
+
+        $request(
+            'POST',
+            '/admin/bulk-import/apply',
+            ['_csrf_token' => $applyCsrf, 'preview_token' => $token],
+            $upload($source),
+        );
+        assertIntegration(
+            $applyController->apply() === ''
+            && http_response_code() === 303
+            && $temporaryCount() === 0,
+            'E015 Phase 7 MariaDB Apply did not use PRG or clean its exact reupload.'
+        );
+        $afterFirst = $counts();
+        assertIntegration(
+            $afterFirst['persons'] === $before['persons'] + 2
+            && $afterFirst['representatives'] === $before['representatives'] + 1
+            && $afterFirst['users'] === $before['users'] + 1
+            && $afterFirst['students'] === $before['students'] + 1
+            && $afterFirst['families'] === $before['families'] + 1
+            && $afterFirst['family_representatives'] === $before['family_representatives'] + 1
+            && $afterFirst['family_students'] === $before['family_students'] + 1,
+            'E015 Phase 7 MariaDB Apply did not persist the exact Family Aggregate.'
+        );
+        $physical = $connection->query(
+            "SELECT f.id AS family_id, r.id AS representative_id, u.id AS user_id, "
+            . "u.password_hash, s.id AS student_id, fr.id AS representative_membership_id, "
+            . "fs.id AS student_membership_id, DATE_FORMAT(fr.started_at, '%Y-%m-%d %H:%i:%s') AS representative_started_at, "
+            . "DATE_FORMAT(fs.started_at, '%Y-%m-%d %H:%i:%s') AS student_started_at "
+            . "FROM families f "
+            . "INNER JOIN family_representatives fr ON fr.family_id = f.id AND fr.ended_at IS NULL "
+            . "INNER JOIN representatives r ON r.id = fr.representative_id "
+            . "INNER JOIN persons p ON p.id = r.person_id "
+            . "INNER JOIN users u ON u.person_id = p.id "
+            . "INNER JOIN family_students fs ON fs.family_id = f.id AND fs.ended_at IS NULL "
+            . "INNER JOIN students s ON s.id = fs.student_id "
+            . "WHERE f.family_code = 'F92700001'"
+        )->fetch(PDO::FETCH_ASSOC);
+        assertIntegration(
+            $physical !== false
+            && (int) $physical['family_id'] > 0
+            && (int) $physical['representative_id'] > 0
+            && (int) $physical['user_id'] > 0
+            && (int) $physical['student_id'] > 0
+            && (int) $physical['representative_membership_id'] > 0
+            && (int) $physical['student_membership_id'] > 0
+            && $physical['representative_started_at'] === '2026-08-01 00:00:00'
+            && $physical['student_started_at'] === '2026-08-01 00:00:00'
+            && $physical['password_hash'] !== $password
+            && $hasher->verify($password, (string) $physical['password_hash']),
+            'E015 Phase 7 MariaDB physical persistence AUTO_INCREMENT UTC or password hashing failed.'
+        );
+        $originalHash = (string) $physical['password_hash'];
+
+        $request('GET', '/admin/bulk-import/result');
+        $resultHtml = $controller->result();
+        assertIntegration(
+            http_response_code() === 200
+            && str_contains($resultHtml, 'F92700001')
+            && str_contains($resultHtml, 'Aplicado')
+            && !str_contains($resultHtml, $password),
+            'E015 Phase 7 MariaDB result did not expose only the safe Family outcome.'
+        );
+        $request('GET', '/admin/bulk-import/errors.csv');
+        $csv = $controller->errorsCsv();
+        assertIntegration(
+            http_response_code() === 200
+            && str_starts_with($csv, "category,sheet,row,field,message\r\n")
+            && !str_contains($csv, $password),
+            'E015 Phase 7 MariaDB CSV report was unavailable or unsafe.'
+        );
+
+        $replayBefore = $counts();
+        $request(
+            'POST',
+            '/admin/bulk-import/apply',
+            ['_csrf_token' => $csrf->token(), 'preview_token' => $token],
+            $upload($source),
+        );
+        $applyController->apply();
+        $request('GET', '/admin/bulk-import/result');
+        $replayResult = $controller->result();
+        assertIntegration(
+            http_response_code() === 200
+            && str_contains($replayResult, 'La vista previa ya no es válida')
+            && $counts() === $replayBefore
+            && $temporaryCount() === 0,
+            'E015 Phase 7 MariaDB consumed token was replayable or changed physical state.'
+        );
+
+        $request('POST', '/admin/bulk-import/preview', ['_csrf_token' => $csrf->token()], $upload($source));
+        $idempotentPreview = $controller->preview();
+        preg_match('/name="preview_token" value="([a-f0-9]{64})"/', $idempotentPreview, $tokenMatch);
+        preg_match('/name="_csrf_token" value="([a-f0-9]{64})"/', $idempotentPreview, $csrfMatch);
+        assertIntegration(
+            str_contains($idempotentPreview, 'Ya existe')
+            && strlen($tokenMatch[1] ?? '') === 64,
+            'E015 Phase 7 MariaDB idempotent Preview did not classify ALREADY_EXISTS.'
+        );
+        $request(
+            'POST',
+            '/admin/bulk-import/apply',
+            ['_csrf_token' => $csrfMatch[1] ?? '', 'preview_token' => $tokenMatch[1] ?? ''],
+            $upload($source),
+        );
+        $applyController->apply();
+        $request('GET', '/admin/bulk-import/result');
+        $idempotentResult = $controller->result();
+        $currentHash = (string) $connection->query(
+            "SELECT u.password_hash FROM users u INNER JOIN persons p ON p.id = u.person_id "
+            . "WHERE p.document_number = 'E015-P7-REP-001'"
+        )->fetchColumn();
+        assertIntegration(
+            str_contains($idempotentResult, 'Sin cambios')
+            && $counts() === $afterFirst
+            && $currentHash === $originalHash
+            && $temporaryCount() === 0,
+            'E015 Phase 7 MariaDB exact HTTP reimport duplicated rows or replaced the password.'
+        );
+
+        $conflictSource = $workbook(
+            'phase7-conflict.xlsx',
+            'F92700001',
+            'Nombre incompatible',
+            'E015-P7-REP-001',
+            'E015-P7-STUDENT-001',
+            $password,
+        );
+        $request('POST', '/admin/bulk-import/preview', ['_csrf_token' => $csrf->token()], $upload($conflictSource));
+        $conflictPreview = $controller->preview();
+        preg_match('/name="preview_token" value="([a-f0-9]{64})"/', $conflictPreview, $tokenMatch);
+        preg_match('/name="_csrf_token" value="([a-f0-9]{64})"/', $conflictPreview, $csrfMatch);
+        assertIntegration(
+            str_contains($conflictPreview, 'Conflicto')
+            && !str_contains($conflictPreview, $password)
+            && strlen($tokenMatch[1] ?? '') === 64,
+            'E015 Phase 7 MariaDB conflict Preview was missing unsafe or not applicable through Phase 6.'
+        );
+        $conflictBefore = $counts();
+        $request(
+            'POST',
+            '/admin/bulk-import/apply',
+            ['_csrf_token' => $csrfMatch[1] ?? '', 'preview_token' => $tokenMatch[1] ?? ''],
+            $upload($conflictSource),
+        );
+        $applyController->apply();
+        $request('GET', '/admin/bulk-import/result');
+        $conflictResult = $controller->result();
+        assertIntegration(
+            str_contains($conflictResult, 'Conflicto')
+            && $counts() === $conflictBefore
+            && $temporaryCount() === 0,
+            'E015 Phase 7 MariaDB conflict Apply wrote partial state or exposed an unsafe result.'
+        );
+
+        $concurrentSource = $workbook(
+            'phase7-concurrent.xlsx',
+            'F92700002',
+            'Familia concurrente',
+            'E015-P7-REP-002',
+            'E015-P7-STUDENT-002',
+            'ClaveConcurrente9271!',
+        );
+        $request('POST', '/admin/bulk-import/preview', ['_csrf_token' => $csrf->token()], $upload($concurrentSource));
+        $concurrentPreview = $controller->preview();
+        preg_match('/name="preview_token" value="([a-f0-9]{64})"/', $concurrentPreview, $tokenMatch);
+        preg_match('/name="_csrf_token" value="([a-f0-9]{64})"/', $concurrentPreview, $csrfMatch);
+        assertIntegration(
+            str_contains($concurrentPreview, 'Nuevo')
+            && strlen($tokenMatch[1] ?? '') === 64,
+            'E015 Phase 7 MariaDB concurrent-change fixture did not begin as NEW.'
+        );
+        $activeStatusId = (int) $connection->query(
+            "SELECT s.id FROM statuses s INNER JOIN status_types st ON st.id = s.status_type_id "
+            . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE'"
+        )->fetchColumn();
+        $insertConcurrent = $connection->prepare(
+            'INSERT INTO families (family_code, display_name, status_id) '
+            . 'VALUES (:familyCode, :displayName, :statusId)'
+        );
+        $insertConcurrent->execute([
+            ':familyCode' => 'F92700002',
+            ':displayName' => 'Cambio concurrente',
+            ':statusId' => $activeStatusId,
+        ]);
+        $concurrentFamilyId = (int) $connection->lastInsertId();
+        $relationshipTypeId = (int) $connection->query(
+            "SELECT id FROM relationship_types "
+            . "WHERE code = 'DISPOSABLE_TEST_RELATIONSHIP'"
+        )->fetchColumn();
+        $insertConcurrentMembership = $connection->prepare(
+            'INSERT INTO family_representatives '
+            . '(family_id, representative_id, relationship_type_id, is_primary, started_at) '
+            . 'VALUES (:familyId, :representativeId, :relationshipTypeId, TRUE, :startedAt)'
+        );
+        $insertConcurrentMembership->execute([
+            ':familyId' => $concurrentFamilyId,
+            ':representativeId' => (int) $physical['representative_id'],
+            ':relationshipTypeId' => $relationshipTypeId,
+            ':startedAt' => '2026-08-15 00:00:00',
+        ]);
+        $afterConcurrentWrite = $counts();
+        $request(
+            'POST',
+            '/admin/bulk-import/apply',
+            ['_csrf_token' => $csrfMatch[1] ?? '', 'preview_token' => $tokenMatch[1] ?? ''],
+            $upload($concurrentSource),
+        );
+        $concurrentApplyResponse = $applyController->apply();
+        $concurrentApplyStatus = http_response_code();
+        $concurrentStoredResult = $session->get('_e015_bulk_import_result');
+        $request('GET', '/admin/bulk-import/result');
+        $concurrentResult = $controller->result();
+        $concurrentCounts = $counts();
+        $concurrentPersonCount = (int) $connection->query(
+            "SELECT COUNT(*) FROM persons WHERE document_number = 'E015-P7-REP-002'"
+        )->fetchColumn();
+        $concurrentTemporaryCount = $temporaryCount();
+        assertIntegration(
+            str_contains($concurrentResult, 'Conflicto')
+            && $concurrentCounts === $afterConcurrentWrite
+            && $concurrentPersonCount === 0
+            && $concurrentTemporaryCount === 0,
+            sprintf(
+                'E015 Phase 7 MariaDB concurrent-change mismatch: safe_conflict=%s; counts_equal=%s; '
+                . 'representative_person_count=%d; temporary_count=%d; result=%s',
+                str_contains($concurrentResult, 'Conflicto') ? 'true' : 'false',
+                $concurrentCounts === $afterConcurrentWrite ? 'true' : 'false',
+                $concurrentPersonCount,
+                $concurrentTemporaryCount,
+                diagnosticValue(sprintf(
+                    'apply_status=%d; apply_response=%s; state=%s; html_tail=%s',
+                    $concurrentApplyStatus,
+                    $concurrentApplyResponse,
+                    json_encode($concurrentStoredResult, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE),
+                    substr((string) preg_replace('/\s+/', ' ', trim(strip_tags($concurrentResult))), -1000),
+                )),
+            )
+        );
+
+        $digestSource = $workbook(
+            'phase7-digest.xlsx',
+            'F92700003',
+            'Familia digest',
+            'E015-P7-REP-003',
+            'E015-P7-STUDENT-003',
+            'ClaveDigest9271!',
+        );
+        $request('POST', '/admin/bulk-import/preview', ['_csrf_token' => $csrf->token()], $upload($digestSource));
+        $digestPreview = $controller->preview();
+        preg_match('/name="preview_token" value="([a-f0-9]{64})"/', $digestPreview, $tokenMatch);
+        preg_match('/name="_csrf_token" value="([a-f0-9]{64})"/', $digestPreview, $csrfMatch);
+        $digestBefore = $counts();
+        $request(
+            'POST',
+            '/admin/bulk-import/apply',
+            ['_csrf_token' => $csrfMatch[1] ?? '', 'preview_token' => $tokenMatch[1] ?? ''],
+            $upload($source),
+        );
+        $applyController->apply();
+        $request('GET', '/admin/bulk-import/result');
+        $digestResult = $controller->result();
+        assertIntegration(
+            str_contains($digestResult, 'El archivo no coincide')
+            && $counts() === $digestBefore
+            && $temporaryCount() === 0,
+            'E015 Phase 7 MariaDB digest mismatch wrote state or retained the reupload.'
+        );
+    } finally {
+        restore_error_handler();
+        foreach (glob($temporaryDirectory . '/*.xlsx') ?: [] as $temporaryPath) {
+            @unlink($temporaryPath);
+        }
+        if (is_dir($temporaryDirectory)) {
+            @rmdir($temporaryDirectory);
+        }
+        unset($fixtureFactory);
+        gc_collect_cycles();
+    }
 }
 
 $requiredNonEmptyEnvironment = [
@@ -9231,6 +9756,7 @@ try {
     echo "PASS MySQL E015 mandatory Representative Person role User Family atomic commit hashing and status\n";
     echo "PASS MySQL E015 Representative password duplicate-login and post-User Family rollback leave no orphans\n";
     echo "PASS MySQL E015 Phase 6 Preview Apply AUTO_INCREMENT UTC idempotency conflict rollback and password retention\n";
+    echo "PASS MySQL E015 Phase 7 HTTP session template Preview exact reupload Apply PRG result CSV conflict concurrency and cleanup\n";
     echo "PASS MySQL Representative personal email invariant and work-email non-substitution\n";
     echo "PASS MySQL composite Student Person role membership atomic commit and rollback\n";
     echo "PASS MySQL Representative User email-gated AUTO_INCREMENT provisioning lookup hashing and physical uniqueness\n";
