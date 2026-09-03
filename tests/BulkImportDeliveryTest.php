@@ -413,6 +413,119 @@ function registerBulkImportDeliveryTests(TestRunner $runner): void
         assertSameValue(0, preg_match('/<script>.*alert/s', $html));
     });
 
+    $runner->add('E015 Phase 8 missing CSRF rejects Preview and Apply without writes or retained files', function (): void {
+        $fixture = bulkImportDeliveryFixture();
+        $source = bulkImportDeliverySource('phase8-csrf-bytes');
+        try {
+            bulkImportDeliveryRequest('POST', '/admin/bulk-import/preview', [], bulkImportUpload($source));
+            $previewFailure = $fixture['controller']->preview();
+            assertSameValue(403, http_response_code());
+            deliveryAssertContains('no pudo verificarse', $previewFailure);
+            assertSameValue(0, $fixture['temporary']->stores);
+            assertSameValue(0, $fixture['environment']->persons->saveCalls());
+
+            bulkImportDeliveryRequest('POST', '/admin/bulk-import/preview', [
+                '_csrf_token' => 'delivery-csrf',
+            ], bulkImportUpload($source));
+            $preview = $fixture['controller']->preview();
+            preg_match('/name="preview_token" value="([a-f0-9]{64})"/', $preview, $matches);
+            $token = $matches[1] ?? '';
+            assertSameValue(64, strlen($token));
+
+            bulkImportDeliveryRequest('POST', '/admin/bulk-import/apply', [
+                'preview_token' => $token,
+            ], bulkImportUpload($source));
+            $applyFailure = $fixture['applyController']->apply();
+            assertSameValue(403, http_response_code());
+            deliveryAssertContains('no pudo verificarse', $applyFailure);
+            assertSameValue([], $fixture['temporary']->active);
+            assertSameValue(0, $fixture['environment']->persons->saveCalls());
+
+            bulkImportDeliveryRequest('POST', '/admin/bulk-import/apply', [
+                '_csrf_token' => 'delivery-csrf',
+                'preview_token' => $token,
+            ], bulkImportUpload($source));
+            assertSameValue('', $fixture['applyController']->apply());
+            assertSameValue(303, http_response_code());
+            assertSameValue([], $fixture['temporary']->active);
+            assertSameValue(2, $fixture['environment']->persons->saveCalls());
+        } finally {
+            unlink($source);
+        }
+    });
+
+    $runner->add('E015 Phase 8 concurrent Apply consumes its grant and cleans the exact reupload', function (): void {
+        $transactions = new E015ConcurrentChangeTransactionRunner();
+        $fixture = bulkImportDeliveryFixture($transactions);
+        $source = bulkImportDeliverySource('phase8-concurrent-bytes');
+        try {
+            bulkImportDeliveryRequest('POST', '/admin/bulk-import/preview', [
+                '_csrf_token' => 'delivery-csrf',
+            ], bulkImportUpload($source));
+            $preview = $fixture['controller']->preview();
+            preg_match('/name="preview_token" value="([a-f0-9]{64})"/', $preview, $matches);
+            $token = $matches[1] ?? '';
+
+            bulkImportDeliveryRequest('POST', '/admin/bulk-import/apply', [
+                '_csrf_token' => 'delivery-csrf',
+                'preview_token' => $token,
+            ], bulkImportUpload($source));
+            assertSameValue('', $fixture['applyController']->apply());
+            assertSameValue(303, http_response_code());
+            assertSameValue(1, $transactions->calls());
+            assertSameValue([], $fixture['temporary']->active);
+            assertSameValue(0, $fixture['environment']->persons->saveCalls());
+
+            bulkImportDeliveryRequest('GET', '/admin/bulk-import/result');
+            $result = $fixture['controller']->result();
+            deliveryAssertContains('cambió concurrentemente', $result);
+            assertSameValue(false, str_contains($result, 'Synthetic deadlock detail'));
+
+            bulkImportDeliveryRequest('POST', '/admin/bulk-import/apply', [
+                '_csrf_token' => 'delivery-csrf',
+                'preview_token' => $token,
+            ], bulkImportUpload($source));
+            $fixture['applyController']->apply();
+            assertSameValue(1, $transactions->calls());
+            assertSameValue([], $fixture['temporary']->active);
+        } finally {
+            unlink($source);
+        }
+    });
+
+    $runner->add('E015 Phase 8 result remains escaped responsive accessible and JavaScript independent', function (): void {
+        $payload = '<script>alert("phase8")</script>';
+        $html = View::render('bulk-import.result', [
+            'title' => 'Resultado de importación masiva',
+            'hasReport' => true,
+            'result' => [
+                'families' => [[
+                    'family_code' => $payload,
+                    'classification' => 'CONFLICT',
+                    'label' => $payload,
+                    'message' => $payload,
+                ]],
+                'issues' => [[
+                    'category' => $payload,
+                    'sheet' => $payload,
+                    'row' => 2,
+                    'field' => $payload,
+                    'message' => $payload,
+                ]],
+            ],
+        ]);
+
+        deliveryAssertContains('&lt;script&gt;alert(&quot;phase8&quot;)&lt;/script&gt;', $html);
+        foreach ([
+            '<h1', '<caption>Resultado por familia.</caption>', '<caption>Observaciones seguras.</caption>',
+            '<th scope="col">Familia</th>', '<th scope="col">Mensaje</th>', 'table-responsive',
+            'Descargar errores CSV',
+        ] as $expected) {
+            deliveryAssertContains($expected, $html);
+        }
+        assertSameValue(false, str_contains($html, $payload));
+    });
+
     $runner->add('E015 Phase 7 Delivery remains thin schema-free and excludes later infrastructure', function (): void {
         $root = dirname(__DIR__);
         $source = '';
@@ -443,9 +556,9 @@ function registerBulkImportDeliveryTests(TestRunner $runner): void
 }
 
 /** @return array<string, mixed> */
-function bulkImportDeliveryFixture(): array
+function bulkImportDeliveryFixture(?\Core\Application\TransactionRunner $transactions = null): array
 {
-    $environment = new BulkImportApplicationEnvironment(e015Phase6Workbook());
+    $environment = new BulkImportApplicationEnvironment(e015Phase6Workbook(), $transactions);
     $session = new FakeSessionManager();
     $session->userId = 11;
     $clock = new BulkImportDeliveryClock(new DateTimeImmutable('2026-09-02 12:00:00+00:00'));
