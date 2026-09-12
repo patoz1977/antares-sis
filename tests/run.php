@@ -9,6 +9,7 @@ use Tests\Support\TestRunner;
 $runner = new TestRunner();
 
 require __DIR__ . '/IdentityAccessTest.php';
+require __DIR__ . '/ProductionErrorHandlingTest.php';
 require __DIR__ . '/RepresentativeUserApplicationTest.php';
 require __DIR__ . '/RepresentativeUserPersistenceTest.php';
 require __DIR__ . '/RepresentativeUserSyncTest.php';
@@ -72,6 +73,7 @@ require __DIR__ . '/BulkImportDeliveryTest.php';
 require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
+\Tests\registerProductionErrorHandlingTests($runner);
 \Tests\registerRepresentativeUserApplicationTests($runner);
 \Tests\registerRepresentativeUserPersistenceTests($runner);
 \Tests\registerRepresentativeUserSyncTests($runner);

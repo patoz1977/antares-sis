@@ -112,11 +112,11 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
 
         try {
             $branding = WhiteLabelBranding::fromConfig([
-                'app_logo_path' => '/branding/logo.svg',
-                'app_favicon_path' => '/branding/favicon.ico',
+                'app_logo_path' => '/institution/logo.svg',
+                'app_favicon_path' => '/institution/favicon.ico',
             ], $publicDirectory);
-            assertSameValue('/branding/logo.svg', $branding->logoPath);
-            assertSameValue('/branding/favicon.ico', $branding->faviconPath);
+            assertSameValue('/institution/logo.svg', $branding->logoPath);
+            assertSameValue('/institution/favicon.ico', $branding->faviconPath);
 
             View::setSharedDataResolver(static fn (): array => [
                 'shell' => new ShellViewData($branding, 'public', [], null),
@@ -130,8 +130,8 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
                 View::setSharedDataResolver(null);
             }
 
-            deliveryAssertContains('src="/branding/logo.svg"', $html);
-            deliveryAssertContains('<link rel="icon" href="/branding/favicon.ico">', $html);
+            deliveryAssertContains('src="/institution/logo.svg"', $html);
+            deliveryAssertContains('<link rel="icon" href="/institution/favicon.ico">', $html);
         } finally {
             removeWhiteLabelPublicFixture($publicDirectory);
         }
@@ -146,8 +146,8 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
             assertSameValue(null, $unconfigured->faviconPath);
 
             $branding = WhiteLabelBranding::fromConfig([
-                'app_logo_path' => '/branding/logo-no-existe.svg',
-                'app_favicon_path' => '/branding/favicon-no-existe.ico',
+                'app_logo_path' => '/institution/logo-no-existe.svg',
+                'app_favicon_path' => '/institution/favicon-no-existe.ico',
             ], $publicDirectory);
             assertSameValue(null, $branding->logoPath);
             assertSameValue(null, $branding->faviconPath);
@@ -374,7 +374,7 @@ function createWhiteLabelPublicFixture(): string
         . DIRECTORY_SEPARATOR
         . 'antares-e014-branding-'
         . bin2hex(random_bytes(8));
-    $brandingDirectory = $directory . DIRECTORY_SEPARATOR . 'branding';
+    $brandingDirectory = $directory . DIRECTORY_SEPARATOR . 'institution';
     if (!mkdir($brandingDirectory, 0700, true) && !is_dir($brandingDirectory)) {
         throw new \RuntimeException('Unable to create the White Label public fixture.');
     }
@@ -391,7 +391,7 @@ function createWhiteLabelPublicFixture(): string
 
 function removeWhiteLabelPublicFixture(string $directory): void
 {
-    $brandingDirectory = $directory . DIRECTORY_SEPARATOR . 'branding';
+    $brandingDirectory = $directory . DIRECTORY_SEPARATOR . 'institution';
     foreach (['logo.svg', 'favicon.ico'] as $file) {
         $path = $brandingDirectory . DIRECTORY_SEPARATOR . $file;
         if (is_file($path)) {

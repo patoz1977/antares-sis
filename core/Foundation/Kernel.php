@@ -18,6 +18,7 @@ class Kernel
     private array $globalMiddleware = [];
     private array $routeMiddleware = [];
     private ?Closure $middlewareResolver = null;
+    private bool $displayDiagnostics = false;
 
     public function __construct(Request $request, Router $router)
     {
@@ -41,14 +42,17 @@ class Kernel
         $this->routeMiddleware[$method][$uri][] = $middleware;
     }
 
+    public function configureDiagnostics(mixed $environment, mixed $debug): void
+    {
+        $this->displayDiagnostics = self::shouldDisplayDiagnostics($environment, $debug);
+    }
+
     public function handle(): void
     {
         try {
             $response = $this->buildPipeline()($this->request);
         } catch (Throwable $exception) {
-            $environment = (string) (getenv('APP_ENV') ?: 'production');
-
-            if (in_array($environment, ['development', 'local'], true)) {
+            if ($this->displayDiagnostics) {
                 throw $exception;
             }
 
@@ -58,6 +62,13 @@ class Kernel
         }
 
         $response->send();
+    }
+
+    public static function shouldDisplayDiagnostics(mixed $environment, mixed $debug): bool
+    {
+        return is_string($environment)
+            && in_array(strtolower(trim($environment)), ['development', 'local'], true)
+            && $debug === true;
     }
 
     private function buildPipeline(): Closure
