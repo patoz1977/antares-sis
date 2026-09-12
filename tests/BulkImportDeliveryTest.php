@@ -136,6 +136,47 @@ function registerBulkImportDeliveryTests(TestRunner $runner): void
         }
     });
 
+    $runner->add('DEPLOY-001 Bulk Import temporary storage rejects the public directory', function (): void {
+        $public = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'antares-deploy-public-' . bin2hex(random_bytes(8));
+        $temporary = $public . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'bulk-import';
+        $source = $public . '-source.xlsx';
+        if (!mkdir($public, 0700, true) && !is_dir($public)) {
+            throw new \RuntimeException('Unable to create the DEPLOY-001 public fixture.');
+        }
+        file_put_contents($source, 'PK fixture');
+        $store = new LocalBulkImportTemporaryFileStore(
+            $temporary,
+            $public,
+            static fn (string $from, string $to): bool => copy($from, $to),
+        );
+
+        try {
+            assertThrows(
+                static fn () => $store->store([
+                    'error' => UPLOAD_ERR_OK,
+                    'tmp_name' => $source,
+                    'size' => filesize($source),
+                    'name' => 'fixture.xlsx',
+                ]),
+                \App\BulkImport\Http\BulkImportUploadRejected::class,
+            );
+        } finally {
+            if (is_file($source)) {
+                unlink($source);
+            }
+            if (is_dir($temporary)) {
+                rmdir($temporary);
+            }
+            $temporaryParent = dirname($temporary);
+            if (is_dir($temporaryParent)) {
+                rmdir($temporaryParent);
+            }
+            if (is_dir($public)) {
+                rmdir($public);
+            }
+        }
+    });
+
     $runner->add('E015 Phase 7 routes navigation and template download preserve exact admin authority', function (): void {
         $routes = str_replace("\r\n", "\n", (string) file_get_contents(dirname(__DIR__) . '/routes/web.php'));
         foreach ([
