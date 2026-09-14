@@ -33,12 +33,14 @@ final readonly class ValidateBulkImportWorkbook
 
     public function __construct(
         private RepresentativePasswordPolicy $passwordPolicy,
-        private DateTimeImmutable $today,
     ) {
         $this->utc = new DateTimeZone('UTC');
     }
 
-    public function validate(RawWorkbook $rawWorkbook): WorkbookValidationResult
+    public function validate(
+        RawWorkbook $rawWorkbook,
+        DateTimeImmutable $today,
+    ): WorkbookValidationResult
     {
         $issues = new ValidationIssueCollector();
         $familiesSheet = $rawWorkbook->sheets['Familias'] ?? null;
@@ -52,8 +54,8 @@ final readonly class ValidateBulkImportWorkbook
         }
 
         $families = $this->mapFamilies($familiesSheet, $issues);
-        $representatives = $this->mapRepresentatives($representativesSheet, $issues);
-        $students = $this->mapStudents($studentsSheet, $issues);
+        $representatives = $this->mapRepresentatives($representativesSheet, $issues, $today);
+        $students = $this->mapStudents($studentsSheet, $issues, $today);
 
         $this->validateCrossSheetReferences($families, $representatives, $students, $issues);
         $this->validateDuplicates($families, $representatives, $students, $issues);
@@ -159,6 +161,7 @@ final readonly class ValidateBulkImportWorkbook
     private function mapRepresentatives(
         RawWorkbookSheet $sheet,
         ValidationIssueCollector $issues,
+        DateTimeImmutable $today,
     ): array {
         $mapped = [];
         foreach (array_slice($sheet->rows, 1) as $row) {
@@ -176,7 +179,7 @@ final readonly class ValidateBulkImportWorkbook
             $middleName = $this->text($sheet->name, $row, 2, 'middle_name', false, 100, $issues);
             $firstSurname = $this->text($sheet->name, $row, 3, 'first_surname', true, 100, $issues);
             $secondSurname = $this->text($sheet->name, $row, 4, 'second_surname', false, 100, $issues);
-            $birthDate = $this->date($sheet->name, $row, 5, 'birth_date', true, $issues);
+            $birthDate = $this->date($sheet->name, $row, 5, 'birth_date', true, $issues, $today);
             $sexCode = $this->catalogCode($sheet->name, $row, 6, 'sex_code', $issues);
             $documentTypeCode = $this->catalogCode($sheet->name, $row, 7, 'document_type_code', $issues);
             $documentNumber = $this->text($sheet->name, $row, 8, 'document_number', true, 50, $issues);
@@ -189,7 +192,7 @@ final readonly class ValidateBulkImportWorkbook
                 $issues,
             );
             $isPrimary = $this->boolean($sheet->name, $row, 11, 'is_primary', $issues);
-            $startedAt = $this->date($sheet->name, $row, 12, 'started_at', false, $issues);
+            $startedAt = $this->date($sheet->name, $row, 12, 'started_at', false, $issues, $today);
             $initialPassword = $this->password($sheet->name, $row, 13, 'initial_password', $issues);
 
             if ($issues->count() !== $before) {
@@ -238,7 +241,11 @@ final readonly class ValidateBulkImportWorkbook
     /**
      * @return list<StudentWorkbookRow>
      */
-    private function mapStudents(RawWorkbookSheet $sheet, ValidationIssueCollector $issues): array
+    private function mapStudents(
+        RawWorkbookSheet $sheet,
+        ValidationIssueCollector $issues,
+        DateTimeImmutable $today,
+    ): array
     {
         $mapped = [];
         foreach (array_slice($sheet->rows, 1) as $row) {
@@ -256,7 +263,7 @@ final readonly class ValidateBulkImportWorkbook
             $middleName = $this->text($sheet->name, $row, 2, 'middle_name', false, 100, $issues);
             $firstSurname = $this->text($sheet->name, $row, 3, 'first_surname', true, 100, $issues);
             $secondSurname = $this->text($sheet->name, $row, 4, 'second_surname', false, 100, $issues);
-            $birthDate = $this->date($sheet->name, $row, 5, 'birth_date', true, $issues);
+            $birthDate = $this->date($sheet->name, $row, 5, 'birth_date', true, $issues, $today);
             $sexCode = $this->catalogCode($sheet->name, $row, 6, 'sex_code', $issues);
             $documentTypeCode = $this->optionalCatalogCode(
                 $sheet->name,
@@ -283,8 +290,8 @@ final readonly class ValidateBulkImportWorkbook
                 100,
                 $issues,
             );
-            $admissionDate = $this->date($sheet->name, $row, 10, 'admission_date', true, $issues);
-            $startedAt = $this->date($sheet->name, $row, 11, 'started_at', false, $issues);
+            $admissionDate = $this->date($sheet->name, $row, 10, 'admission_date', true, $issues, $today);
+            $startedAt = $this->date($sheet->name, $row, 11, 'started_at', false, $issues, $today);
 
             if (($documentTypeCode === null) !== ($documentNumber === null)) {
                 $issues->add(
@@ -304,7 +311,7 @@ final readonly class ValidateBulkImportWorkbook
                 $familyCode = new FamilyCode((string) $familyCodeText);
                 $name = new PersonalName((string) $firstName, $middleName, (string) $firstSurname, $secondSurname);
                 $institutionalCode = new InstitutionalCode((string) $institutionalCodeText);
-                $admission = new AdmissionDate($admissionDate, $this->today);
+                $admission = new AdmissionDate($admissionDate, $today);
             } catch (Throwable) {
                 $issues->add(
                     BulkImportIssueCategory::ValueInvalid,
@@ -467,6 +474,7 @@ final readonly class ValidateBulkImportWorkbook
         string $field,
         bool $notFuture,
         ValidationIssueCollector $issues,
+        DateTimeImmutable $today,
     ): ?DateTimeImmutable {
         $value = $this->text($sheet, $row, $index, $field, true, 10, $issues);
         if ($value === null) {
@@ -478,7 +486,7 @@ final readonly class ValidateBulkImportWorkbook
         if ($date === false
             || $date->format('Y-m-d') !== $value
             || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))
-            || ($notFuture && $date->format('Y-m-d') > $this->today->format('Y-m-d'))) {
+            || ($notFuture && $date->format('Y-m-d') > $today->format('Y-m-d'))) {
             $issues->add(
                 BulkImportIssueCategory::ValueInvalid,
                 $sheet,

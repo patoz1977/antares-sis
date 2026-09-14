@@ -31,7 +31,7 @@ function registerBulkImportApplicationTests(TestRunner $runner): void
     $runner->add('E015 Phase 6 Preview is read-only safe password-free and classifies NEW', function (): void {
         $environment = new BulkImportApplicationEnvironment(e015Phase6Workbook());
         $before = e015Phase6SaveCounts($environment);
-        $result = $environment->preview->handle('ignored.xlsx');
+        $result = $environment->preview->handle('ignored.xlsx', e015Phase6Today());
         $safe = json_encode($result->safeOutput(), JSON_THROW_ON_ERROR);
 
         assertSameValue(1, $result->families);
@@ -114,7 +114,7 @@ function registerBulkImportApplicationTests(TestRunner $runner): void
             $equivalent->students,
         );
         $environment->reader->replace($equivalent);
-        $safe = $environment->preview->handle('ignored.xlsx');
+        $safe = $environment->preview->handle('ignored.xlsx', e015Phase6Today());
         assertSameValue(BulkImportClassification::AlreadyExists, $safe->items[1]->classification);
 
         $sexConflict = e015Phase6Workbook();
@@ -141,7 +141,7 @@ function registerBulkImportApplicationTests(TestRunner $runner): void
             $sexConflict->students,
         );
         $environment->reader->replace($sexConflict);
-        $conflict = $environment->preview->handle('ignored.xlsx');
+        $conflict = $environment->preview->handle('ignored.xlsx', e015Phase6Today());
         assertSameValue(BulkImportClassification::Conflict, $conflict->items[1]->classification);
     });
 

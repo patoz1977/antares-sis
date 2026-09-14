@@ -9,6 +9,7 @@ use App\BulkImport\Application\Dto\PreviewBulkImportResult;
 use App\BulkImport\Application\Exception\BulkImportWorkbookRejected;
 use App\BulkImport\Application\PreviewBulkImport;
 use App\Family\Http\FamilyFormOptionsProvider;
+use App\IdentityAccess\Application\Contract\Clock;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
 use App\Person\Http\PersonFormOptionsProvider;
@@ -27,6 +28,7 @@ final class BulkImportController extends Controller
         private readonly SessionManager $session,
         private readonly PersonFormOptionsProvider $personOptions,
         private readonly FamilyFormOptionsProvider $familyOptions,
+        private readonly Clock $clock,
     ) {
     }
 
@@ -68,7 +70,7 @@ final class BulkImportController extends Controller
                 throw new BulkImportUploadRejected('El archivo no pudo verificarse de forma segura.');
             }
 
-            $result = $this->preview->handle($localPath);
+            $result = $this->preview->handle($localPath, $this->clock->now());
             $safe = $result->safeOutput();
             $this->workflow->storeReport($actorId, $safe['issues']);
             $token = $result->families > 0

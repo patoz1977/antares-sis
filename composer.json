@@ -21,7 +21,8 @@
             "@php tests/run.php",
             "@php tests/HttpSessionIntegrationTest.php"
         ],
-        "test:mariadb": "@php tests/MysqlMigrationIntegrationTest.php"
+        "test:mariadb": "@php tests/MysqlMigrationIntegrationTest.php",
+        "test:deployment": "@php tests/DeploymentInstallationIntegrationTest.php"
     },
     "autoload": {
         "psr-4": {

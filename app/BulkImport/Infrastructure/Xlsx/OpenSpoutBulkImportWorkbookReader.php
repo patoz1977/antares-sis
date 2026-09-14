@@ -14,6 +14,7 @@ use App\BulkImport\Application\Dto\RawWorkbookSheet;
 use App\BulkImport\Application\Dto\WorkbookValidationResult;
 use App\BulkImport\Application\Exception\BulkImportWorkbookRejected;
 use App\BulkImport\Application\ValidateBulkImportWorkbook;
+use DateTimeImmutable;
 use DateTimeInterface;
 use OpenSpout\Common\Entity\Cell;
 use OpenSpout\Reader\XLSX\Options;
@@ -28,7 +29,7 @@ final readonly class OpenSpoutBulkImportWorkbookReader implements BulkImportWork
     ) {
     }
 
-    public function read(string $localPath): WorkbookValidationResult
+    public function read(string $localPath, DateTimeImmutable $today): WorkbookValidationResult
     {
         $this->preflightInspector->inspect($localPath);
 
@@ -83,7 +84,7 @@ final readonly class OpenSpoutBulkImportWorkbookReader implements BulkImportWork
                 $sheets[$name] = new RawWorkbookSheet($name, $rows);
             }
 
-            return $this->validator->validate(new RawWorkbook($sheets));
+            return $this->validator->validate(new RawWorkbook($sheets), $today);
         } catch (BulkImportWorkbookRejected $exception) {
             throw $exception;
         } catch (Throwable) {
