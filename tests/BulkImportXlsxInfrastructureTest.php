@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests;
 
 use App\BulkImport\Application\BulkImportWorkbookContract;
+use App\BulkImport\Application\Dto\WorkbookValidationResult;
 use App\BulkImport\Application\Exception\BulkImportWorkbookRejected;
 use App\BulkImport\Application\ValidateBulkImportWorkbook;
 use App\BulkImport\Infrastructure\Xlsx\OpenSpoutBulkImportWorkbookReader;
@@ -360,6 +361,20 @@ function registerBulkImportXlsxInfrastructureTests(TestRunner $runner): void
         }
     });
 
+    $runner->add('E015 date validation is deterministic at the explicit invocation date', function (): void {
+        $fixtures = new BulkImportXlsxFixtureFactory();
+        $sheets = $fixtures->validSheets();
+        $sheets['Estudiantes'][1][10] = '2026-09-02';
+        $path = $fixtures->writeWorkbook('explicit-validation-date.xlsx', $sheets);
+        $reader = e015Reader();
+
+        $future = $reader->read($path, new DateTimeImmutable('2026-09-01 23:59:59 UTC'));
+        $current = $reader->read($path, new DateTimeImmutable('2026-09-02 00:00:00 UTC'));
+
+        assertSameValue(false, $future->isValid());
+        assertSameValue(true, $current->isValid());
+    });
+
     $runner->add('E015 validates cross-sheet references duplicates Students and Primary conflicts', function (): void {
         $fixtures = new BulkImportXlsxFixtureFactory();
         $reader = e015Reader();
@@ -504,15 +519,28 @@ function registerBulkImportXlsxInfrastructureTests(TestRunner $runner): void
     });
 }
 
-function e015Reader(): OpenSpoutBulkImportWorkbookReader
+function e015Reader(): object
 {
-    return new OpenSpoutBulkImportWorkbookReader(
+    $reader = new OpenSpoutBulkImportWorkbookReader(
         new XlsxContainerPreflightInspector(),
-        new ValidateBulkImportWorkbook(
-            new RepresentativePasswordPolicy(),
-            new DateTimeImmutable('2026-09-01 00:00:00 UTC'),
-        ),
+        new ValidateBulkImportWorkbook(new RepresentativePasswordPolicy()),
     );
+
+    return new class($reader) {
+        public function __construct(private OpenSpoutBulkImportWorkbookReader $reader)
+        {
+        }
+
+        public function read(
+            string $localPath,
+            ?DateTimeImmutable $today = null,
+        ): WorkbookValidationResult {
+            return $this->reader->read(
+                $localPath,
+                $today ?? new DateTimeImmutable('2026-09-01 00:00:00 UTC'),
+            );
+        }
+    };
 }
 
 function e015AssertRejected(callable $operation, ?string $messageContains = null): void

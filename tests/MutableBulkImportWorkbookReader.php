@@ -7,6 +7,7 @@ namespace Tests;
 use App\BulkImport\Application\Contract\BulkImportWorkbookReader;
 use App\BulkImport\Application\Dto\BulkImportWorkbook;
 use App\BulkImport\Application\Dto\WorkbookValidationResult;
+use DateTimeImmutable;
 
 final class MutableBulkImportWorkbookReader implements BulkImportWorkbookReader
 {
@@ -19,7 +20,7 @@ final class MutableBulkImportWorkbookReader implements BulkImportWorkbookReader
         $this->workbook = $workbook;
     }
 
-    public function read(string $localPath): WorkbookValidationResult
+    public function read(string $localPath, DateTimeImmutable $today): WorkbookValidationResult
     {
         return new WorkbookValidationResult($this->workbook, []);
     }

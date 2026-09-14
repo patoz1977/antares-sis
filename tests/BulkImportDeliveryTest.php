@@ -360,7 +360,10 @@ function registerBulkImportDeliveryTests(TestRunner $runner): void
         try {
             $throwingPreview = new PreviewBulkImport(
                 new class implements BulkImportWorkbookReader {
-                    public function read(string $localPath): \App\BulkImport\Application\Dto\WorkbookValidationResult
+                    public function read(
+                        string $localPath,
+                        DateTimeImmutable $today,
+                    ): \App\BulkImport\Application\Dto\WorkbookValidationResult
                     {
                         throw new BulkImportWorkbookRejected('El workbook XLSX fue rechazado.');
                     }
@@ -653,6 +656,7 @@ function bulkImportDeliveryController(array $fixture, PreviewBulkImport $preview
         $fixture['session'],
         $personOptions,
         $familyOptions,
+        $fixture['clock'],
     );
 }
 

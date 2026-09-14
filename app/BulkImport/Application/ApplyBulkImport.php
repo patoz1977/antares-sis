@@ -58,7 +58,7 @@ final readonly class ApplyBulkImport
 
     public function handle(string $localPath, DateTimeImmutable $today): ApplyBulkImportResult
     {
-        $validation = $this->reader->read($localPath);
+        $validation = $this->reader->read($localPath, $today);
         $workbook = $validation->workbook();
         if (!$validation->isValid() || $workbook === null) {
             return new ApplyBulkImportResult([], $validation->issues());

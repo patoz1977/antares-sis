@@ -3678,7 +3678,8 @@ function runMariaDbBulkImportApplicationScenario(
         return $result;
     };
     $before = $counts();
-    $previewResult = $preview->handle('canonical-workbook');
+    $today = new DateTimeImmutable('2026-09-02', new DateTimeZone('UTC'));
+    $previewResult = $preview->handle('canonical-workbook', $today);
     assertIntegration(
         $previewResult->families === 1
         && $previewResult->new === 3
@@ -3689,7 +3690,7 @@ function runMariaDbBulkImportApplicationScenario(
 
     $first = $apply->handle(
         'canonical-workbook',
-        new DateTimeImmutable('2026-09-02', new DateTimeZone('UTC')),
+        $today,
     );
     assertIntegration(
         count($first->families) === 1

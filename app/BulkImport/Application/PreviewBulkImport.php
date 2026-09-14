@@ -12,6 +12,7 @@ use App\BulkImport\Application\Planning\BulkImportMatcher;
 use App\BulkImport\Application\Planning\FamilyImportPlan;
 use App\BulkImport\Application\Planning\RepresentativeImportPlan;
 use App\BulkImport\Application\Planning\StudentImportPlan;
+use DateTimeImmutable;
 
 final readonly class PreviewBulkImport
 {
@@ -21,9 +22,9 @@ final readonly class PreviewBulkImport
     ) {
     }
 
-    public function handle(string $localPath): PreviewBulkImportResult
+    public function handle(string $localPath, DateTimeImmutable $today): PreviewBulkImportResult
     {
-        $validation = $this->reader->read($localPath);
+        $validation = $this->reader->read($localPath, $today);
         $workbook = $validation->workbook();
         if (!$validation->isValid() || $workbook === null) {
             return new PreviewBulkImportResult(0, 0, 0, 0, [], $validation->issues());
