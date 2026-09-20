@@ -164,12 +164,14 @@ use App\Family\Domain\FamilyRepository;
 use App\Family\Http\FamilyAdministrationMiddleware;
 use App\Family\Http\FamilyController;
 use App\Family\Http\FamilyFormOptionsProvider;
+use App\Family\Http\FamilyMemberLabelsProvider;
 use App\Family\Http\FamilyResourceController;
 use App\Family\Http\FamilyResourceFormOptionsProvider;
 use App\Family\Http\RepresentativeFamilyResourceController;
 use App\Family\Infrastructure\Generation\RandomFamilyCodeGenerator;
 use App\Family\Infrastructure\Persistence\PdoDocumentTypeLookup;
 use App\Family\Infrastructure\Persistence\PdoFamilyFormOptionsProvider;
+use App\Family\Infrastructure\Persistence\PdoFamilyMemberLabelsProvider;
 use App\Family\Infrastructure\Persistence\PdoFamilyResourceFormOptionsProvider;
 use App\Family\Infrastructure\Persistence\PdoFamilyRepository;
 use App\Family\Infrastructure\Persistence\PdoRelationshipTypeLookup;
@@ -413,6 +415,7 @@ $container->singleton(FamilyCodeGenerator::class, RandomFamilyCodeGenerator::cla
 $container->singleton(RelationshipTypeLookup::class, PdoRelationshipTypeLookup::class);
 $container->singleton(DocumentTypeLookup::class, PdoDocumentTypeLookup::class);
 $container->singleton(FamilyFormOptionsProvider::class, PdoFamilyFormOptionsProvider::class);
+$container->singleton(FamilyMemberLabelsProvider::class, PdoFamilyMemberLabelsProvider::class);
 $container->singleton(
     FamilyResourceFormOptionsProvider::class,
     PdoFamilyResourceFormOptionsProvider::class,

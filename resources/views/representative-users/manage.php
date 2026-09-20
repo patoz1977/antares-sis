@@ -27,8 +27,6 @@ $derivedLoginIdentifier = $person->documentNumber ?? '';
     <h2 class="h4" id="representative-context-heading">Contexto del representante</h2>
     <dl class="app-data-list">
         <dt>Persona</dt><dd><?= $escape($name) ?></dd>
-        <dt>ID de representante</dt><dd><?= $escape($representative->id) ?></dd>
-        <dt>ID de persona</dt><dd><?= $escape($person->id) ?></dd>
     </dl>
 </section>
 
@@ -59,7 +57,6 @@ $derivedLoginIdentifier = $person->documentNumber ?? '';
 <section class="app-data-card app-content-narrow" aria-labelledby="current-user-heading">
 <h2 class="h4" id="current-user-heading">Usuario actual</h2>
 <dl class="app-data-list">
-    <dt>ID de usuario</dt><dd><?= $escape($user->userId) ?></dd>
     <dt>Nombre de usuario</dt><dd><?= $escape($user->loginIdentifier) ?></dd>
     <dt>Estado</dt><dd><?= $escape($user->status->value === 'ACTIVE' ? 'Activo' : 'Deshabilitado') ?></dd>
 </dl>

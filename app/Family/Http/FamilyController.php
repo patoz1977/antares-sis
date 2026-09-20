@@ -61,13 +61,14 @@ final class FamilyController extends Controller
         private readonly SessionManager $session,
         private readonly PersonFormOptionsProvider $personFormOptions,
         private readonly FamilyFormOptionsProvider $familyFormOptions,
+        private readonly FamilyMemberLabelsProvider $memberLabels,
     ) {
     }
 
     public function index(): string
     {
         return $this->view('families.index', [
-            'title' => 'Families',
+            'title' => 'Familias',
             'successMessage' => $this->flashMessage(self::FLASH_SUCCESS_KEY),
             'errorMessage' => $this->flashMessage(self::FLASH_ERROR_KEY),
         ]);
@@ -93,7 +94,7 @@ final class FamilyController extends Controller
                 self::REPRESENTATIVE_FORM_STATE_KEY,
                 $input,
                 $this->representativeFields(),
-                ['Your form expired. Please try again.'],
+                ['El formulario caducó. Inténtalo de nuevo.'],
             );
 
             return $this->redirect('/families/create', 303);
@@ -125,7 +126,7 @@ final class FamilyController extends Controller
         } catch (IdentificationAlreadyUsed) {
             return $this->representativeFormView(
                 $values,
-                ['A Person already uses that identification.'],
+                ['Otra persona ya utiliza esa identificación.'],
                 $personOptions,
                 $familyOptions,
                 422,
@@ -133,7 +134,7 @@ final class FamilyController extends Controller
         } catch (InvalidPersonState) {
             return $this->representativeFormView(
                 $values,
-                ['Review the entered Person data.'],
+                ['Revisa los datos de la persona.'],
                 $personOptions,
                 $familyOptions,
                 422,
@@ -141,7 +142,7 @@ final class FamilyController extends Controller
         } catch (RepresentativeAlreadyExistsForPerson) {
             return $this->representativeFormView(
                 $values,
-                ['The Person already has a Representative role.'],
+                ['La persona ya tiene un rol de representante.'],
                 $personOptions,
                 $familyOptions,
                 422,
@@ -149,7 +150,7 @@ final class FamilyController extends Controller
         } catch (RepresentativeRequiresContactEmail) {
             return $this->representativeFormView(
                 $values,
-                ['Personal email is required for a Representative.'],
+                ['El representante necesita un correo personal.'],
                 $personOptions,
                 $familyOptions,
                 422,
@@ -157,7 +158,7 @@ final class FamilyController extends Controller
         } catch (InvalidRepresentativeState) {
             return $this->representativeFormView(
                 $values,
-                ['Review the entered Representative data.'],
+                ['Revisa los datos del representante.'],
                 $personOptions,
                 $familyOptions,
                 422,
@@ -197,7 +198,7 @@ final class FamilyController extends Controller
         } catch (RelationshipTypeNotFound) {
             return $this->representativeFormView(
                 $values,
-                ['Select an active relationship type.'],
+                ['Selecciona un tipo de relación activo.'],
                 $personOptions,
                 $familyOptions,
                 422,
@@ -205,7 +206,7 @@ final class FamilyController extends Controller
         } catch (InvalidFamilyState) {
             return $this->representativeFormView(
                 $values,
-                ['Review the entered Family data.'],
+                ['Revisa los datos de la familia.'],
                 $personOptions,
                 $familyOptions,
                 422,
@@ -218,7 +219,7 @@ final class FamilyController extends Controller
         ) {
             return $this->representativeFormView(
                 $values,
-                ['The complete operation could not be confirmed. No data was saved.'],
+                ['No se pudo confirmar la operación completa. No se guardaron datos.'],
                 $personOptions,
                 $familyOptions,
                 422,
@@ -227,7 +228,7 @@ final class FamilyController extends Controller
 
         $this->session->put(
             self::FLASH_SUCCESS_KEY,
-            'Family, primary Representative and User created successfully.',
+            'Familia, representante principal y usuario creados correctamente.',
         );
 
         return $this->redirect('/families/show?id=' . $result->family->id, 303);
@@ -237,7 +238,7 @@ final class FamilyController extends Controller
     {
         $id = $this->positiveInteger((new Request())->query()['id'] ?? null);
         if ($id === null) {
-            $this->session->put(self::FLASH_ERROR_KEY, 'Enter a valid positive Family ID.');
+            $this->session->put(self::FLASH_ERROR_KEY, 'Ingresa un identificador válido de familia.');
 
             return $this->redirect('/families');
         }
@@ -249,8 +250,9 @@ final class FamilyController extends Controller
         }
 
         return $this->view('families.show', [
-            'title' => 'Family details',
+            'title' => 'Detalle de familia',
             'family' => $family,
+            'memberLabels' => $this->memberLabels->forFamily($family->id),
             'successMessage' => $this->flashMessage(self::FLASH_SUCCESS_KEY),
         ]);
     }
@@ -259,7 +261,7 @@ final class FamilyController extends Controller
     {
         $id = $this->positiveInteger((new Request())->query()['family_id'] ?? null);
         if ($id === null) {
-            $this->session->put(self::FLASH_ERROR_KEY, 'Enter a valid positive Family ID.');
+            $this->session->put(self::FLASH_ERROR_KEY, 'Ingresa un identificador válido de familia.');
 
             return $this->redirect('/families');
         }
@@ -298,7 +300,7 @@ final class FamilyController extends Controller
                 self::STUDENT_FORM_STATE_KEY,
                 $input,
                 $this->studentFields(),
-                ['Your form expired. Please try again.'],
+                ['El formulario caducó. Inténtalo de nuevo.'],
                 $trustedFamilyId,
             );
 
@@ -313,7 +315,7 @@ final class FamilyController extends Controller
         if ($trustedFamilyId === null) {
             $this->session->put(
                 self::FLASH_ERROR_KEY,
-                'The Family selection expired. Open the Family again.',
+                'La selección de familia caducó. Abre la familia nuevamente.',
             );
 
             return $this->redirect('/families', 303);
@@ -349,7 +351,7 @@ final class FamilyController extends Controller
             return $this->studentFailure(
                 $family,
                 $values,
-                ['A Person already uses that identification.'],
+                ['Otra persona ya utiliza esa identificación.'],
                 $personOptions,
                 $trustedFamilyId,
             );
@@ -357,7 +359,7 @@ final class FamilyController extends Controller
             return $this->studentFailure(
                 $family,
                 $values,
-                ['Review the entered Person data.'],
+                ['Revisa los datos de la persona.'],
                 $personOptions,
                 $trustedFamilyId,
             );
@@ -365,7 +367,7 @@ final class FamilyController extends Controller
             return $this->studentFailure(
                 $family,
                 $values,
-                ['The Person already has a Student role.'],
+                ['La persona ya tiene un rol de estudiante.'],
                 $personOptions,
                 $trustedFamilyId,
             );
@@ -373,7 +375,7 @@ final class FamilyController extends Controller
             return $this->studentFailure(
                 $family,
                 $values,
-                ['The institutional code is already in use.'],
+                ['El código institucional ya está en uso.'],
                 $personOptions,
                 $trustedFamilyId,
             );
@@ -381,7 +383,7 @@ final class FamilyController extends Controller
             return $this->studentFailure(
                 $family,
                 $values,
-                ['Review the entered Student data.'],
+                ['Revisa los datos del estudiante.'],
                 $personOptions,
                 $trustedFamilyId,
             );
@@ -389,7 +391,7 @@ final class FamilyController extends Controller
             return $this->studentFailure(
                 $family,
                 $values,
-                ['The Student already has an active Family.'],
+                ['El estudiante ya tiene una familia activa.'],
                 $personOptions,
                 $trustedFamilyId,
             );
@@ -397,7 +399,7 @@ final class FamilyController extends Controller
             return $this->studentFailure(
                 $family,
                 $values,
-                ['Review the Family membership data.'],
+                ['Revisa los datos de la membresía familiar.'],
                 $personOptions,
                 $trustedFamilyId,
             );
@@ -405,13 +407,13 @@ final class FamilyController extends Controller
             return $this->studentFailure(
                 $family,
                 $values,
-                ['The complete operation could not be confirmed. No data was saved.'],
+                ['No se pudo confirmar la operación completa. No se guardaron datos.'],
                 $personOptions,
                 $trustedFamilyId,
             );
         }
 
-        $this->session->put(self::FLASH_SUCCESS_KEY, 'Student added to Family successfully.');
+        $this->session->put(self::FLASH_SUCCESS_KEY, 'Estudiante agregado a la familia correctamente.');
 
         return $this->redirect('/families/show?id=' . $result->family->id, 303);
     }
@@ -428,10 +430,10 @@ final class FamilyController extends Controller
         $values = $this->preservedValues($input, $this->representativeFields(), $errors);
         $person = $this->personData($values, $personOptions, $errors);
         if ($person['email'] === null) {
-            $errors[] = 'Personal email is required for a Representative.';
+            $errors[] = 'El representante necesita un correo personal.';
         }
         if ($person['documentTypeId'] === null || $person['documentNumber'] === null) {
-            $errors[] = 'Complete identification is required for a Representative User.';
+            $errors[] = 'El usuario representante requiere identificación completa.';
         }
 
         $initialPassword = $this->sensitiveScalar(
@@ -451,36 +453,36 @@ final class FamilyController extends Controller
         }
         $userStatus = UserStatus::tryFrom($values['user_status']);
         if ($userStatus === null) {
-            $errors[] = 'Select a valid User status.';
+            $errors[] = 'Selecciona un estado de usuario válido.';
         }
 
         $representativeStatus = RepresentativeStatus::tryFrom($values['representative_status']);
         if ($representativeStatus === null) {
-            $errors[] = 'Select a valid Representative status.';
+            $errors[] = 'Selecciona un estado de representante válido.';
         }
 
         $workEmail = $this->nullableString($values['work_email']);
         if ($workEmail !== null && filter_var($workEmail, FILTER_VALIDATE_EMAIL) === false) {
-            $errors[] = 'Enter a valid work email.';
+            $errors[] = 'Ingresa un correo laboral válido.';
         }
 
         if ($values['display_name'] === '') {
-            $errors[] = 'Family display name is required.';
+            $errors[] = 'El nombre visible de la familia es obligatorio.';
         }
 
         $familyStatus = FamilyStatus::tryFrom($values['family_status']);
         if ($familyStatus === null || !$familyOptions->hasStatus($familyStatus)) {
-            $errors[] = 'Select a valid Family status.';
+            $errors[] = 'Selecciona un estado de familia válido.';
         }
 
         $relationshipTypeId = $this->positiveInteger($values['relationship_type_id']);
         if ($relationshipTypeId === null || !$familyOptions->hasRelationshipType($relationshipTypeId)) {
-            $errors[] = 'Select an active relationship type.';
+            $errors[] = 'Selecciona un tipo de relación activo.';
         }
 
         $startedAt = $this->timestampValue($values['started_at']);
         if ($startedAt === null) {
-            $errors[] = 'Membership start must use the YYYY-MM-DDTHH:MM format.';
+            $errors[] = 'El inicio de membresía debe tener el formato AAAA-MM-DDTHH:MM.';
         }
 
         $errors = $this->catalogErrors($errors, $personOptions, $familyOptions);
@@ -514,7 +516,7 @@ final class FamilyController extends Controller
         $person = $this->personData($values, $personOptions, $errors);
         $postedFamilyId = $this->positiveInteger($values['family_id']);
         if ($postedFamilyId !== $trustedFamilyId) {
-            $errors[] = 'Family identity cannot be changed.';
+            $errors[] = 'No se puede cambiar la identidad de la familia.';
         }
 
         if ($values['institutional_code'] === '') {
@@ -523,17 +525,17 @@ final class FamilyController extends Controller
 
         $admissionDate = $this->dateValue($values['admission_date']);
         if ($admissionDate === null) {
-            $errors[] = 'Admission date must use the YYYY-MM-DD format.';
+            $errors[] = 'La fecha de admisión debe tener el formato AAAA-MM-DD.';
         }
 
         $studentStatus = StudentStatus::tryFrom($values['student_status']);
         if ($studentStatus === null) {
-            $errors[] = 'Select a valid Student status.';
+            $errors[] = 'Selecciona un estado de estudiante válido.';
         }
 
         $startedAt = $this->timestampValue($values['started_at']);
         if ($startedAt === null) {
-            $errors[] = 'Membership start must use the YYYY-MM-DDTHH:MM format.';
+            $errors[] = 'El inicio de membresía debe tener el formato AAAA-MM-DDTHH:MM.';
         }
 
         if (!$personOptions->isReadyForSave()) {
@@ -564,53 +566,53 @@ final class FamilyController extends Controller
 
         $birthDate = $this->dateValue($values['birth_date']);
         if ($birthDate === null) {
-            $errors[] = 'Birth date must use the YYYY-MM-DD format.';
+            $errors[] = 'La fecha de nacimiento debe tener el formato AAAA-MM-DD.';
         }
 
         $sexId = $this->positiveInteger($values['sex_id']);
         if ($sexId === null || !$options->hasSex($sexId)) {
-            $errors[] = 'Select a valid sex.';
+            $errors[] = 'Selecciona un sexo válido.';
         }
 
         $documentTypeId = $this->optionalPositiveInteger(
             $values['document_type_id'],
-            'document type',
+            'tipo de documento',
             $errors,
         );
         $maritalStatusId = $this->optionalPositiveInteger(
             $values['marital_status_id'],
-            'marital status',
+            'estado civil',
             $errors,
         );
         $educationLevelId = $this->optionalPositiveInteger(
             $values['education_level_id'],
-            'education level',
+            'nivel educativo',
             $errors,
         );
 
         if ($documentTypeId !== null && !$options->hasDocumentType($documentTypeId)) {
-            $errors[] = 'Select a valid document type.';
+            $errors[] = 'Selecciona un tipo de documento válido.';
         }
         if ($maritalStatusId !== null && !$options->hasMaritalStatus($maritalStatusId)) {
-            $errors[] = 'Select a valid marital status.';
+            $errors[] = 'Selecciona un estado civil válido.';
         }
         if ($educationLevelId !== null && !$options->hasEducationLevel($educationLevelId)) {
-            $errors[] = 'Select a valid education level.';
+            $errors[] = 'Selecciona un nivel educativo válido.';
         }
 
         $documentNumber = $this->nullableString($values['document_number']);
         if (($documentTypeId === null) !== ($documentNumber === null)) {
-            $errors[] = 'Document type and document number must both be provided or both be empty.';
+            $errors[] = 'Indica tanto el tipo como el número de documento, o deja ambos vacíos.';
         }
 
         $email = $this->nullableString($values['email']);
         if ($email !== null && filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-            $errors[] = 'Enter a valid email.';
+            $errors[] = 'Ingresa un correo válido.';
         }
 
         $personStatus = PersonStatus::tryFrom($values['person_status']);
         if ($personStatus === null || !$options->hasStatus($values['person_status'])) {
-            $errors[] = 'Select a valid Person status.';
+            $errors[] = 'Selecciona un estado de persona válido.';
         }
 
         return [
@@ -641,7 +643,7 @@ final class FamilyController extends Controller
         http_response_code($status);
 
         return $this->view('families.create-representative', [
-            'title' => 'Create Representative and Family',
+            'title' => 'Crear representante y familia',
             'values' => $values,
             'errors' => $errors,
             'personOptions' => $personOptions,
@@ -661,7 +663,7 @@ final class FamilyController extends Controller
         http_response_code($status);
 
         return $this->view('families.create-student', [
-            'title' => 'Add Student to Family',
+            'title' => 'Agregar estudiante a familia',
             'family' => $family,
             'values' => $values,
             'errors' => $errors,
@@ -687,7 +689,7 @@ final class FamilyController extends Controller
     {
         http_response_code(404);
 
-        return $this->view('families.not-found', ['title' => 'Family not found']);
+        return $this->view('families.not-found', ['title' => 'Familia no encontrada']);
     }
 
     /** @return list<string> */
@@ -700,7 +702,7 @@ final class FamilyController extends Controller
             $errors[] = $this->personCatalogUnavailableMessage();
         }
         if (!$familyOptions->isReadyForSave()) {
-            $errors[] = 'Family cannot be saved because relationship types are unavailable.';
+            $errors[] = 'No se puede guardar la familia porque faltan tipos de relación.';
         }
 
         return array_values(array_unique($errors));
@@ -878,7 +880,7 @@ final class FamilyController extends Controller
 
         $id = $this->positiveInteger($value);
         if ($id === null) {
-            $errors[] = sprintf('Select a valid %s.', $label);
+            $errors[] = sprintf('Selecciona un valor válido para %s.', $label);
         }
 
         return $id;
@@ -910,7 +912,7 @@ final class FamilyController extends Controller
 
     private function personCatalogUnavailableMessage(): string
     {
-        return 'Person cannot be saved because required form catalogs are unavailable.';
+        return 'No se puede guardar la persona porque faltan catálogos necesarios.';
     }
 
     private function redirect(string $location, int $status = 302): string

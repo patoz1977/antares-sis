@@ -125,7 +125,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
 
             return new \Core\Http\Response();
         });
-        assertSameValue('Forbidden', deliverySendResponse($response));
+        deliveryAssertContains('No tienes permiso para acceder a esta página.', deliverySendResponse($response));
         assertSameValue(false, $called);
     });
 
@@ -138,6 +138,9 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         foreach (['Direcciones', 'Contactos de emergencia', 'Personas autorizadas para retirar', 'Historial', 'Volver a la familia', 'Familias'] as $text) {
             deliveryAssertContains($text, $page);
         }
+        foreach (['Direcciones existentes y mantenimiento', 'Asignaciones de direcciones', 'Contactos existentes y mantenimiento', 'Asignaciones de retiros autorizados'] as $heading) {
+            deliveryAssertContains($heading, $page);
+        }
         assertSameValue(500, $session->get('_family_resources_trusted_family_id'));
 
         [$controller, $repository] = familyResourcesDeliveryController();
@@ -147,7 +150,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         deliveryRequest('POST', '/families/resources/addresses/create', familyResourcesAddressPost());
         $deleted = $controller->createAddress();
         assertSameValue(404, http_response_code());
-        deliveryAssertContains('Family not found', $deleted);
+        deliveryAssertContains('No se encontró la familia', $deleted);
         assertSameValue(0, $repository->saveCalls());
         assertSameValue(false, str_contains($page, 'password'));
         assertSameValue(false, str_contains($page, 'Enrollment'));
@@ -155,7 +158,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         deliveryRequest('GET', '/families/resources?family_id=999999', ['family_id' => '999999']);
         $missing = $controller->index();
         assertSameValue(404, http_response_code());
-        deliveryAssertContains('Family not found', $missing);
+        deliveryAssertContains('No se encontró la familia', $missing);
         assertSameValue(false, str_contains($missing, 'SQLSTATE'));
 
         $invalidRepository = familyResourcesApplicationRepository();
@@ -181,7 +184,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         deliveryRequest('GET', '/families/resources?family_id=500', ['family_id' => '500']);
         $invalid = $invalidController->index();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('operation could not be confirmed', $invalid);
+        deliveryAssertContains('No se pudo confirmar la operación', $invalid);
 
         $escapedRepository = new InMemoryFamilyApplicationRepository();
         $aggregate = familyResourcesApplicationAggregate();
@@ -212,7 +215,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         deliveryRequest('POST', '/families/resources/addresses/create', familyResourcesAddressPost(500));
         $expired = $controller->createAddress();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('selection expired', $expired);
+        deliveryAssertContains('selección de familia venció', $expired);
         assertSameValue(0, $repository->saveCalls());
 
         [$controller, $repository, $session] = familyResourcesDeliveryController();
@@ -220,7 +223,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         deliveryRequest('POST', '/families/resources/addresses/create', familyResourcesAddressPost(999));
         $tampered = $controller->createAddress();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('identity cannot be changed', $tampered);
+        deliveryAssertContains('No se puede cambiar la familia seleccionada.', $tampered);
         assertSameValue(0, $repository->saveCalls());
         assertSameValue(500, $session->get('_family_resources_trusted_family_id'));
 
@@ -433,6 +436,16 @@ function familyResourcesDeliveryController(
             new FakeDeliveryCsrf(),
             $session,
             $provider,
+            new class implements \App\Family\Http\FamilyMemberLabelsProvider {
+                public function forFamily(int $familyId): \App\Family\Http\FamilyMemberLabels
+                {
+                    return new \App\Family\Http\FamilyMemberLabels(
+                        [101 => 'Representante de prueba'],
+                        [201 => 'Estudiante de prueba'],
+                        [201 => 'Padre'],
+                    );
+                }
+            },
         ),
         $repository,
         $session,

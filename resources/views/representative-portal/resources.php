@@ -117,6 +117,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 <?php if ($resources->addresses === []): ?>
 <?php $emptyStateTitle = 'No hay direcciones registradas'; $emptyStateText = 'Crea una dirección para poder asignarla.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php else: ?>
+<h3 class="h4 mt-4">Direcciones existentes y mantenimiento</h3>
 <?php foreach ($resources->addresses as $address): ?>
 <article class="app-data-card">
     <h3><?= $escape($address->label) ?></h3>
@@ -154,7 +155,8 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 <?php endforeach; ?>
 <?php endif; ?>
 
-<h3 class="h4">Asignar dirección al representante</h3>
+<h3 class="h4 mt-4">Asignaciones de direcciones</h3>
+<h4 class="h5">Asignar dirección al representante</h4>
 <form class="app-form-section" method="post" action="/representative/resources/address">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
@@ -169,7 +171,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <button type="submit"<?= $activeAddresses === [] ? ' disabled' : '' ?>>Asignar mi dirección</button>
 </form>
 
-<h3 class="h4">Asignar dirección a estudiante</h3>
+<h4 class="h5">Asignar dirección a estudiante</h4>
 <form class="app-form-section" method="post" action="/representative/resources/students/address">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
@@ -260,6 +262,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 <?php if ($resources->emergencyContacts === []): ?>
 <?php $emptyStateTitle = 'No hay contactos de emergencia'; $emptyStateText = 'Crea un contacto para poder asignarlo a un estudiante.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php endif; ?>
+<h3 class="h4 mt-4">Contactos existentes y mantenimiento</h3>
 <?php foreach ($resources->emergencyContacts as $contact): ?>
 <article class="app-data-card">
     <h3><?= $escape($contact->names) ?></h3>
@@ -297,7 +300,8 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 </article>
 <?php endforeach; ?>
 
-<h3 class="h4">Asignar contacto de emergencia</h3>
+<h3 class="h4 mt-4">Asignaciones de contactos de emergencia</h3>
+<h4 class="h5">Asignar contacto de emergencia</h4>
 <form class="app-form-section" method="post" action="/representative/resources/emergency-contacts/assign">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
@@ -377,6 +381,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 <?php if ($resources->authorizedPickups === []): ?>
 <?php $emptyStateTitle = 'No hay personas autorizadas'; $emptyStateText = 'Crea una persona para poder asignarla a un estudiante.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php endif; ?>
+<h3 class="h4 mt-4">Personas existentes y mantenimiento</h3>
 <?php foreach ($resources->authorizedPickups as $pickup): ?>
 <article class="app-data-card">
     <h3><?= $escape($pickup->names) ?></h3>
@@ -422,7 +427,8 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 </article>
 <?php endforeach; ?>
 
-<h3 class="h4">Asignar persona autorizada</h3>
+<h3 class="h4 mt-4">Asignaciones de retiros autorizados</h3>
+<h4 class="h5">Asignar persona autorizada</h4>
 <form class="app-form-section" method="post" action="/representative/resources/authorized-pickups/assign">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">

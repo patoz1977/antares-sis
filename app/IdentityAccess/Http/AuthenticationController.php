@@ -70,7 +70,7 @@ final class AuthenticationController extends Controller
 
         $result = $this->authenticateUser->handle($identifier, $password);
         if (!$result->isSuccessful()) {
-            $this->session->put(self::FLASH_ERROR_KEY, $result->externalMessage());
+            $this->session->put(self::FLASH_ERROR_KEY, 'Credenciales inválidas.');
 
             return $this->redirect('/login', 303);
         }

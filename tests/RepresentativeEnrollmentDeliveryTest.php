@@ -90,6 +90,9 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         $selected = $ready['controller']->index();
         deliveryAssertContains('La matrícula en borrador todavía no ha sido iniciada', $selected);
         deliveryAssertContains('Código institucional', $selected);
+        deliveryAssertContains('Los campos marcados con * son obligatorios.', $selected);
+        deliveryAssertContains('app-required-label', $selected);
+        assertSameValue(false, str_contains($selected, 'datos vivos'));
         assertSameValue(0, $ready['services']['enrollments']->saveCalls);
     });
 
@@ -102,7 +105,7 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
             'student_id' => '44',
         ]);
         assertSameValue(403, http_response_code());
-        deliveryAssertContains('could not be verified', $invalid);
+        deliveryAssertContains('No se pudo verificar la solicitud', $invalid);
         assertSameValue(0, $fixture['services']['enrollments']->saveCalls);
 
         assertSameValue('', representativeEnrollmentPost($fixture['controller'], 'open', representativeEnrollmentContext()));
@@ -136,7 +139,7 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
             $fixture = representativeEnrollmentDeliveryFixture();
             $html = representativeEnrollmentPost($fixture['controller'], $method, ['_csrf_token' => 'invalid']);
             assertSameValue(403, http_response_code(), $method);
-            deliveryAssertContains('could not be verified', $html);
+            deliveryAssertContains('No se pudo verificar la solicitud', $html);
             assertSameValue(0, $fixture['services']['enrollments']->saveCalls, $method);
             assertSameValue(0, $fixture['services']['persons']->saveCalls(), $method);
             assertSameValue(0, $fixture['services']['representatives']->saveCalls(), $method);
@@ -153,7 +156,7 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         $concurrent['services']['enrollments']->saveFailure = new RuntimeException('SQLSTATE 23000 secret row');
         $html = representativeEnrollmentPost($concurrent['controller'], 'open', representativeEnrollmentContext());
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('could not be confirmed', $html);
+        deliveryAssertContains('No se pudo confirmar la operación', $html);
         assertSameValue(false, str_contains($html, 'SQLSTATE'));
         assertSameValue(false, str_contains($html, 'secret row'));
     });
@@ -170,7 +173,7 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
                 array_merge(representativeEnrollmentContext(), $stale),
             );
             assertSameValue(409, http_response_code());
-            deliveryAssertContains('context changed', $html);
+            deliveryAssertContains('contexto de la matrícula cambió', $html);
             assertSameValue(0, $fixture['services']['enrollments']->saveCalls);
         }
 
@@ -330,6 +333,7 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
             };
             deliveryAssertContains('>' . $statusLabel . '</span>', $html);
             deliveryAssertContains('La información anual de esta matrícula está en modo de solo lectura', $html);
+            deliveryAssertContains('Puedes seguir actualizando los datos personales y familiares que tu cuenta tenga permitidos.', $html);
             deliveryAssertContains('Guardar información personal', $html);
             deliveryAssertContains('Guardar información del estudiante', $html);
             assertSameValue(false, str_contains($html, 'Guardar información de facturación'));
@@ -345,7 +349,7 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
                 array_merge(representativeEnrollmentContext(), ['requires_institutional_transport' => '1']),
             );
             assertSameValue(409, http_response_code());
-            deliveryAssertContains('no longer editable', $manual);
+            deliveryAssertContains('ya no se puede editar', $manual);
 
             representativeEnrollmentPost($fixture['controller'], 'updateRepresentativeContact', array_merge(
                 representativeEnrollmentContext(),
@@ -492,7 +496,7 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         ]);
         $csrfPayload = representativeEnrollmentJson($csrfBody);
         assertSameValue(403, http_response_code());
-        assertSameValue(['The request could not be verified.'], $csrfPayload['errors'] ?? null);
+        assertSameValue(['No se pudo verificar la solicitud.'], $csrfPayload['errors'] ?? null);
         assertSameValue(0, $csrf['services']['enrollments']->saveCalls);
 
         $stale = representativeEnrollmentDeliveryFixture();
@@ -546,7 +550,7 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         );
         $failurePayload = representativeEnrollmentJson($failureBody);
         assertSameValue(500, http_response_code());
-        assertSameValue(['The information could not be saved.'], $failurePayload['errors'] ?? null);
+        assertSameValue(['No se pudo guardar la información.'], $failurePayload['errors'] ?? null);
         assertSameValue(false, str_contains($failureBody, 'SQLSTATE'));
         assertSameValue(false, str_contains($failureBody, 'medical row'));
     });

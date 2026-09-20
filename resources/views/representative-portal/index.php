@@ -92,7 +92,7 @@ $acknowledgements = ($acknowledgementState ?? null) instanceof RepresentativeAck
 <?php if ($showSelector): ?>
 <section class="app-form-section app-content-narrow" id="family-selector" aria-labelledby="family-selector-heading">
     <h2 class="h4" id="family-selector-heading"><?= $currentContext === null ? 'Seleccionar familia' : 'Cambiar familia' ?></h2>
-    <p class="text-body-secondary">La selección se valida nuevamente en el servidor antes de habilitar cualquier operación.</p>
+    <p class="text-body-secondary">Elige la familia con la que deseas continuar.</p>
     <form method="post" action="/representative/family">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
         <fieldset>

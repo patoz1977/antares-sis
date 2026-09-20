@@ -4,11 +4,19 @@ declare(strict_types=1);
 
 namespace Core\Routing;
 
+use Closure;
 use Core\Http\Response;
+use Throwable;
 
 class Router
 {
     private array $routes = [];
+    private ?Closure $notFoundRenderer = null;
+
+    public function setNotFoundRenderer(?callable $renderer): void
+    {
+        $this->notFoundRenderer = $renderer === null ? null : Closure::fromCallable($renderer);
+    }
 
     public function get(string $uri, callable $handler, string|array $middleware = []): void
     {
@@ -54,8 +62,19 @@ class Router
             return;
         }
 
-        $response = new Response();
-        $response->status(404)->content('Route not found')->send();
+        $content = 'Página no encontrada.';
+        if ($this->notFoundRenderer !== null) {
+            try {
+                $rendered = ($this->notFoundRenderer)();
+                if (is_string($rendered)) {
+                    $content = $rendered;
+                }
+            } catch (Throwable) {
+                // Preserve the 404 response when presentation is unavailable.
+            }
+        }
+
+        (new Response())->status(404)->content($content)->send();
     }
 
     private function addRoute(string $method, string $uri, callable $handler, string|array $middleware = []): void

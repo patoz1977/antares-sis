@@ -98,12 +98,12 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
         );
         $html = representativeEnrollmentSubmissionReview($controller);
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('No active Enrollment Submission context', $html);
+        deliveryAssertContains('No hay un contexto de envío de matrícula activo', $html);
 
         deliveryRequest('GET', '/representative/enrollment/review', []);
         $html = $controller->review();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('Select a Student', $html);
+        deliveryAssertContains('Seleccione un estudiante', $html);
     });
 
     $runner->add('E012 submitted completed and cancelled reviews degrade to read-only without lifecycle controls', function (): void {
@@ -161,12 +161,12 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
         assertSameValue(1, $fixture['enrollments']->saveCalls);
         assertSameValue(1, $fixture['clock']->calls);
         assertSameValue(
-            'Enrollment submitted successfully.',
+            'Matrícula enviada correctamente.',
             $fixture['session']->get('_flash_representative_enrollment_submission_success'),
         );
 
         $html = representativeEnrollmentSubmissionReview($fixture['controller']);
-        deliveryAssertContains('Enrollment submitted successfully.', $html);
+        deliveryAssertContains('Matrícula enviada correctamente.', $html);
         deliveryAssertContains('>Enviada</span>', $html);
         assertSameValue(false, str_contains($html, '>Enviar matrícula<'));
         assertSameValue(false, str_contains($html, '999'));
@@ -183,7 +183,7 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
         assertSameValue(0, $fixture['clock']->calls);
 
         $html = representativeEnrollmentSubmissionReview($fixture['controller']);
-        deliveryAssertContains('Enrollment is not ready for Submission.', $html);
+        deliveryAssertContains('La matrícula aún no está lista para enviarse.', $html);
         deliveryAssertContains('>Enviada</span>', $html);
         assertSameValue(false, str_contains($html, '>Enviar matrícula<'));
     });
@@ -202,7 +202,7 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
         assertSameValue(0, $fixture['clock']->calls);
 
         $html = representativeEnrollmentSubmissionReview($fixture['controller']);
-        deliveryAssertContains('Enrollment is not ready for Submission.', $html);
+        deliveryAssertContains('La matrícula aún no está lista para enviarse.', $html);
         deliveryAssertContains('Esta matrícula todavía no puede enviarse.', $html);
         assertSameValue(false, str_contains($html, '>Enviar matrícula<'));
     });
@@ -216,7 +216,7 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
             'student_id' => '44',
         ]);
         assertSameValue(403, http_response_code());
-        deliveryAssertContains('could not be verified', $html);
+        deliveryAssertContains('No se pudo verificar la solicitud', $html);
         assertSameValue(0, $invalidCsrf['enrollments']->saveCalls);
 
         $malformed = representativeEnrollmentSubmissionDeliveryFixture();
@@ -227,7 +227,7 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
             'student_id' => '44',
         ]);
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('context is invalid', $html);
+        deliveryAssertContains('contexto de envío de matrícula no es válido', $html);
 
         foreach ([
             ['expected_family_id' => '78'],
@@ -240,7 +240,7 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
                 array_merge(representativeEnrollmentContext(), $proposal),
             );
             assertSameValue(409, http_response_code());
-            deliveryAssertContains('context changed', $html);
+            deliveryAssertContains('contexto de la matrícula cambió', $html);
             assertSameValue(false, str_contains($html, '78'), 'family proposal leaked');
             assertSameValue(false, str_contains($html, '999'), 'student proposal leaked');
             assertSameValue(0, $fixture['enrollments']->saveCalls);
@@ -262,7 +262,7 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
         );
 
         assertSameValue(500, http_response_code());
-        deliveryAssertContains('Enrollment could not be submitted.', $html);
+        deliveryAssertContains('No se pudo enviar la matrícula.', $html);
         assertSameValue(false, str_contains($html, 'SQLSTATE'));
         assertSameValue(false, str_contains($html, 'secret Enrollment row'));
         assertSameValue(null, $fixture['session']->get('_flash_representative_enrollment_submission_error'));

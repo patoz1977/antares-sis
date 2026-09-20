@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Enrollment\Http;
 
+use App\Shared\Http\SafeErrorPage;
 use App\AcademicCore\Application\AcademicPlacementReferenceProvider;
 use App\Controllers\Controller;
 use App\Enrollment\Application\Exception\EnrollmentAlreadyExists;
@@ -76,7 +77,7 @@ final class RepresentativeEnrollmentController extends Controller
         if (array_key_exists('student_id', $query)) {
             $studentId = $this->inputMapper->parsePositiveInteger($query['student_id']);
             if ($studentId === null) {
-                return $this->error('The selected Student is unavailable.', 422);
+                return $this->error('El estudiante seleccionado no está disponible.', 422);
             }
         }
 
@@ -87,7 +88,7 @@ final class RepresentativeEnrollmentController extends Controller
         } catch (RepresentativeEnrollmentStudentUnavailable|RepresentativeEnrollmentContextUnavailable) {
             return $this->forbidden();
         } catch (Throwable) {
-            return $this->error('The Enrollment portal could not be loaded.', 422);
+            return $this->error('No se pudo cargar la matrícula.', 422);
         }
     }
 
@@ -106,7 +107,7 @@ final class RepresentativeEnrollmentController extends Controller
                 );
             },
             fn (object $input): mixed => $this->resolveOrStart->handle($input),
-            'Enrollment Draft is ready.',
+            'El borrador de matrícula está listo.',
             'draft',
             true,
         );
@@ -144,7 +145,7 @@ final class RepresentativeEnrollmentController extends Controller
                 );
             },
             fn (object $input): mixed => $this->updateRepresentativePersonal->handle($input),
-            'Personal information saved.',
+            'Información personal guardada.',
             'representative-personal',
         );
     }
@@ -157,7 +158,7 @@ final class RepresentativeEnrollmentController extends Controller
                 [$familyId, $periodId] = $this->context($values, $errors);
                 $email = $this->inputMapper->requiredString($values, 'email', $errors);
                 if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-                    $errors[] = 'Email must be valid.';
+                    $errors[] = 'Ingrese un correo electrónico válido.';
                 }
 
                 return new UpdateRepresentativeContactInformationInput(
@@ -169,7 +170,7 @@ final class RepresentativeEnrollmentController extends Controller
                 );
             },
             fn (object $input): mixed => $this->updateRepresentativeContact->handle($input),
-            'Contact information saved.',
+            'Información de contacto guardada.',
             'representative-contact',
         );
     }
@@ -182,7 +183,7 @@ final class RepresentativeEnrollmentController extends Controller
                 [$familyId, $periodId] = $this->context($values, $errors);
                 $email = $this->inputMapper->optionalString($values, 'work_email');
                 if ($email !== null && filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-                    $errors[] = 'Work email must be valid.';
+                    $errors[] = 'Ingrese un correo laboral válido.';
                 }
 
                 return new UpdateRepresentativeEmploymentInformationInput(
@@ -196,7 +197,7 @@ final class RepresentativeEnrollmentController extends Controller
                 );
             },
             fn (object $input): mixed => $this->updateRepresentativeEmployment->handle($input),
-            'Employment information saved.',
+            'Información laboral guardada.',
             'representative-employment',
         );
     }
@@ -235,7 +236,7 @@ final class RepresentativeEnrollmentController extends Controller
                 );
             },
             fn (object $input): mixed => $this->updateStudentPersonal->handle($input),
-            'Student personal information saved.',
+            'Información personal del estudiante guardada.',
             'student-personal',
             true,
         );
@@ -256,11 +257,11 @@ final class RepresentativeEnrollmentController extends Controller
                 if ($identificationTypeId !== null
                     && !$this->formOptions->get()->hasDocumentType($identificationTypeId)
                 ) {
-                    $errors[] = 'Select an active identification type.';
+                    $errors[] = 'Seleccione un tipo de identificación activo.';
                 }
                 $email = $this->inputMapper->requiredString($values, 'billing_email', $errors);
                 if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-                    $errors[] = 'Billing email must be valid.';
+                    $errors[] = 'Ingrese un correo de facturación válido.';
                 }
 
                 return new UpdateRepresentativeEnrollmentBillingInput(
@@ -276,7 +277,7 @@ final class RepresentativeEnrollmentController extends Controller
                 );
             },
             fn (object $input): mixed => $this->updateBilling->handle($input),
-            'Billing information saved.',
+            'Información de facturación guardada.',
             'billing',
             true,
         );
@@ -326,7 +327,7 @@ final class RepresentativeEnrollmentController extends Controller
                 );
             },
             fn (object $input): mixed => $this->updateMedical->handle($input),
-            'Medical information saved.',
+            'Información médica guardada.',
             'medical',
             true,
         );
@@ -339,7 +340,7 @@ final class RepresentativeEnrollmentController extends Controller
             fn (int $family, int $period, int $student, bool $value): object =>
                 new UpdateRepresentativeEnrollmentTransportInput($family, $period, $student, $value),
             fn (object $input): mixed => $this->updateTransport->handle($input),
-            'Transport information saved.',
+            'Información de transporte guardada.',
             'transport',
         );
     }
@@ -351,7 +352,7 @@ final class RepresentativeEnrollmentController extends Controller
             fn (int $family, int $period, int $student, bool $value): object =>
                 new UpdateRepresentativeEnrollmentLeaveAloneInput($family, $period, $student, $value),
             fn (object $input): mixed => $this->updateLeaveAlone->handle($input),
-            'Leave-alone authorization saved.',
+            'Autorización de salida sin acompañante guardada.',
             'leave-alone',
         );
     }
@@ -375,19 +376,19 @@ final class RepresentativeEnrollmentController extends Controller
             if ($autosave) {
                 return $this->autosaveResponder->failure(
                     $section,
-                    ['The request could not be verified.'],
+                    ['No se pudo verificar la solicitud.'],
                     403,
                 );
             }
 
-            return $this->error('The request could not be verified.', 403);
+            return $this->error('No se pudo verificar la solicitud.', 403);
         }
 
         $errors = [];
         $values = $this->inputMapper->scalarValues($request, $allowed, $errors);
         $studentId = $this->inputMapper->parsePositiveInteger($values['student_id'] ?? null);
-        if ($studentRequired && $studentId === null && !in_array('Student id must be a positive integer.', $errors, true)) {
-            $errors[] = 'Student id must be a positive integer.';
+        if ($studentRequired && $studentId === null && !in_array('Seleccione un estudiante válido.', $errors, true)) {
+            $errors[] = 'Seleccione un estudiante válido.';
         }
         $mapped = $map($values, $errors);
         if ($errors !== []) {
@@ -407,7 +408,7 @@ final class RepresentativeEnrollmentController extends Controller
             if ($autosave) {
                 return $this->autosaveResponder->failure(
                     $section,
-                    ['Complete Institutional Acknowledgements before updating Enrollment information.'],
+                    ['Complete las aceptaciones institucionales antes de actualizar la matrícula.'],
                     409,
                     $this->csrf->token(),
                     false,
@@ -416,7 +417,7 @@ final class RepresentativeEnrollmentController extends Controller
             }
             $this->session->put(
                 self::FLASH_ERROR_KEY,
-                'Complete Institutional Acknowledgements before updating Enrollment information.',
+                'Complete las aceptaciones institucionales antes de actualizar la matrícula.',
             );
 
             return $this->redirect('/representative/acknowledgements', 303);
@@ -424,7 +425,7 @@ final class RepresentativeEnrollmentController extends Controller
             if ($autosave) {
                 return $this->autosaveResponder->failure(
                     $section,
-                    ['The Enrollment context changed. Reload the page.'],
+                    ['El contexto de la matrícula cambió. Recargue la página.'],
                     409,
                     $this->csrf->token(),
                     false,
@@ -437,13 +438,13 @@ final class RepresentativeEnrollmentController extends Controller
             if ($autosave) {
                 return $this->autosaveResponder->failure(
                     $section,
-                    ['The Enrollment context changed. Reload the page.'],
+                    ['El contexto de la matrícula cambió. Recargue la página.'],
                     409,
                     $this->csrf->token(),
                     true,
                 );
             }
-            $this->session->put(self::FLASH_ERROR_KEY, 'No active Academic Period is currently configured.');
+            $this->session->put(self::FLASH_ERROR_KEY, 'No hay un período académico activo configurado.');
 
             return $this->redirect('/representative/enrollment', 303);
         } catch (RepresentativeEnrollmentContextChanged) {
@@ -452,8 +453,8 @@ final class RepresentativeEnrollmentController extends Controller
                 $studentId,
                 $values,
                 [$autosave
-                    ? 'The Enrollment context changed. Reload the page.'
-                    : 'The Enrollment context changed. Reload the page and try again.'],
+                    ? 'El contexto de la matrícula cambió. Recargue la página.'
+                    : 'El contexto de la matrícula cambió. Recargue la página e inténtelo nuevamente.'],
                 $section,
                 409,
                 true,
@@ -462,7 +463,7 @@ final class RepresentativeEnrollmentController extends Controller
             if ($autosave) {
                 return $this->autosaveResponder->failure(
                     $section,
-                    ['The Enrollment context changed. Reload the page.'],
+                    ['El contexto de la matrícula cambió. Recargue la página.'],
                     409,
                     $this->csrf->token(),
                     true,
@@ -475,7 +476,7 @@ final class RepresentativeEnrollmentController extends Controller
                 $autosave,
                 $studentId,
                 $values,
-                ['This Enrollment is no longer editable.'],
+                ['Esta matrícula ya no se puede editar.'],
                 $section,
                 409,
                 true,
@@ -493,7 +494,7 @@ final class RepresentativeEnrollmentController extends Controller
                 $autosave,
                 $studentId,
                 $values,
-                [$annualReadOnly ? 'This Enrollment is no longer editable.' : 'Review the entered information.'],
+                [$annualReadOnly ? 'Esta matrícula ya no se puede editar.' : 'Revise la información ingresada.'],
                 $section,
                 $annualReadOnly ? 409 : 422,
                 $annualReadOnly,
@@ -504,8 +505,8 @@ final class RepresentativeEnrollmentController extends Controller
                 $studentId,
                 $values,
                 [$autosave
-                    ? 'The Enrollment context changed. Reload the page.'
-                    : 'The Enrollment changed concurrently. Reload the page and try again.'],
+                    ? 'El contexto de la matrícula cambió. Recargue la página.'
+                    : 'La matrícula cambió mientras trabajaba. Recargue la página e inténtelo nuevamente.'],
                 $section,
                 409,
                 true,
@@ -515,7 +516,7 @@ final class RepresentativeEnrollmentController extends Controller
                 $autosave,
                 $studentId,
                 $values,
-                ['Review the entered information.'],
+                ['Revise la información ingresada.'],
                 $section,
                 422,
             );
@@ -523,7 +524,7 @@ final class RepresentativeEnrollmentController extends Controller
             if ($autosave) {
                 return $this->autosaveResponder->failure(
                     $section,
-                    ['The information could not be saved.'],
+                    ['No se pudo guardar la información.'],
                     500,
                     $this->csrf->token(),
                 );
@@ -532,7 +533,7 @@ final class RepresentativeEnrollmentController extends Controller
             return $this->renderFailure(
                 $studentId,
                 $values,
-                ['The operation could not be confirmed.'],
+                ['No se pudo confirmar la operación.'],
                 $section,
                 422,
             );
@@ -540,13 +541,13 @@ final class RepresentativeEnrollmentController extends Controller
             if ($autosave) {
                 return $this->autosaveResponder->failure(
                     $section,
-                    ['The information could not be saved.'],
+                    ['No se pudo guardar la información.'],
                     500,
                     $this->csrf->token(),
                 );
             }
 
-            return $this->error('The operation could not be completed.', 500);
+            return $this->error('No se pudo completar la operación.', 500);
         }
 
         if ($autosave) {
@@ -559,7 +560,7 @@ final class RepresentativeEnrollmentController extends Controller
             } catch (Throwable) {
                 return $this->autosaveResponder->failure(
                     $section,
-                    ['The information could not be saved.'],
+                    ['No se pudo guardar la información.'],
                     500,
                     $this->csrf->token(),
                 );
@@ -609,10 +610,10 @@ final class RepresentativeEnrollmentController extends Controller
     {
         $options = $this->formOptions->get();
         if ($maritalStatusId !== null && !$options->hasMaritalStatus($maritalStatusId)) {
-            $errors[] = 'Select an active marital status.';
+            $errors[] = 'Seleccione un estado civil activo.';
         }
         if ($educationLevelId !== null && !$options->hasEducationLevel($educationLevelId)) {
-            $errors[] = 'Select an active education level.';
+            $errors[] = 'Seleccione un nivel educativo activo.';
         }
     }
 
@@ -641,7 +642,7 @@ final class RepresentativeEnrollmentController extends Controller
         } catch (RepresentativeEnrollmentStudentUnavailable|RepresentativeEnrollmentContextUnavailable) {
             return $this->forbidden();
         } catch (Throwable) {
-            return $this->error('The Enrollment portal could not be loaded.', 422);
+            return $this->error('No se pudo cargar la matrícula.', 422);
         }
     }
 
@@ -698,7 +699,7 @@ final class RepresentativeEnrollmentController extends Controller
         http_response_code($status);
 
         return $this->view('representative-portal.enrollment', [
-            'title' => 'Representative Enrollment',
+            'title' => 'Matrícula del representante',
             'state' => $state,
             'options' => $this->formOptions->get(),
             'academicPlacement' => $placement,
@@ -737,7 +738,7 @@ final class RepresentativeEnrollmentController extends Controller
         http_response_code(403);
 
         return $this->view('representative-portal.forbidden', [
-            'title' => 'Representative Enrollment unavailable',
+            'title' => 'Matrícula no disponible',
             'csrfToken' => $this->csrf->token(),
         ]);
     }
@@ -746,9 +747,7 @@ final class RepresentativeEnrollmentController extends Controller
     {
         http_response_code($status);
 
-        return '<h1>Representative Enrollment unavailable</h1><p role="alert">'
-            . htmlspecialchars($message, ENT_QUOTES, 'UTF-8')
-            . '</p><p><a href="/representative">Back to Representative Portal</a></p>';
+        return SafeErrorPage::render($status, $message, '/representative', 'Volver al portal');
     }
 
     private function redirect(string $location, int $status): string

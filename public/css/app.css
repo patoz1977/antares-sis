@@ -126,6 +126,12 @@ body {
     font-weight: 700;
 }
 
+.app-required-label::before {
+    content: "* ";
+    font-weight: 700;
+    color: inherit;
+}
+
 .app-data-card > :last-child,
 .app-form-section > :last-child,
 .app-consequential-panel > :last-child {

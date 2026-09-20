@@ -373,7 +373,7 @@ final class Family
     public function deactivateAddress(FamilyAddressId $id): void
     {
         if ($this->hasActiveAddressAssignment($id)) {
-            throw new InvalidFamilyState('Assigned FamilyAddress cannot be deactivated.');
+            throw new InvalidFamilyState('Assigned FamilyAddress cannot be deactivated.', InvalidFamilyState::ASSIGNED_ADDRESS);
         }
 
         $this->addresses[$this->requiredAddressIndex($id)]->deactivate();
@@ -533,7 +533,7 @@ final class Family
     public function deactivateEmergencyContact(FamilyEmergencyContactId $id): void
     {
         if ($this->hasActiveEmergencyContactAssignment($id)) {
-            throw new InvalidFamilyState('Assigned FamilyEmergencyContact cannot be deactivated.');
+            throw new InvalidFamilyState('Assigned FamilyEmergencyContact cannot be deactivated.', InvalidFamilyState::ASSIGNED_EMERGENCY_CONTACT);
         }
 
         $this->emergencyContacts[$this->requiredEmergencyContactIndex($id)]->deactivate();
@@ -665,7 +665,7 @@ final class Family
     public function deactivateAuthorizedPickup(FamilyAuthorizedPickupId $id): void
     {
         if ($this->hasActiveAuthorizedPickupAssignment($id)) {
-            throw new InvalidFamilyState('Assigned FamilyAuthorizedPickup cannot be deactivated.');
+            throw new InvalidFamilyState('Assigned FamilyAuthorizedPickup cannot be deactivated.', InvalidFamilyState::ASSIGNED_AUTHORIZED_PICKUP);
         }
 
         $this->authorizedPickups[$this->requiredAuthorizedPickupIndex($id)]->deactivate();

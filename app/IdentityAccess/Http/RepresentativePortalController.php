@@ -35,7 +35,7 @@ final class RepresentativePortalController extends Controller
             http_response_code(403);
 
             return $this->view('representative-portal.no-family', [
-                'title' => 'Representative Portal unavailable',
+                'title' => 'Portal de representantes no disponible',
                 'csrfToken' => $this->csrf->token(),
             ]);
         }
@@ -51,7 +51,7 @@ final class RepresentativePortalController extends Controller
         http_response_code(200);
 
         return $this->view('representative-portal.index', [
-            'title' => 'Representative Portal',
+            'title' => 'Portal de representantes',
             'authorizedFamilies' => $access->authorizedFamilies,
             'context' => $access->context,
             'requiresSelection' => $access->requiresSelection,
@@ -86,7 +86,7 @@ final class RepresentativePortalController extends Controller
         http_response_code(403);
 
         return $this->view('representative-portal.forbidden', [
-            'title' => 'Representative Portal unavailable',
+            'title' => 'Portal de representantes no disponible',
             'csrfToken' => $this->csrf->token(),
         ]);
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Family\Http;
 
+use App\Shared\Http\SafeErrorPage;
 use App\Controllers\Controller;
 use App\Family\Application\ActivateFamilyAddress;
 use App\Family\Application\ActivateFamilyAuthorizedPickup;
@@ -92,6 +93,7 @@ final class FamilyResourceController extends Controller
         private readonly CsrfTokenManager $csrf,
         private readonly SessionManager $session,
         private readonly FamilyResourceFormOptionsProvider $optionsProvider,
+        private readonly FamilyMemberLabelsProvider $memberLabels,
     ) {
     }
 
@@ -99,7 +101,7 @@ final class FamilyResourceController extends Controller
     {
         $familyId = $this->positiveInteger((new Request())->query()['family_id'] ?? null);
         if ($familyId === null) {
-            return $this->contextError('Enter a valid positive Family ID.', 422);
+            return $this->contextError('Ingrese un identificador de familia válido.', 422);
         }
 
         try {
@@ -107,7 +109,7 @@ final class FamilyResourceController extends Controller
         } catch (FamilyNotFound) {
             return $this->notFound();
         } catch (InvalidPersistedFamilyResult) {
-            return $this->contextError('The operation could not be confirmed.', 422);
+            return $this->contextError('No se pudo confirmar la operación.', 422);
         }
 
         $this->session->put(self::TRUSTED_FAMILY_ID_KEY, $familyId);
@@ -131,7 +133,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, array $data): mixed => $this->createAddress->handle(
                 new CreateFamilyAddressInput($familyId, ...$data)
             ),
-            'Address created successfully.',
+            'Dirección creada correctamente.',
         );
     }
 
@@ -143,7 +145,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, array $data): mixed => $this->updateAddress->handle(
                 new UpdateFamilyAddressInput($familyId, ...$data)
             ),
-            'Address updated successfully.',
+            'Dirección actualizada correctamente.',
         );
     }
 
@@ -155,7 +157,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, int $id): mixed => $this->activateAddress->handle(
                 new ActivateFamilyAddressInput($familyId, $id)
             ),
-            'Address activated successfully.',
+            'Dirección activada correctamente.',
         );
     }
 
@@ -167,7 +169,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, int $id): mixed => $this->deactivateAddress->handle(
                 new DeactivateFamilyAddressInput($familyId, $id)
             ),
-            'Address deactivated successfully.',
+            'Dirección desactivada correctamente.',
         );
     }
 
@@ -196,7 +198,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, array $data): mixed => $this->assignRepresentativeAddress->handle(
                 new AssignRepresentativeAddressInput($familyId, ...$data)
             ),
-            'Representative Address assignment created successfully.',
+            'Dirección asignada al representante correctamente.',
         );
     }
 
@@ -211,7 +213,7 @@ final class FamilyResourceController extends Controller
                     $endedAt,
                 ));
             },
-            'Representative Address assignment ended successfully.',
+            'Asignación de dirección al representante finalizada correctamente.',
         );
     }
 
@@ -240,7 +242,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, array $data): mixed => $this->assignStudentAddress->handle(
                 new AssignStudentAddressInput($familyId, ...$data)
             ),
-            'Student Address assignment created successfully.',
+            'Dirección asignada al estudiante correctamente.',
         );
     }
 
@@ -255,7 +257,7 @@ final class FamilyResourceController extends Controller
                     $endedAt,
                 ));
             },
-            'Student Address assignment ended successfully.',
+            'Asignación de dirección al estudiante finalizada correctamente.',
         );
     }
 
@@ -267,7 +269,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, array $data): mixed => $this->createEmergencyContact->handle(
                 new CreateFamilyEmergencyContactInput($familyId, ...$data)
             ),
-            'Emergency Contact created successfully.',
+            'Contacto de emergencia creado correctamente.',
         );
     }
 
@@ -279,7 +281,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, array $data): mixed => $this->updateEmergencyContact->handle(
                 new UpdateFamilyEmergencyContactInput($familyId, ...$data)
             ),
-            'Emergency Contact updated successfully.',
+            'Contacto de emergencia actualizado correctamente.',
         );
     }
 
@@ -291,7 +293,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, int $id): mixed => $this->activateEmergencyContact->handle(
                 new ActivateFamilyEmergencyContactInput($familyId, $id)
             ),
-            'Emergency Contact activated successfully.',
+            'Contacto de emergencia activado correctamente.',
         );
     }
 
@@ -303,7 +305,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, int $id): mixed => $this->deactivateEmergencyContact->handle(
                 new DeactivateFamilyEmergencyContactInput($familyId, $id)
             ),
-            'Emergency Contact deactivated successfully.',
+            'Contacto de emergencia desactivado correctamente.',
         );
     }
 
@@ -333,7 +335,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, array $data): mixed => $this->assignEmergencyContact->handle(
                 new AssignEmergencyContactInput($familyId, ...$data)
             ),
-            'Emergency Contact assignment created successfully.',
+            'Contacto de emergencia asignado correctamente.',
         );
     }
 
@@ -349,7 +351,7 @@ final class FamilyResourceController extends Controller
                     $endedAt,
                 ));
             },
-            'Emergency Contact assignment ended successfully.',
+            'Asignación de contacto de emergencia finalizada correctamente.',
         );
     }
 
@@ -361,7 +363,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, array $data): mixed => $this->createAuthorizedPickup->handle(
                 new CreateFamilyAuthorizedPickupInput($familyId, ...$data)
             ),
-            'Authorized Pickup created successfully.',
+            'Persona autorizada para retirar creada correctamente.',
         );
     }
 
@@ -373,7 +375,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, array $data): mixed => $this->updateAuthorizedPickup->handle(
                 new UpdateFamilyAuthorizedPickupInput($familyId, ...$data)
             ),
-            'Authorized Pickup updated successfully.',
+            'Persona autorizada para retirar actualizada correctamente.',
         );
     }
 
@@ -385,7 +387,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, int $id): mixed => $this->activateAuthorizedPickup->handle(
                 new ActivateFamilyAuthorizedPickupInput($familyId, $id)
             ),
-            'Authorized Pickup activated successfully.',
+            'Persona autorizada para retirar activada correctamente.',
         );
     }
 
@@ -397,7 +399,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, int $id): mixed => $this->deactivateAuthorizedPickup->handle(
                 new DeactivateFamilyAuthorizedPickupInput($familyId, $id)
             ),
-            'Authorized Pickup deactivated successfully.',
+            'Persona autorizada para retirar desactivada correctamente.',
         );
     }
 
@@ -426,7 +428,7 @@ final class FamilyResourceController extends Controller
             fn (int $familyId, array $data): mixed => $this->assignAuthorizedPickup->handle(
                 new AssignAuthorizedPickupInput($familyId, ...$data)
             ),
-            'Authorized Pickup assignment created successfully.',
+            'Persona autorizada para retirar asignada correctamente.',
         );
     }
 
@@ -442,7 +444,7 @@ final class FamilyResourceController extends Controller
                     $endedAt,
                 ));
             },
-            'Authorized Pickup assignment ended successfully.',
+            'Asignación de persona autorizada para retirar finalizada correctamente.',
         );
     }
 
@@ -455,12 +457,12 @@ final class FamilyResourceController extends Controller
         $input = (new Request())->input();
         $trustedFamilyId = $this->pullTrustedFamilyId();
         if ($trustedFamilyId === null) {
-            return $this->contextError('The Family selection expired. Open the Family again.', 422);
+            return $this->contextError('La selección de familia venció. Abra la familia nuevamente.', 422);
         }
 
         if (!$this->csrf->isValid($this->scalar($input, '_csrf_token'))) {
             $this->restoreTrustedFamilyId($trustedFamilyId);
-            $this->session->put(self::FLASH_ERROR_KEY, 'Your form expired. Please try again.');
+            $this->session->put(self::FLASH_ERROR_KEY, 'El formulario venció. Inténtelo nuevamente.');
 
             return $this->redirect('/families/resources?family_id=' . $trustedFamilyId, 303);
         }
@@ -471,7 +473,7 @@ final class FamilyResourceController extends Controller
             return $this->renderFailure(
                 $trustedFamilyId,
                 $values,
-                ['Family identity cannot be changed.'],
+                ['No se puede cambiar la familia seleccionada.'],
             );
         }
 
@@ -491,25 +493,25 @@ final class FamilyResourceController extends Controller
             return $this->renderFailure(
                 $trustedFamilyId,
                 $values,
-                ['Select an active relationship type.'],
+                ['Seleccione un parentesco activo.'],
             );
         } catch (DocumentTypeNotFound) {
             return $this->renderFailure(
                 $trustedFamilyId,
                 $values,
-                ['Select an active document type.'],
+                ['Seleccione un tipo de documento activo.'],
             );
         } catch (InvalidPersistedFamilyResult) {
             return $this->renderFailure(
                 $trustedFamilyId,
                 $values,
-                ['The operation could not be confirmed.'],
+                ['No se pudo confirmar la operación.'],
             );
-        } catch (InvalidFamilyState) {
+        } catch (InvalidFamilyState $error) {
             return $this->renderFailure(
                 $trustedFamilyId,
                 $values,
-                ['Selected resource is not available for this Family.'],
+                [FamilyResourceFeedback::forInvalidState($error)],
             );
         }
 
@@ -548,7 +550,7 @@ final class FamilyResourceController extends Controller
                     ? null
                     : $this->findById($resources->{$collection}, $assignmentId, true);
                 if ($assignment === null) {
-                    $errors[] = 'Selected resource is not available for this Family.';
+                    $errors[] = 'El recurso seleccionado no está disponible para esta familia.';
                 }
                 $endedAt = $this->requiredTimestamp($values, 'ended_at', $errors);
 
@@ -575,21 +577,21 @@ final class FamilyResourceController extends Controller
         $label = $values['label'] ?? '';
         $mainStreet = $values['main_street'] ?? '';
         if ($label === '') {
-            $errors[] = 'Address label is required.';
+            $errors[] = 'El nombre de la dirección es obligatorio.';
         }
         if ($mainStreet === '') {
-            $errors[] = 'Main street is required.';
+            $errors[] = 'La calle principal es obligatoria.';
         }
         $latitude = $this->nullable($values['latitude'] ?? '');
         $longitude = $this->nullable($values['longitude'] ?? '');
         if (($latitude === null) !== ($longitude === null)) {
-            $errors[] = 'Latitude and longitude must be supplied together.';
+            $errors[] = 'Ingrese la latitud y la longitud juntas.';
         }
         if ($latitude !== null && !is_numeric($latitude)) {
-            $errors[] = 'Latitude must be numeric.';
+            $errors[] = 'La latitud debe ser numérica.';
         }
         if ($longitude !== null && !is_numeric($longitude)) {
-            $errors[] = 'Longitude must be numeric.';
+            $errors[] = 'La longitud debe ser numérica.';
         }
 
         return [$errors, array_merge($data, [
@@ -624,18 +626,18 @@ final class FamilyResourceController extends Controller
         $names = $values['names'] ?? '';
         $mobilePhone = $values['mobile_phone'] ?? '';
         if ($names === '') {
-            $errors[] = 'Names are required.';
+            $errors[] = 'Los nombres son obligatorios.';
         }
         if ($mobilePhone === '') {
-            $errors[] = 'Mobile phone is required.';
+            $errors[] = 'El teléfono móvil es obligatorio.';
         }
         $relationshipTypeId = $this->positiveInteger($values['relationship_type_id'] ?? null);
         if ($relationshipTypeId === null || !$options->hasRelationshipType($relationshipTypeId)) {
-            $errors[] = 'Select an active relationship type.';
+            $errors[] = 'Seleccione un parentesco activo.';
         }
         $email = $this->nullable($values['email'] ?? '');
         if ($email !== null && filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-            $errors[] = 'Enter a valid email.';
+            $errors[] = 'Ingrese un correo electrónico válido.';
         }
 
         return [$errors, array_merge($data, [
@@ -668,14 +670,14 @@ final class FamilyResourceController extends Controller
         $names = $values['names'] ?? '';
         $mobilePhone = $values['mobile_phone'] ?? '';
         if ($names === '') {
-            $errors[] = 'Names are required.';
+            $errors[] = 'Los nombres son obligatorios.';
         }
         if ($mobilePhone === '') {
-            $errors[] = 'Mobile phone is required.';
+            $errors[] = 'El teléfono móvil es obligatorio.';
         }
         $relationshipTypeId = $this->positiveInteger($values['relationship_type_id'] ?? null);
         if ($relationshipTypeId === null || !$options->hasRelationshipType($relationshipTypeId)) {
-            $errors[] = 'Select an active relationship type.';
+            $errors[] = 'Seleccione un parentesco activo.';
         }
         $documentTypeId = $this->optionalPositiveInteger(
             $values['document_type_id'] ?? '',
@@ -684,10 +686,10 @@ final class FamilyResourceController extends Controller
         );
         $documentNumber = $this->nullable($values['document_number'] ?? '');
         if (($documentTypeId === null) !== ($documentNumber === null)) {
-            $errors[] = 'Document type and number must be supplied together.';
+            $errors[] = 'Ingrese el tipo y el número de documento juntos.';
         }
         if ($documentTypeId !== null && !$options->hasDocumentType($documentTypeId)) {
-            $errors[] = 'Select an active document type.';
+            $errors[] = 'Seleccione un tipo de documento activo.';
         }
 
         return [$errors, array_merge($data, [
@@ -718,7 +720,7 @@ final class FamilyResourceController extends Controller
         } catch (FamilyNotFound) {
             return $this->notFound();
         } catch (InvalidPersistedFamilyResult) {
-            return $this->contextError('The operation could not be confirmed.', 422);
+            return $this->contextError('No se pudo confirmar la operación.', 422);
         }
         $this->restoreTrustedFamilyId($familyId);
 
@@ -738,9 +740,10 @@ final class FamilyResourceController extends Controller
         http_response_code($status);
 
         return $this->view('families.resources', [
-            'title' => 'Family resources',
+            'title' => 'Recursos familiares',
             'resources' => $resources,
             'family' => $family,
+            'memberLabels' => $this->memberLabels->forFamily($family->id),
             'options' => $options,
             'csrfToken' => $this->csrf->token(),
             'values' => $values,
@@ -754,7 +757,7 @@ final class FamilyResourceController extends Controller
     {
         $id = $this->positiveInteger($values[$field] ?? null);
         if ($id === null || $this->findById($resources, $id) === null) {
-            $errors[] = 'Selected resource is not available for this Family.';
+            $errors[] = 'El recurso seleccionado no está disponible para esta familia.';
 
             return null;
         }
@@ -767,7 +770,7 @@ final class FamilyResourceController extends Controller
         $id = $this->positiveInteger($values[$field] ?? null);
         $resource = $id === null ? null : $this->findById($resources, $id);
         if ($resource === null || $resource->status !== 'ACTIVE') {
-            $errors[] = 'Selected resource is not available for this Family.';
+            $errors[] = 'El recurso seleccionado no está disponible para esta familia.';
 
             return null;
         }
@@ -788,7 +791,7 @@ final class FamilyResourceController extends Controller
                 return $id;
             }
         }
-        $errors[] = 'Selected resource is not available for this Family.';
+        $errors[] = 'El recurso seleccionado no está disponible para esta familia.';
 
         return null;
     }
@@ -802,7 +805,7 @@ final class FamilyResourceController extends Controller
             new DateTimeZone('UTC'),
         );
         if (!$timestamp instanceof DateTimeImmutable || $timestamp->format('Y-m-d\TH:i') !== $value) {
-            $errors[] = sprintf('%s must use the YYYY-MM-DDTHH:MM format.', ucfirst(str_replace('_', ' ', $field)));
+            $errors[] = 'Ingrese una fecha y hora válidas (AAAA-MM-DDTHH:MM).';
 
             return null;
         }
@@ -817,7 +820,7 @@ final class FamilyResourceController extends Controller
         }
         $id = $this->positiveInteger($value);
         if ($id === null) {
-            $errors[] = sprintf('Select a valid %s.', $label);
+            $errors[] = 'Seleccione un valor válido.';
         }
 
         return $id;
@@ -842,7 +845,7 @@ final class FamilyResourceController extends Controller
             if (is_string($key) && is_scalar($value)) {
                 $values[$key] = trim((string) $value);
             } elseif (is_string($key)) {
-                $errors[] = sprintf('%s must be a single value.', ucfirst(str_replace('_', ' ', $key)));
+                $errors[] = 'Ingrese un único valor por campo.';
             }
         }
 
@@ -894,16 +897,13 @@ final class FamilyResourceController extends Controller
     {
         http_response_code(404);
 
-        return $this->contextError('Family not found.', 404);
+        return $this->contextError('No se encontró la familia.', 404);
     }
 
     private function contextError(string $message, int $status): string
     {
         http_response_code($status);
-        $escaped = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
-
-        return '<h1>Family resources unavailable</h1><p role="alert">' . $escaped
-            . '</p><p><a href="/families">Back to Families</a></p>';
+        return SafeErrorPage::render($status, $message, '/families', 'Volver a familias');
     }
 
     private function redirect(string $location, int $status): string

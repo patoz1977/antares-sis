@@ -10,6 +10,41 @@ $activeStudents = array_values(array_filter($family->students, static fn ($item)
 $activeAddresses = array_values(array_filter($resources->addresses, static fn ($item): bool => $item->status === 'ACTIVE'));
 $activeContacts = array_values(array_filter($resources->emergencyContacts, static fn ($item): bool => $item->status === 'ACTIVE'));
 $activePickups = array_values(array_filter($resources->authorizedPickups, static fn ($item): bool => $item->status === 'ACTIVE'));
+$addressLabel = static function (int $id) use ($resources): string {
+    foreach ($resources->addresses as $address) {
+        if ($address->id === $id) {
+            return $address->label;
+        }
+    }
+    return 'Dirección no disponible';
+};
+$contactName = static function (int $id) use ($resources): string {
+    foreach ($resources->emergencyContacts as $contact) {
+        if ($contact->id === $id) {
+            return $contact->names;
+        }
+    }
+    return 'Contacto no disponible';
+};
+$pickupName = static function (int $id) use ($resources): string {
+    foreach ($resources->authorizedPickups as $pickup) {
+        if ($pickup->id === $id) {
+            return $pickup->names;
+        }
+    }
+    return 'Persona no disponible';
+};
+$catalogName = static function (array $catalog, ?int $id): string {
+    if ($id === null) {
+        return 'No registrado';
+    }
+    foreach ($catalog as $option) {
+        if ($option->id === $id) {
+            return $option->name;
+        }
+    }
+    return 'No disponible';
+};
 ?>
 <header class="app-page-header d-flex flex-column flex-lg-row justify-content-between gap-3 align-items-lg-start">
     <div>
@@ -27,14 +62,19 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
     <h2 class="h4" id="resources-family-heading">Contexto familiar</h2>
     <dl class="app-data-list">
         <dt>Familia</dt><dd><?= $escape($resources->displayName) ?></dd>
-        <dt>ID interno</dt><dd><?= $escape($resources->familyId) ?></dd>
         <dt>Estado</dt><dd><?php $statusCode = $resources->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></dd>
     </dl>
 </section>
 
 <?php require dirname(__DIR__) . '/components/validation-summary.php'; ?>
 
-<section class="app-resource-section mb-5" aria-labelledby="addresses-heading">
+<nav class="app-section-nav mb-4" aria-label="Tipos de recursos familiares">
+    <a href="#direcciones">Direcciones</a>
+    <a href="#contactos-emergencia">Contactos de emergencia</a>
+    <a href="#retiros-autorizados">Retiros autorizados</a>
+</nav>
+
+<section class="app-resource-section mb-5" id="direcciones" aria-labelledby="addresses-heading">
 <h2 class="h3" id="addresses-heading">Direcciones</h2>
 
 <div class="app-form-section">
@@ -54,6 +94,7 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 </form>
 </div>
 
+<h3 class="h5 mt-4">Direcciones existentes y mantenimiento</h3>
 <?php if ($resources->addresses === []): ?>
 <?php $emptyStateTitle = 'No hay direcciones registradas'; $emptyStateText = 'Crea una dirección para poder asignarla a representantes o estudiantes.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php else: ?>
@@ -61,7 +102,6 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 <article class="app-data-card">
     <h3><?= $escape($address->label) ?></h3>
     <dl>
-        <dt>ID de dirección</dt><dd><?= $escape($address->id) ?></dd>
         <dt>Calle principal</dt><dd><?= $escape($address->mainStreet) ?></dd>
         <dt>Número</dt><dd><?= $escape($address->streetNumber ?? 'No registrado') ?></dd>
         <dt>Calle secundaria</dt><dd><?= $escape($address->secondaryStreet ?? 'No registrado') ?></dd>
@@ -95,14 +135,15 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 <?php endforeach; ?>
 <?php endif; ?>
 
-<h3 class="h5">Asignar dirección a representante</h3>
+<h3 class="h5 mt-4">Asignaciones de direcciones</h3>
+<h4 class="h6">Asignar dirección a representante</h4>
 <form method="post" action="/families/resources/representatives/address">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
     <label>Representante
         <select name="representative_id" required>
             <?php foreach ($activeRepresentatives as $membership): ?>
-            <option value="<?= $escape($membership->representativeId) ?>">Representante <?= $escape($membership->representativeId) ?></option>
+            <option value="<?= $escape($membership->representativeId) ?>"><?= $escape($memberLabels->representative($membership->representativeId)) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
@@ -117,14 +158,14 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
     <button type="submit"<?= $activeRepresentatives === [] || $activeAddresses === [] ? ' disabled' : '' ?>>Asignar dirección al representante</button>
 </form>
 
-<h3 class="h5">Asignar dirección a estudiante</h3>
+<h4 class="h6">Asignar dirección a estudiante</h4>
 <form method="post" action="/families/resources/students/address">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
     <label>Estudiante
         <select name="student_id" required>
             <?php foreach ($activeStudents as $membership): ?>
-            <option value="<?= $escape($membership->studentId) ?>">Estudiante <?= $escape($membership->studentId) ?></option>
+            <option value="<?= $escape($membership->studentId) ?>"><?= $escape($memberLabels->student($membership->studentId)) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
@@ -142,7 +183,7 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 <h3 class="h5">Historial de asignaciones de dirección</h3>
 <?php foreach ($resources->representativeAddressAssignments as $assignment): ?>
 <article class="app-data-card">
-    <p>Representante <?= $escape($assignment->representativeId) ?> — Dirección <?= $escape($assignment->familyAddressId) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
+    <p><?= $escape($memberLabels->representative($assignment->representativeId)) ?> — <?= $escape($addressLabel($assignment->familyAddressId)) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
     <p><?= $escape($timestamp($assignment->startedAt)) ?> hasta <?= $assignment->endedAt === null ? 'Sin finalizar' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
     <form method="post" action="/families/resources/representatives/address/end">
@@ -157,7 +198,7 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 <?php endforeach; ?>
 <?php foreach ($resources->studentAddressAssignments as $assignment): ?>
 <article>
-    <p>Estudiante <?= $escape($assignment->studentId) ?> — Dirección <?= $escape($assignment->familyAddressId) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
+    <p><?= $escape($memberLabels->student($assignment->studentId)) ?> — <?= $escape($addressLabel($assignment->familyAddressId)) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
     <p><?= $escape($timestamp($assignment->startedAt)) ?> hasta <?= $assignment->endedAt === null ? 'Sin finalizar' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
     <form method="post" action="/families/resources/students/address/end">
@@ -172,7 +213,7 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 <?php endforeach; ?>
 </section>
 
-<section class="app-resource-section mb-5" aria-labelledby="emergency-heading">
+<section class="app-resource-section mb-5" id="contactos-emergencia" aria-labelledby="emergency-heading">
 <h2 class="h3" id="emergency-heading">Contactos de emergencia</h2>
 <?php if ($options->relationshipTypes === []): ?>
 <p class="alert alert-warning" role="alert">No hay tipos de relación activos. Los formularios de contactos de emergencia y personas autorizadas están deshabilitados.</p>
@@ -196,12 +237,12 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
     <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Crear contacto de emergencia</button>
 </form>
 
+<h3 class="h5 mt-4">Contactos existentes y mantenimiento</h3>
 <?php foreach ($resources->emergencyContacts as $contact): ?>
 <article>
     <h3><?= $escape($contact->names) ?></h3>
     <dl>
-        <dt>ID de contacto</dt><dd><?= $escape($contact->id) ?></dd>
-        <dt>Tipo de relación (ID)</dt><dd><?= $escape($contact->relationshipTypeId) ?></dd>
+        <dt>Relación</dt><dd><?= $escape($catalogName($options->relationshipTypes, $contact->relationshipTypeId)) ?></dd>
         <dt>Teléfono móvil</dt><dd><?= $escape($contact->mobilePhone) ?></dd>
         <dt>Teléfono</dt><dd><?= $escape($contact->phone ?? 'No registrado') ?></dd>
         <dt>Correo electrónico</dt><dd><?= $escape($contact->email ?? 'No registrado') ?></dd>
@@ -235,7 +276,8 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 </article>
 <?php endforeach; ?>
 
-<h3 class="h5">Asignar contacto de emergencia</h3>
+<h3 class="h5 mt-4">Asignaciones de contactos de emergencia</h3>
+<h4 class="h6">Asignar contacto de emergencia</h4>
 <form method="post" action="/families/resources/emergency-contacts/assign">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
@@ -249,7 +291,7 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
     <label>Estudiante
         <select name="student_id" required>
             <?php foreach ($activeStudents as $membership): ?>
-            <option value="<?= $escape($membership->studentId) ?>">Estudiante <?= $escape($membership->studentId) ?></option>
+            <option value="<?= $escape($membership->studentId) ?>"><?= $escape($memberLabels->student($membership->studentId)) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
@@ -261,7 +303,7 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 <h3 class="h5">Historial de contactos de emergencia</h3>
 <?php foreach ($resources->emergencyContactAssignments as $assignment): ?>
 <article>
-    <p>Contacto <?= $escape($assignment->familyEmergencyContactId) ?> — Estudiante <?= $escape($assignment->studentId) ?> — Prioridad <?= $escape($assignment->priority ?? 'No registrada') ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
+    <p><?= $escape($contactName($assignment->familyEmergencyContactId)) ?> — <?= $escape($memberLabels->student($assignment->studentId)) ?> — Prioridad <?= $escape($assignment->priority ?? 'No registrada') ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
     <p><?= $escape($timestamp($assignment->startedAt)) ?> hasta <?= $assignment->endedAt === null ? 'Sin finalizar' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
     <form method="post" action="/families/resources/emergency-contacts/end">
@@ -276,7 +318,7 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 <?php endforeach; ?>
 </section>
 
-<section class="app-resource-section mb-5" aria-labelledby="pickups-heading">
+<section class="app-resource-section mb-5" id="retiros-autorizados" aria-labelledby="pickups-heading">
 <h2 class="h3" id="pickups-heading">Personas autorizadas para retirar</h2>
 <h3 class="h5">Crear persona autorizada</h3>
 <form method="post" action="/families/resources/authorized-pickups/create">
@@ -308,15 +350,15 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 <p class="alert alert-info">No hay tipos de documento activos. La persona autorizada puede guardarse sin identificación.</p>
 <?php endif; ?>
 
+<h3 class="h5 mt-4">Personas existentes y mantenimiento</h3>
 <?php foreach ($resources->authorizedPickups as $pickup): ?>
 <article class="app-data-card">
     <h3><?= $escape($pickup->names) ?></h3>
     <dl>
-        <dt>ID de persona autorizada</dt><dd><?= $escape($pickup->id) ?></dd>
-        <dt>Tipo de relación (ID)</dt><dd><?= $escape($pickup->relationshipTypeId) ?></dd>
+        <dt>Relación</dt><dd><?= $escape($catalogName($options->relationshipTypes, $pickup->relationshipTypeId)) ?></dd>
         <dt>Teléfono móvil</dt><dd><?= $escape($pickup->mobilePhone) ?></dd>
         <dt>Teléfono</dt><dd><?= $escape($pickup->phone ?? 'No registrado') ?></dd>
-        <dt>Tipo de documento (ID)</dt><dd><?= $escape($pickup->documentTypeId ?? 'No registrado') ?></dd>
+        <dt>Tipo de documento</dt><dd><?= $escape($catalogName($options->documentTypes, $pickup->documentTypeId)) ?></dd>
         <dt>Número de documento</dt><dd><?= $escape($pickup->documentNumber ?? 'No registrado') ?></dd>
         <dt>Observaciones</dt><dd><?= $escape($pickup->observations ?? 'No registradas') ?></dd>
         <dt>Estado</dt><dd><?= $escape($pickup->status === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></dd>
@@ -356,7 +398,8 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 </article>
 <?php endforeach; ?>
 
-<h3 class="h5">Asignar persona autorizada</h3>
+<h3 class="h5 mt-4">Asignaciones de retiros autorizados</h3>
+<h4 class="h6">Asignar persona autorizada</h4>
 <form method="post" action="/families/resources/authorized-pickups/assign">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
@@ -370,7 +413,7 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
     <label>Estudiante
         <select name="student_id" required>
             <?php foreach ($activeStudents as $membership): ?>
-            <option value="<?= $escape($membership->studentId) ?>">Estudiante <?= $escape($membership->studentId) ?></option>
+            <option value="<?= $escape($membership->studentId) ?>"><?= $escape($memberLabels->student($membership->studentId)) ?></option>
             <?php endforeach; ?>
         </select>
     </label>
@@ -381,7 +424,7 @@ $activePickups = array_values(array_filter($resources->authorizedPickups, static
 <h3 class="h5">Historial de personas autorizadas</h3>
 <?php foreach ($resources->authorizedPickupAssignments as $assignment): ?>
 <article>
-    <p>Persona autorizada <?= $escape($assignment->familyAuthorizedPickupId) ?> — Estudiante <?= $escape($assignment->studentId) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
+    <p><?= $escape($pickupName($assignment->familyAuthorizedPickupId)) ?> — <?= $escape($memberLabels->student($assignment->studentId)) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
     <p><?= $escape($timestamp($assignment->startedAt)) ?> hasta <?= $assignment->endedAt === null ? 'Sin finalizar' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
     <form method="post" action="/families/resources/authorized-pickups/end">

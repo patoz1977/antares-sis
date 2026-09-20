@@ -13,6 +13,15 @@ $field = static fn (string $key, mixed $fallback = ''): string => $escape($value
 
 <?php require dirname(__DIR__) . '/components/validation-summary.php'; ?>
 
+<nav class="app-section-nav mb-4" aria-label="Secciones de confirmaciones institucionales">
+    <a href="#period-selection-heading">Período</a>
+    <a href="#academic-period-lifecycle-heading">Estado de períodos</a>
+    <?php if (($selectedPeriod ?? null) !== null): ?>
+    <a href="#create-requirement-heading">Crear requisito</a>
+    <a href="#requirements-heading">Requisitos existentes</a>
+    <?php endif; ?>
+</nav>
+
 <section class="app-form-section" aria-labelledby="period-selection-heading">
     <h2 class="h4" id="period-selection-heading">Seleccionar período académico</h2>
     <form class="row g-3 align-items-end" method="get" action="/institutional-acknowledgements">
@@ -67,6 +76,7 @@ $field = static fn (string $key, mixed $fallback = ''): string => $escape($value
 
 <section class="app-form-section" aria-labelledby="create-requirement-heading">
     <h2 class="h4" id="create-requirement-heading">Crear requisito</h2>
+    <p class="text-body-secondary">Agrega un requisito al período seleccionado.</p>
     <form method="post" action="/institutional-acknowledgements/requirements/create">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
         <input type="hidden" name="academic_period_id" value="<?= $escape($selectedPeriod->id) ?>">
@@ -81,7 +91,7 @@ $field = static fn (string $key, mixed $fallback = ''): string => $escape($value
 </section>
 
 <section aria-labelledby="requirements-heading">
-    <h2 class="h3" id="requirements-heading">Requisitos configurados</h2>
+    <h2 class="h3" id="requirements-heading">Requisitos existentes y mantenimiento</h2>
     <?php if ($requirements === []): ?>
     <?php $emptyStateTitle = 'No hay requisitos configurados'; $emptyStateText = 'El período académico seleccionado todavía no tiene requisitos.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
     <?php endif; ?>

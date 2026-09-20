@@ -609,7 +609,7 @@ PHP
                 '%s; follow-up status=%d location=%s body-bytes=%d; cookies=%s; session-files=%d',
                 match (true) {
                     str_contains($failedLogin['body'], 'Solicitud') => 'csrf',
-                    str_contains($failedLogin['body'], 'Invalid credentials.') => 'credentials',
+                    str_contains($failedLogin['body'], 'Credenciales inválidas.') => 'credentials',
                     default => 'unclassified',
                 },
                 $failedLogin['status'],

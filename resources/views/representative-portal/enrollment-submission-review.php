@@ -65,7 +65,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <dt>Familia actual</dt><dd><?= $escape($submissionReview->familyDisplayName) ?></dd>
         <dt>Estudiante</dt><dd><?= $escape($student->displayName) ?></dd>
         <dt>Código institucional</dt><dd><?= $escape($student->student->institutionalCode) ?></dd>
-        <dt>Período académico</dt><dd><?= $escape($period->name) ?> (<?= $escape($period->code) ?>)</dd>
+        <dt>Período académico</dt><dd><?= $escape($period->name) ?></dd>
         <dt>Estado de matrícula</dt><dd><?php $statusCode = $enrollment->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></dd>
         <dt>Inicio (UTC)</dt><dd><?= $escape($formatInstant($enrollment->startedAt)) ?></dd>
         <dt>Envío (UTC)</dt><dd><?= $escape($formatInstant($enrollment->submittedAt)) ?></dd>
@@ -210,7 +210,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 
     <?php if ($submissionReview->validation->isSubmittable): ?>
     <p><strong>Después del envío, Facturación, Información médica, Transporte y autorización de salida quedan en modo de solo lectura hasta que la institución reabra la matrícula.</strong></p>
-    <p>Los datos actuales de la persona, el representante, el estudiante y la familia continúan vivos y conservan sus reglas de autorización.</p>
+    <p>Puedes seguir actualizando los datos personales y familiares que tu cuenta tenga permitidos.</p>
     <form method="post" action="/representative/enrollment/submit">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
         <input type="hidden" name="expected_family_id" value="<?= $escape($submissionReview->familyId) ?>">

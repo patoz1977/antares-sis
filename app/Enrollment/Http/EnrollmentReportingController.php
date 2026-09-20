@@ -15,6 +15,7 @@ use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
 use App\Enrollment\Application\Reporting\GetStudentMedicalReport;
 use App\Enrollment\Application\Reporting\GetStudentRepresentativeDirectory;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingPeriod;
+use App\Shared\Http\SafeErrorPage;
 use Core\Http\Request;
 use InvalidArgumentException;
 use Throwable;
@@ -245,17 +246,15 @@ final class EnrollmentReportingController extends Controller
             default => 500,
         };
         $message = match ($status) {
-            400 => 'The AcademicPeriod selection is invalid.',
-            404 => 'The AcademicPeriod is unavailable.',
-            default => 'The report could not be generated.',
+            400 => 'Seleccione un período académico válido.',
+            404 => 'El período académico no está disponible.',
+            default => 'No se pudo generar el reporte.',
         };
 
         $this->noStore();
         http_response_code($status);
 
-        return '<h1>Enrollment report unavailable</h1><p role="alert">'
-            . htmlspecialchars($message, ENT_QUOTES, 'UTF-8')
-            . '</p><p><a href="/reports/enrollments">Back to Basic Enrollment Reports</a></p>';
+        return SafeErrorPage::render($status, $message, '/reports/enrollments', 'Volver a reportes de matrícula');
     }
 
     private function noStore(): void

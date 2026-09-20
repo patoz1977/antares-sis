@@ -28,7 +28,7 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
         $html = $fixture['controller']->index();
 
         assertSameValue(403, http_response_code());
-        deliveryAssertContains('Institutional Acknowledgements unavailable', $html);
+        deliveryAssertContains('No tiene acceso a las aceptaciones institucionales', $html);
         assertSameValue(false, str_contains($html, 'representative_id'));
     });
 
@@ -48,6 +48,8 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
 
         assertSameValue(200, http_response_code());
         deliveryAssertContains('Academic Period 2026-2027', $html);
+        deliveryAssertContains('Abre y revisa cada documento o recurso mostrado.', $html);
+        assertSameValue(false, str_contains($html, '2026-09-01 a '));
         assertSameValue(3, substr_count($html, 'name="acknowledged_requirement_ids[]"'));
         deliveryAssertContains('&lt;script&gt;Review &amp; &quot;one&quot;&lt;/script&gt;', $html);
         deliveryAssertContains('Official &lt;A&gt; &amp; &quot;B&quot;', $html);
@@ -93,7 +95,7 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
         ]);
         $invalid = $fixture['controller']->complete();
         assertSameValue(403, http_response_code());
-        deliveryAssertContains('could not be verified', $invalid);
+        deliveryAssertContains('No se pudo verificar la solicitud', $invalid);
         assertSameValue(0, $fixture['services']['completions']->saveCount);
 
         deliveryRequest('POST', '/representative/acknowledgements/complete', [
@@ -103,7 +105,7 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
         assertSameValue('', $fixture['controller']->complete());
         assertSameValue(303, http_response_code());
         assertSameValue(1, $fixture['services']['completions']->saveCount);
-        deliveryAssertContains('completed successfully', $fixture['controller']->index());
+        deliveryAssertContains('completadas correctamente', $fixture['controller']->index());
 
         deliveryRequest('POST', '/representative/acknowledgements/complete', [
             '_csrf_token' => 'delivery-csrf',
@@ -123,7 +125,7 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
         representativeAcknowledgementDeliveryPost($changed['controller'], [10]);
         assertSameValue(303, http_response_code());
         assertSameValue(0, $changed['services']['completions']->saveCount);
-        deliveryAssertContains('requirements changed', $changed['controller']->index());
+        deliveryAssertContains('requisitos cambiaron', $changed['controller']->index());
 
         $switched = representativeAcknowledgementDeliveryFixture(
             requirements: [

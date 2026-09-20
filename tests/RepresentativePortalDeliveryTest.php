@@ -135,6 +135,8 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
 
         assertSameValue(200, http_response_code());
         deliveryAssertContains('Seleccionar familia', $html);
+        deliveryAssertContains('Elige la familia con la que deseas continuar.', $html);
+        assertSameValue(false, str_contains($html, 'se valida nuevamente en el servidor'));
         deliveryAssertContains('name="family_id"', $html);
         deliveryAssertContains('Family &lt;A&gt;', $html);
         deliveryAssertContains('Family &amp; B', $html);
@@ -179,7 +181,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
             deliveryRequest('POST', '/representative/family', $input);
             $html = $fixture['controller']->selectFamily();
             assertSameValue(403, http_response_code());
-            deliveryAssertContains('Representative Portal unavailable', $html);
+            deliveryAssertContains('Portal de representantes no disponible', $html);
             assertSameValue(10, $fixture['session']->get('representative_family_context_id'));
         }
     });
@@ -210,7 +212,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         $html = representativePortalPost($fixture['controller'], 10);
 
         assertSameValue(403, http_response_code());
-        deliveryAssertContains('Representative Portal unavailable', $html);
+        deliveryAssertContains('Portal de representantes no disponible', $html);
         assertSameValue(null, $fixture['session']->get('representative_family_context_id'));
     });
 
@@ -314,7 +316,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
             new FamilyAdministrationMiddleware($fixture['getUser']),
         ] as $middleware) {
             $response = $middleware->handle(new Request(), $next);
-            assertSameValue('Forbidden', deliverySendResponse($response));
+            deliveryAssertContains('No tienes permiso para acceder a esta página.', deliverySendResponse($response));
             assertSameValue(403, http_response_code());
         }
     });

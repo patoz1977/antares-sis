@@ -51,7 +51,7 @@ final class RepresentativeUserController extends Controller
         if ($representativeId === null) {
             $this->session->put(
                 self::FLASH_ERROR_KEY,
-                'Enter a valid positive Representative ID.'
+                'Ingresa un identificador válido de representante.'
             );
 
             return $this->redirect('/families');
@@ -68,7 +68,7 @@ final class RepresentativeUserController extends Controller
         if (!$this->csrf->isValid($this->trimmedScalar($input, '_csrf_token'))) {
             return $this->formFailure(
                 $trustedId,
-                ['Your form expired. Open the Representative User form again.'],
+                ['El formulario caducó. Abre nuevamente la administración del usuario.'],
             );
         }
 
@@ -79,7 +79,7 @@ final class RepresentativeUserController extends Controller
         if ($postedId !== $trustedId) {
             return $this->formFailure(
                 $trustedId,
-                ['Representative identity cannot be changed.'],
+                ['No se puede cambiar la identidad del representante.'],
             );
         }
 
@@ -89,10 +89,10 @@ final class RepresentativeUserController extends Controller
         $status = UserStatus::tryFrom($statusValue);
         $errors = [];
         if ($password !== $confirmation) {
-            $errors[] = 'Password confirmation does not match.';
+            $errors[] = 'La confirmación de contraseña no coincide.';
         }
         if ($status === null) {
-            $errors[] = 'Select a valid User status.';
+            $errors[] = 'Selecciona un estado de usuario válido.';
         }
         if ($errors !== []) {
             return $this->formFailure($trustedId, $errors, $statusValue);
@@ -109,42 +109,42 @@ final class RepresentativeUserController extends Controller
         } catch (RepresentativeUserPersonNotFound) {
             return $this->formFailure(
                 $trustedId,
-                ['The Representative Person could not be resolved.'],
+                ['No se pudo encontrar la persona del representante.'],
                 $statusValue,
             );
         } catch (RepresentativeUserRequiresIdentification) {
             return $this->formFailure(
                 $trustedId,
-                ['Representative User requires complete Person identification.'],
+                ['El usuario representante requiere la identificación completa de la persona.'],
                 $statusValue,
             );
         } catch (RepresentativeRequiresContactEmail) {
             return $this->formFailure(
                 $trustedId,
-                ['Representative User requires a Person personal email.'],
+                ['El usuario representante requiere un correo personal.'],
                 $statusValue,
             );
         } catch (RepresentativeUserAlreadyExists) {
             return $this->formFailure(
                 $trustedId,
-                ['This Representative already has a User.'],
+                ['Este representante ya tiene un usuario.'],
                 $statusValue,
             );
         } catch (RepresentativeLoginIdentifierAlreadyUsed) {
             return $this->formFailure(
                 $trustedId,
-                ['That Representative username is already in use.'],
+                ['Ese nombre de usuario ya está en uso.'],
                 $statusValue,
             );
         } catch (InvalidRepresentativePassword) {
             return $this->formFailure(
                 $trustedId,
-                ['Password must contain at least five characters.'],
+                ['La contraseña debe tener al menos cinco caracteres.'],
                 $statusValue,
             );
         }
 
-        $this->session->put(self::FLASH_SUCCESS_KEY, 'Representative User created successfully.');
+        $this->session->put(self::FLASH_SUCCESS_KEY, 'Usuario representante creado correctamente.');
 
         return $this->redirect($this->manageUrl($trustedId), 303);
     }
@@ -157,7 +157,7 @@ final class RepresentativeUserController extends Controller
         if (!$this->csrf->isValid($this->trimmedScalar($input, '_csrf_token'))) {
             return $this->formFailure(
                 $trustedId,
-                ['Your form expired. Open the Representative User form again.'],
+                ['El formulario caducó. Abre nuevamente la administración del usuario.'],
             );
         }
 
@@ -168,7 +168,7 @@ final class RepresentativeUserController extends Controller
         if ($postedId !== $trustedId) {
             return $this->formFailure(
                 $trustedId,
-                ['Representative identity cannot be changed.'],
+                ['No se puede cambiar la identidad del representante.'],
             );
         }
 
@@ -177,7 +177,7 @@ final class RepresentativeUserController extends Controller
         if ($password !== $confirmation) {
             return $this->formFailure(
                 $trustedId,
-                ['Password confirmation does not match.'],
+                ['La confirmación de contraseña no coincide.'],
             );
         }
 
@@ -190,18 +190,18 @@ final class RepresentativeUserController extends Controller
         } catch (RepresentativeUserNotFound) {
             return $this->formFailure(
                 $trustedId,
-                ['Representative User was not found.'],
+                ['No se encontró el usuario representante.'],
             );
         } catch (InvalidRepresentativePassword) {
             return $this->formFailure(
                 $trustedId,
-                ['Password must contain at least five characters.'],
+                ['La contraseña debe tener al menos cinco caracteres.'],
             );
         }
 
         $this->session->put(
             self::FLASH_SUCCESS_KEY,
-            'Representative User password changed successfully.'
+            'Contraseña del usuario representante reemplazada correctamente.'
         );
 
         return $this->redirect($this->manageUrl($trustedId), 303);
@@ -225,7 +225,7 @@ final class RepresentativeUserController extends Controller
         http_response_code($status);
 
         return $this->view('representative-users.manage', [
-            'title' => 'Manage Representative User',
+            'title' => 'Administrar usuario representante',
             'representative' => $representative,
             'person' => $person,
             'user' => $user,
@@ -254,7 +254,7 @@ final class RepresentativeUserController extends Controller
         http_response_code(422);
 
         return $this->view('representative-users.session-expired', [
-            'title' => 'Representative User session expired',
+            'title' => 'Sesión de usuario representante caducada',
         ]);
     }
 
@@ -263,7 +263,7 @@ final class RepresentativeUserController extends Controller
         http_response_code(404);
 
         return $this->view('representative-users.not-found', [
-            'title' => 'Representative not found',
+            'title' => 'Representante no encontrado',
         ]);
     }
 

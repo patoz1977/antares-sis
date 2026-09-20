@@ -97,7 +97,7 @@ $_POST = [
 ];
 $failedController->login();
 integrationAssert(
-    $failedSession->pull('_flash_authentication_error') === 'Invalid credentials.',
+    $failedSession->pull('_flash_authentication_error') === 'Credenciales inválidas.',
     'HTTP login exposed a non-generic authentication failure.'
 );
 

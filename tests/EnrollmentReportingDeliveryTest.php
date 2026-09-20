@@ -133,7 +133,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         e013ReportingRequest('/reports/enrollments');
         $html = $multiple['controller']->index();
         assertSameValue(500, http_response_code());
-        e013Contains('The report could not be generated.', $html);
+        e013Contains('No se pudo generar el reporte.', $html);
         assertSameValue(false, str_contains($html, 'ACTIVE AcademicPeriod'));
     });
 

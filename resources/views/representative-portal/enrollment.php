@@ -88,6 +88,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 <header class="app-page-header">
     <h1>Matrícula de estudiantes</h1>
     <p class="text-body-secondary">Actualiza datos actuales del SIS y la información anual de matrícula según el contexto autorizado.</p>
+    <p class="text-body-secondary">Los campos marcados con * son obligatorios.</p>
     <nav class="app-section-nav" aria-label="Secciones de matrícula">
         <a href="/representative" data-enrollment-navigation>Portal de representantes</a>
         <a href="/representative" data-enrollment-navigation>Cambiar familia</a>
@@ -118,8 +119,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <?php if ($period === null): ?>
     <p class="mb-0" role="status">No existe un período académico activo. El mantenimiento de matrícula no está disponible.</p>
     <?php else: ?>
-    <p class="mb-1"><strong>Período:</strong> <?= $escape($period->name) ?> (<?= $escape($period->code) ?>)</p>
-    <p class="mb-0"><?= $escape($period->startsOn) ?> a <?= $escape($period->endsOn) ?></p>
+    <p class="mb-0"><strong>Período:</strong> <?= $escape($period->name) ?></p>
     <?php endif; ?>
     </div>
 </section>
@@ -143,7 +143,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <?php else: ?>
     <form method="get" action="/representative/enrollment" class="row g-2 align-items-end" data-enrollment-navigation>
         <div class="col-12 col-md-8">
-            <label for="student_id" class="form-label">Seleccionar estudiante</label>
+            <label for="student_id" class="form-label app-required-label">Seleccionar estudiante</label>
             <select id="student_id" name="student_id" class="form-select" required>
                 <option value="">Elige un estudiante</option>
                 <?php foreach ($context->students as $option): ?>
@@ -176,7 +176,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <p><strong>Estado:</strong> <?php $statusCode = $enrollment->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></p>
     <p><a class="btn btn-outline-primary" href="/representative/enrollment/review?student_id=<?= $escape($studentOption->student->id) ?>" data-enrollment-navigation>Revisar y enviar matrícula</a></p>
     <?php if (!$portal->enrollmentDraftMaintenanceEnabled): ?>
-    <p class="alert alert-info mb-0" role="status">La información anual de esta matrícula está en modo de solo lectura. Los datos vivos autorizados continúan editables.</p>
+    <p class="alert alert-info mb-0" role="status">La información anual de esta matrícula está en modo de solo lectura. Puedes seguir actualizando los datos personales y familiares que tu cuenta tenga permitidos.</p>
     <?php else: ?>
     <p class="mb-0">Puedes completar este borrador sección por sección.</p>
     <?php endif; ?>
@@ -225,11 +225,11 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <form method="post" action="/representative/enrollment/representative/personal" class="row g-3" data-enrollment-autosave data-section="representative-personal">
         <?php $hiddenContext(); ?>
         <?php if ($studentOption !== null): ?><input type="hidden" name="student_id" value="<?= $escape($studentOption->student->id) ?>"><?php endif; ?>
-        <div class="col-12 col-md-6"><label class="form-label">Primer nombre <input class="form-control" name="first_name" value="<?= $escape($field('representative-personal', 'first_name', $representative->firstName)) ?>" required></label></div>
+        <div class="col-12 col-md-6"><label class="form-label app-required-label">Primer nombre <input class="form-control" name="first_name" value="<?= $escape($field('representative-personal', 'first_name', $representative->firstName)) ?>" required></label></div>
         <div class="col-12 col-md-6"><label class="form-label">Segundo nombre <input class="form-control" name="middle_name" value="<?= $escape($field('representative-personal', 'middle_name', $representative->middleName)) ?>"></label></div>
-        <div class="col-12 col-md-6"><label class="form-label">Primer apellido <input class="form-control" name="first_surname" value="<?= $escape($field('representative-personal', 'first_surname', $representative->firstSurname)) ?>" required></label></div>
+        <div class="col-12 col-md-6"><label class="form-label app-required-label">Primer apellido <input class="form-control" name="first_surname" value="<?= $escape($field('representative-personal', 'first_surname', $representative->firstSurname)) ?>" required></label></div>
         <div class="col-12 col-md-6"><label class="form-label">Segundo apellido <input class="form-control" name="second_surname" value="<?= $escape($field('representative-personal', 'second_surname', $representative->secondSurname)) ?>"></label></div>
-        <div class="col-12 col-md-4"><label class="form-label">Fecha de nacimiento <input class="form-control" type="date" name="birth_date" value="<?= $escape($field('representative-personal', 'birth_date', $representative->birthDate->format('Y-m-d'))) ?>" required></label></div>
+        <div class="col-12 col-md-4"><label class="form-label app-required-label">Fecha de nacimiento <input class="form-control" type="date" name="birth_date" value="<?= $escape($field('representative-personal', 'birth_date', $representative->birthDate->format('Y-m-d'))) ?>" required></label></div>
         <div class="col-12 col-md-4"><label class="form-label">Estado civil <select class="form-select" name="marital_status_id"><option value="">No informado</option><?php foreach ($formOptions->maritalStatuses as $option): ?><option value="<?= $escape($option->id) ?>"<?= $selected($field('representative-personal', 'marital_status_id', $representative->maritalStatusId), $option->id) ?>><?= $escape($option->name) ?></option><?php endforeach; ?></select></label></div>
         <div class="col-12 col-md-4"><label class="form-label">Nivel educativo <select class="form-select" name="education_level_id"><option value="">No informado</option><?php foreach ($formOptions->educationLevels as $option): ?><option value="<?= $escape($option->id) ?>"<?= $selected($field('representative-personal', 'education_level_id', $representative->educationLevelId), $option->id) ?>><?= $escape($option->name) ?></option><?php endforeach; ?></select></label></div>
         <?php $autosaveFeedback('representative-personal'); ?>
@@ -244,7 +244,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <?php if ($liveDataEditable): ?>
     <form method="post" action="/representative/enrollment/representative/contact" class="row g-3" data-enrollment-autosave data-section="representative-contact">
         <?php $hiddenContext(); ?><?php if ($studentOption !== null): ?><input type="hidden" name="student_id" value="<?= $escape($studentOption->student->id) ?>"><?php endif; ?>
-        <div class="col-12"><label class="form-label">Correo electrónico <input class="form-control" type="email" name="email" value="<?= $escape($field('representative-contact', 'email', $representative->email)) ?>" required></label></div>
+        <div class="col-12"><label class="form-label app-required-label">Correo electrónico <input class="form-control" type="email" name="email" value="<?= $escape($field('representative-contact', 'email', $representative->email)) ?>" required></label></div>
         <div class="col-12 col-md-6"><label class="form-label">Teléfono móvil <input class="form-control" name="mobile_phone" value="<?= $escape($field('representative-contact', 'mobile_phone', $representative->mobilePhone)) ?>"></label></div>
         <div class="col-12 col-md-6"><label class="form-label">Teléfono convencional <input class="form-control" name="landline_phone" value="<?= $escape($field('representative-contact', 'landline_phone', $representative->landlinePhone)) ?>"></label></div>
         <?php $autosaveFeedback('representative-contact'); ?>
@@ -286,11 +286,11 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <?php if ($liveDataEditable): ?>
     <form method="post" action="/representative/enrollment/student/personal" class="row g-3" data-enrollment-autosave data-section="student-personal">
         <?php $studentHidden(); ?>
-        <div class="col-12 col-md-6"><label class="form-label">Primer nombre <input class="form-control" name="first_name" value="<?= $escape($field('student-personal', 'first_name', $student->firstName)) ?>" required></label></div>
+        <div class="col-12 col-md-6"><label class="form-label app-required-label">Primer nombre <input class="form-control" name="first_name" value="<?= $escape($field('student-personal', 'first_name', $student->firstName)) ?>" required></label></div>
         <div class="col-12 col-md-6"><label class="form-label">Segundo nombre <input class="form-control" name="middle_name" value="<?= $escape($field('student-personal', 'middle_name', $student->middleName)) ?>"></label></div>
-        <div class="col-12 col-md-6"><label class="form-label">Primer apellido <input class="form-control" name="first_surname" value="<?= $escape($field('student-personal', 'first_surname', $student->firstSurname)) ?>" required></label></div>
+        <div class="col-12 col-md-6"><label class="form-label app-required-label">Primer apellido <input class="form-control" name="first_surname" value="<?= $escape($field('student-personal', 'first_surname', $student->firstSurname)) ?>" required></label></div>
         <div class="col-12 col-md-6"><label class="form-label">Segundo apellido <input class="form-control" name="second_surname" value="<?= $escape($field('student-personal', 'second_surname', $student->secondSurname)) ?>"></label></div>
-        <div class="col-12 col-md-4"><label class="form-label">Fecha de nacimiento <input class="form-control" type="date" name="birth_date" value="<?= $escape($field('student-personal', 'birth_date', $student->birthDate->format('Y-m-d'))) ?>" required></label></div>
+        <div class="col-12 col-md-4"><label class="form-label app-required-label">Fecha de nacimiento <input class="form-control" type="date" name="birth_date" value="<?= $escape($field('student-personal', 'birth_date', $student->birthDate->format('Y-m-d'))) ?>" required></label></div>
         <div class="col-12 col-md-4"><label class="form-label">Estado civil <select class="form-select" name="marital_status_id"><option value="">No informado</option><?php foreach ($formOptions->maritalStatuses as $option): ?><option value="<?= $escape($option->id) ?>"<?= $selected($field('student-personal', 'marital_status_id', $student->maritalStatusId), $option->id) ?>><?= $escape($option->name) ?></option><?php endforeach; ?></select></label></div>
         <div class="col-12 col-md-4"><label class="form-label">Nivel educativo <select class="form-select" name="education_level_id"><option value="">No informado</option><?php foreach ($formOptions->educationLevels as $option): ?><option value="<?= $escape($option->id) ?>"<?= $selected($field('student-personal', 'education_level_id', $student->educationLevelId), $option->id) ?>><?= $escape($option->name) ?></option><?php endforeach; ?></select></label></div>
         <?php $autosaveFeedback('student-personal'); ?>
@@ -322,12 +322,12 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <h2 class="h4" id="billing-heading">Información de facturación</h2>
     <form method="post" action="/representative/enrollment/student/billing" class="row g-3" data-enrollment-autosave data-section="billing">
         <?php $studentHidden(); ?>
-        <div class="col-12"><label class="form-label">Tipo de identificación <select class="form-select" name="identification_type_id" required><option value="">Seleccionar</option><?php foreach ($formOptions->documentTypes as $option): ?><option value="<?= $escape($option->id) ?>"<?= $selected($field('billing', 'identification_type_id', $billing?->identificationTypeId), $option->id) ?>><?= $escape($option->name) ?></option><?php endforeach; ?></select></label></div>
-        <div class="col-12 col-md-6"><label class="form-label">Número de identificación <input class="form-control" name="identification_number" value="<?= $escape($field('billing', 'identification_number', $billing?->identificationNumber)) ?>" required></label></div>
-        <div class="col-12 col-md-6"><label class="form-label">Nombre o razón social <input class="form-control" name="legal_name" value="<?= $escape($field('billing', 'legal_name', $billing?->legalName)) ?>" required></label></div>
-        <div class="col-12"><label class="form-label">Dirección de facturación <input class="form-control" name="billing_address" value="<?= $escape($field('billing', 'billing_address', $billing?->billingAddress)) ?>" required></label></div>
-        <div class="col-12 col-md-6"><label class="form-label">Correo de facturación <input class="form-control" type="email" name="billing_email" value="<?= $escape($field('billing', 'billing_email', $billing?->billingEmail)) ?>" required></label></div>
-        <div class="col-12 col-md-6"><label class="form-label">Teléfono <input class="form-control" name="phone" value="<?= $escape($field('billing', 'phone', $billing?->phone)) ?>" required></label></div>
+        <div class="col-12"><label class="form-label app-required-label">Tipo de identificación <select class="form-select" name="identification_type_id" required><option value="">Seleccionar</option><?php foreach ($formOptions->documentTypes as $option): ?><option value="<?= $escape($option->id) ?>"<?= $selected($field('billing', 'identification_type_id', $billing?->identificationTypeId), $option->id) ?>><?= $escape($option->name) ?></option><?php endforeach; ?></select></label></div>
+        <div class="col-12 col-md-6"><label class="form-label app-required-label">Número de identificación <input class="form-control" name="identification_number" value="<?= $escape($field('billing', 'identification_number', $billing?->identificationNumber)) ?>" required></label></div>
+        <div class="col-12 col-md-6"><label class="form-label app-required-label">Nombre o razón social <input class="form-control" name="legal_name" value="<?= $escape($field('billing', 'legal_name', $billing?->legalName)) ?>" required></label></div>
+        <div class="col-12"><label class="form-label app-required-label">Dirección de facturación <input class="form-control" name="billing_address" value="<?= $escape($field('billing', 'billing_address', $billing?->billingAddress)) ?>" required></label></div>
+        <div class="col-12 col-md-6"><label class="form-label app-required-label">Correo de facturación <input class="form-control" type="email" name="billing_email" value="<?= $escape($field('billing', 'billing_email', $billing?->billingEmail)) ?>" required></label></div>
+        <div class="col-12 col-md-6"><label class="form-label app-required-label">Teléfono <input class="form-control" name="phone" value="<?= $escape($field('billing', 'phone', $billing?->phone)) ?>" required></label></div>
         <?php $autosaveFeedback('billing'); ?>
         <div class="col-12"><button type="submit" class="btn btn-primary" data-enrollment-fallback-save>Guardar facturación</button></div>
     </form>
@@ -350,7 +350,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         foreach ($medicalFields as [$booleanName, $legend, $detailName, $detailLabel, $storedBoolean, $storedDetail]):
             $currentBoolean = $field('medical', $booleanName, $storedBoolean === null ? '' : ($storedBoolean ? '1' : '0'));
         ?>
-        <fieldset class="col-12"><legend class="h6"><?= $escape($legend) ?></legend><label><input type="radio" name="<?= $escape($booleanName) ?>" value="1" data-medical-controller<?= $checked($currentBoolean, '1') ?> required> Sí</label> <label><input type="radio" name="<?= $escape($booleanName) ?>" value="0" data-medical-controller<?= $checked($currentBoolean, '0') ?> required> No</label></fieldset>
+        <fieldset class="col-12"><legend class="h6 app-required-label"><?= $escape($legend) ?></legend><label><input type="radio" name="<?= $escape($booleanName) ?>" value="1" data-medical-controller<?= $checked($currentBoolean, '1') ?> required> Sí</label> <label><input type="radio" name="<?= $escape($booleanName) ?>" value="0" data-medical-controller<?= $checked($currentBoolean, '0') ?> required> No</label></fieldset>
         <div class="col-12" data-medical-dependent-for="<?= $escape($booleanName) ?>"><label class="form-label"><?= $escape($detailLabel) ?> <textarea class="form-control" name="<?= $escape($detailName) ?>" data-medical-detail-for="<?= $escape($booleanName) ?>"><?= $escape($field('medical', $detailName, $storedDetail)) ?></textarea></label></div>
         <?php endforeach; ?>
         <div class="col-12 col-md-6"><label class="form-label">Nombre del pediatra <input class="form-control" name="pediatrician_name" value="<?= $escape($field('medical', 'pediatrician_name', $medical?->pediatricianName)) ?>"></label></div>
@@ -366,7 +366,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <?php $transportValue = $field('transport', 'requires_institutional_transport', $enrollment->transportInformation === null ? '' : ($enrollment->transportInformation->requiresInstitutionalTransport ? '1' : '0')); ?>
     <form method="post" action="/representative/enrollment/student/transport" data-enrollment-autosave data-section="transport">
         <?php $studentHidden(); ?>
-        <fieldset><legend class="h6">¿Requiere transporte institucional?</legend><label><input type="radio" name="requires_institutional_transport" value="1"<?= $checked($transportValue, '1') ?> required> Sí</label> <label><input type="radio" name="requires_institutional_transport" value="0"<?= $checked($transportValue, '0') ?> required> No</label></fieldset>
+        <fieldset><legend class="h6 app-required-label">¿Requiere transporte institucional?</legend><label><input type="radio" name="requires_institutional_transport" value="1"<?= $checked($transportValue, '1') ?> required> Sí</label> <label><input type="radio" name="requires_institutional_transport" value="0"<?= $checked($transportValue, '0') ?> required> No</label></fieldset>
         <?php $autosaveFeedback('transport'); ?>
         <button type="submit" class="btn btn-primary" data-enrollment-fallback-save>Guardar transporte</button>
     </form>
@@ -377,7 +377,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <?php $leaveValue = $field('leave-alone', 'is_authorized_to_leave_alone', $enrollment->isAuthorizedToLeaveAlone ? '1' : '0'); ?>
     <form method="post" action="/representative/enrollment/student/leave-alone" data-enrollment-autosave data-section="leave-alone">
         <?php $studentHidden(); ?>
-        <fieldset><legend class="h6">¿El estudiante puede salir solo?</legend><label><input type="radio" name="is_authorized_to_leave_alone" value="1"<?= $checked($leaveValue, '1') ?> required> Sí</label> <label><input type="radio" name="is_authorized_to_leave_alone" value="0"<?= $checked($leaveValue, '0') ?> required> No</label></fieldset>
+        <fieldset><legend class="h6 app-required-label">¿El estudiante puede salir solo?</legend><label><input type="radio" name="is_authorized_to_leave_alone" value="1"<?= $checked($leaveValue, '1') ?> required> Sí</label> <label><input type="radio" name="is_authorized_to_leave_alone" value="0"<?= $checked($leaveValue, '0') ?> required> No</label></fieldset>
         <?php $autosaveFeedback('leave-alone'); ?>
         <button type="submit" class="btn btn-primary" data-enrollment-fallback-save>Guardar autorización de salida</button>
     </form>

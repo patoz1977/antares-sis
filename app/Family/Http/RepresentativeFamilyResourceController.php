@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Family\Http;
 
+use App\Shared\Http\SafeErrorPage;
 use App\Controllers\Controller;
 use App\Family\Application\Exception\DocumentTypeNotFound;
 use App\Family\Application\Exception\FamilyNotFound;
@@ -63,7 +64,7 @@ final class RepresentativeFamilyResourceController extends Controller
         } catch (RepresentativeFamilyContextUnavailable|FamilyNotFound|StudentNotFound|PersonNotFound) {
             return $this->forbidden();
         } catch (InvalidPersistedFamilyResult) {
-            return $this->contextError('The operation could not be confirmed.', 422);
+            return $this->contextError('No se pudo confirmar la operación.', 422);
         }
 
         return $this->resourceView(
@@ -81,7 +82,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->execute(
             fn (array $values): array => $this->addressInput($values, false),
             fn (int $familyId, array $data): mixed => $this->addresses->create($familyId, ...$data),
-            'Address created successfully.',
+            'Dirección creada correctamente.',
         );
     }
 
@@ -90,7 +91,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->execute(
             fn (array $values): array => $this->addressInput($values, true),
             fn (int $familyId, array $data): mixed => $this->addresses->update($familyId, ...$data),
-            'Address updated successfully.',
+            'Dirección actualizada correctamente.',
         );
     }
 
@@ -99,7 +100,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->resourceStatus(
             'family_address_id',
             fn (int $familyId, int $id): mixed => $this->addresses->activate($familyId, $id),
-            'Address activated successfully.',
+            'Dirección activada correctamente.',
         );
     }
 
@@ -108,7 +109,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->resourceStatus(
             'family_address_id',
             fn (int $familyId, int $id): mixed => $this->addresses->deactivate($familyId, $id),
-            'Address deactivated successfully.',
+            'Dirección desactivada correctamente.',
         );
     }
 
@@ -120,7 +121,7 @@ final class RepresentativeFamilyResourceController extends Controller
                 $addressId = $this->requiredPositiveInteger(
                     $values,
                     'family_address_id',
-                    'Selected resource is not available for this Family.',
+                    'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
                 $startedAt = $this->requiredTimestamp($values, 'started_at', $errors);
@@ -128,7 +129,7 @@ final class RepresentativeFamilyResourceController extends Controller
                 return [$errors, [$addressId, $startedAt]];
             },
             fn (int $familyId, array $data): mixed => $this->addresses->assignSelf($familyId, ...$data),
-            'Your Address assignment was created successfully.',
+            'Su dirección fue asignada correctamente.',
         );
     }
 
@@ -137,7 +138,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->endAssignment(
             fn (int $familyId, int $assignmentId, DateTimeImmutable $endedAt): mixed =>
                 $this->addresses->endSelf($familyId, $assignmentId, $endedAt),
-            'Your Address assignment was ended successfully.',
+            'Su asignación de dirección finalizó correctamente.',
         );
     }
 
@@ -149,13 +150,13 @@ final class RepresentativeFamilyResourceController extends Controller
                 $studentId = $this->requiredPositiveInteger(
                     $values,
                     'student_id',
-                    'Selected resource is not available for this Family.',
+                    'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
                 $addressId = $this->requiredPositiveInteger(
                     $values,
                     'family_address_id',
-                    'Selected resource is not available for this Family.',
+                    'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
                 $startedAt = $this->requiredTimestamp($values, 'started_at', $errors);
@@ -163,7 +164,7 @@ final class RepresentativeFamilyResourceController extends Controller
                 return [$errors, [$studentId, $addressId, $startedAt]];
             },
             fn (int $familyId, array $data): mixed => $this->addresses->assignStudent($familyId, ...$data),
-            'Student Address assignment was created successfully.',
+            'Dirección asignada al estudiante correctamente.',
         );
     }
 
@@ -172,7 +173,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->endAssignment(
             fn (int $familyId, int $assignmentId, DateTimeImmutable $endedAt): mixed =>
                 $this->addresses->endStudent($familyId, $assignmentId, $endedAt),
-            'Student Address assignment was ended successfully.',
+            'Asignación de dirección al estudiante finalizada correctamente.',
         );
     }
 
@@ -182,7 +183,7 @@ final class RepresentativeFamilyResourceController extends Controller
             fn (array $values, FamilyResourceFormOptions $options): array =>
                 $this->emergencyContactInput($values, $options, false),
             fn (int $familyId, array $data): mixed => $this->emergencyContacts->create($familyId, ...$data),
-            'Emergency Contact created successfully.',
+            'Contacto de emergencia creado correctamente.',
         );
     }
 
@@ -192,7 +193,7 @@ final class RepresentativeFamilyResourceController extends Controller
             fn (array $values, FamilyResourceFormOptions $options): array =>
                 $this->emergencyContactInput($values, $options, true),
             fn (int $familyId, array $data): mixed => $this->emergencyContacts->update($familyId, ...$data),
-            'Emergency Contact updated successfully.',
+            'Contacto de emergencia actualizado correctamente.',
         );
     }
 
@@ -201,7 +202,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->resourceStatus(
             'family_emergency_contact_id',
             fn (int $familyId, int $id): mixed => $this->emergencyContacts->activate($familyId, $id),
-            'Emergency Contact activated successfully.',
+            'Contacto de emergencia activado correctamente.',
         );
     }
 
@@ -210,7 +211,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->resourceStatus(
             'family_emergency_contact_id',
             fn (int $familyId, int $id): mixed => $this->emergencyContacts->deactivate($familyId, $id),
-            'Emergency Contact deactivated successfully.',
+            'Contacto de emergencia desactivado correctamente.',
         );
     }
 
@@ -222,13 +223,13 @@ final class RepresentativeFamilyResourceController extends Controller
                 $contactId = $this->requiredPositiveInteger(
                     $values,
                     'family_emergency_contact_id',
-                    'Selected resource is not available for this Family.',
+                    'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
                 $studentId = $this->requiredPositiveInteger(
                     $values,
                     'student_id',
-                    'Selected resource is not available for this Family.',
+                    'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
                 $priority = $this->optionalPositiveInteger($values['priority'] ?? '', 'priority', $errors);
@@ -237,7 +238,7 @@ final class RepresentativeFamilyResourceController extends Controller
                 return [$errors, [$contactId, $studentId, $priority, $startedAt]];
             },
             fn (int $familyId, array $data): mixed => $this->emergencyContacts->assign($familyId, ...$data),
-            'Emergency Contact assignment was created successfully.',
+            'Contacto de emergencia asignado correctamente.',
         );
     }
 
@@ -246,7 +247,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->endAssignment(
             fn (int $familyId, int $assignmentId, DateTimeImmutable $endedAt): mixed =>
                 $this->emergencyContacts->end($familyId, $assignmentId, $endedAt),
-            'Emergency Contact assignment was ended successfully.',
+            'Asignación de contacto de emergencia finalizada correctamente.',
         );
     }
 
@@ -256,7 +257,7 @@ final class RepresentativeFamilyResourceController extends Controller
             fn (array $values, FamilyResourceFormOptions $options): array =>
                 $this->authorizedPickupInput($values, $options, false),
             fn (int $familyId, array $data): mixed => $this->authorizedPickups->create($familyId, ...$data),
-            'Authorized Pickup created successfully.',
+            'Persona autorizada para retirar creada correctamente.',
         );
     }
 
@@ -266,7 +267,7 @@ final class RepresentativeFamilyResourceController extends Controller
             fn (array $values, FamilyResourceFormOptions $options): array =>
                 $this->authorizedPickupInput($values, $options, true),
             fn (int $familyId, array $data): mixed => $this->authorizedPickups->update($familyId, ...$data),
-            'Authorized Pickup updated successfully.',
+            'Persona autorizada para retirar actualizada correctamente.',
         );
     }
 
@@ -275,7 +276,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->resourceStatus(
             'family_authorized_pickup_id',
             fn (int $familyId, int $id): mixed => $this->authorizedPickups->activate($familyId, $id),
-            'Authorized Pickup activated successfully.',
+            'Persona autorizada para retirar activada correctamente.',
         );
     }
 
@@ -284,7 +285,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->resourceStatus(
             'family_authorized_pickup_id',
             fn (int $familyId, int $id): mixed => $this->authorizedPickups->deactivate($familyId, $id),
-            'Authorized Pickup deactivated successfully.',
+            'Persona autorizada para retirar desactivada correctamente.',
         );
     }
 
@@ -296,13 +297,13 @@ final class RepresentativeFamilyResourceController extends Controller
                 $pickupId = $this->requiredPositiveInteger(
                     $values,
                     'family_authorized_pickup_id',
-                    'Selected resource is not available for this Family.',
+                    'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
                 $studentId = $this->requiredPositiveInteger(
                     $values,
                     'student_id',
-                    'Selected resource is not available for this Family.',
+                    'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
                 $startedAt = $this->requiredTimestamp($values, 'started_at', $errors);
@@ -310,7 +311,7 @@ final class RepresentativeFamilyResourceController extends Controller
                 return [$errors, [$pickupId, $studentId, $startedAt]];
             },
             fn (int $familyId, array $data): mixed => $this->authorizedPickups->assign($familyId, ...$data),
-            'Authorized Pickup assignment was created successfully.',
+            'Persona autorizada para retirar asignada correctamente.',
         );
     }
 
@@ -319,7 +320,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return $this->endAssignment(
             fn (int $familyId, int $assignmentId, DateTimeImmutable $endedAt): mixed =>
                 $this->authorizedPickups->end($familyId, $assignmentId, $endedAt),
-            'Authorized Pickup assignment was ended successfully.',
+            'Asignación de persona autorizada para retirar finalizada correctamente.',
         );
     }
 
@@ -334,14 +335,14 @@ final class RepresentativeFamilyResourceController extends Controller
         $values = $this->safeValues($input, $scalarErrors);
 
         if (!$this->csrf->isValid($this->scalar($input, '_csrf_token'))) {
-            $this->session->put(self::FLASH_ERROR_KEY, 'Your form expired. Please try again.');
+            $this->session->put(self::FLASH_ERROR_KEY, 'El formulario venció. Inténtelo nuevamente.');
 
             return $this->redirect('/representative/resources', 303);
         }
 
         $familyId = $this->positiveInteger($values['family_id'] ?? null);
         if ($familyId === null) {
-            $scalarErrors[] = 'Selected resource is not available for this Family.';
+            $scalarErrors[] = 'El recurso seleccionado no está disponible para esta familia.';
         }
         $options = $this->optionsProvider->get();
         [$errors, $data] = $validate($values, $options);
@@ -355,14 +356,14 @@ final class RepresentativeFamilyResourceController extends Controller
         } catch (RepresentativeAcknowledgementsRequired) {
             $this->session->put(
                 self::FLASH_ERROR_KEY,
-                'Complete Institutional Acknowledgements before updating family data.',
+                'Complete los acuses institucionales antes de actualizar los datos familiares.',
             );
 
             return $this->redirect('/representative/acknowledgements', 303);
         } catch (ActiveAcademicPeriodUnavailable) {
             $this->session->put(
                 self::FLASH_ERROR_KEY,
-                'No active Academic Period is currently configured.',
+                'No hay un período académico activo configurado.',
             );
 
             return $this->redirect('/representative', 303);
@@ -374,15 +375,17 @@ final class RepresentativeFamilyResourceController extends Controller
             |FamilyNotFound|StudentNotFound|PersonNotFound) {
             return $this->forbidden();
         } catch (RepresentativeFamilyAddressModificationNotAllowed) {
-            return $this->renderFailure($values, ['This address cannot be changed from your account.']);
-        } catch (RepresentativeFamilyResourceUnavailable|RepresentativeFamilyStudentUnavailable|InvalidFamilyState) {
-            return $this->renderFailure($values, ['Selected resource is not available for this Family.']);
+            return $this->renderFailure($values, ['No puede cambiar esta dirección desde su cuenta.']);
+        } catch (InvalidFamilyState $error) {
+            return $this->renderFailure($values, [FamilyResourceFeedback::forInvalidState($error)]);
+        } catch (RepresentativeFamilyResourceUnavailable|RepresentativeFamilyStudentUnavailable) {
+            return $this->renderFailure($values, ['El recurso seleccionado no está disponible para esta familia.']);
         } catch (RelationshipTypeNotFound) {
-            return $this->renderFailure($values, ['Select an active relationship type.']);
+            return $this->renderFailure($values, ['Seleccione un parentesco activo.']);
         } catch (DocumentTypeNotFound) {
-            return $this->renderFailure($values, ['Select an active document type.']);
+            return $this->renderFailure($values, ['Seleccione un tipo de documento activo.']);
         } catch (InvalidPersistedFamilyResult) {
-            return $this->renderFailure($values, ['The operation could not be confirmed.']);
+            return $this->renderFailure($values, ['No se pudo confirmar la operación.']);
         }
 
         $this->session->put(self::FLASH_SUCCESS_KEY, $success);
@@ -399,7 +402,7 @@ final class RepresentativeFamilyResourceController extends Controller
                 $id = $this->requiredPositiveInteger(
                     $values,
                     $field,
-                    'Selected resource is not available for this Family.',
+                    'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
 
@@ -419,7 +422,7 @@ final class RepresentativeFamilyResourceController extends Controller
                 $assignmentId = $this->requiredPositiveInteger(
                     $values,
                     'assignment_id',
-                    'Selected resource is not available for this Family.',
+                    'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
                 $endedAt = $this->requiredTimestamp($values, 'ended_at', $errors);
@@ -440,28 +443,28 @@ final class RepresentativeFamilyResourceController extends Controller
             $data[] = $this->requiredPositiveInteger(
                 $values,
                 'family_address_id',
-                'Selected resource is not available for this Family.',
+                'El recurso seleccionado no está disponible para esta familia.',
                 $errors,
             );
         }
         $label = $values['label'] ?? '';
         $mainStreet = $values['main_street'] ?? '';
         if ($label === '') {
-            $errors[] = 'Address label is required.';
+            $errors[] = 'El nombre de la dirección es obligatorio.';
         }
         if ($mainStreet === '') {
-            $errors[] = 'Main street is required.';
+            $errors[] = 'La calle principal es obligatoria.';
         }
         $latitude = $this->nullable($values['latitude'] ?? '');
         $longitude = $this->nullable($values['longitude'] ?? '');
         if (($latitude === null) !== ($longitude === null)) {
-            $errors[] = 'Latitude and longitude must be supplied together.';
+            $errors[] = 'Ingrese la latitud y la longitud juntas.';
         }
         if ($latitude !== null && !is_numeric($latitude)) {
-            $errors[] = 'Latitude must be numeric.';
+            $errors[] = 'La latitud debe ser numérica.';
         }
         if ($longitude !== null && !is_numeric($longitude)) {
-            $errors[] = 'Longitude must be numeric.';
+            $errors[] = 'La longitud debe ser numérica.';
         }
 
         return [$errors, array_merge($data, [
@@ -488,25 +491,25 @@ final class RepresentativeFamilyResourceController extends Controller
             $data[] = $this->requiredPositiveInteger(
                 $values,
                 'family_emergency_contact_id',
-                'Selected resource is not available for this Family.',
+                'El recurso seleccionado no está disponible para esta familia.',
                 $errors,
             );
         }
         $names = $values['names'] ?? '';
         $mobilePhone = $values['mobile_phone'] ?? '';
         if ($names === '') {
-            $errors[] = 'Names are required.';
+            $errors[] = 'Los nombres son obligatorios.';
         }
         if ($mobilePhone === '') {
-            $errors[] = 'Mobile phone is required.';
+            $errors[] = 'El teléfono móvil es obligatorio.';
         }
         $relationshipTypeId = $this->positiveInteger($values['relationship_type_id'] ?? null);
         if ($relationshipTypeId === null || !$options->hasRelationshipType($relationshipTypeId)) {
-            $errors[] = 'Select an active relationship type.';
+            $errors[] = 'Seleccione un parentesco activo.';
         }
         $email = $this->nullable($values['email'] ?? '');
         if ($email !== null && filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
-            $errors[] = 'Enter a valid email.';
+            $errors[] = 'Ingrese un correo electrónico válido.';
         }
 
         return [$errors, array_merge($data, [
@@ -531,21 +534,21 @@ final class RepresentativeFamilyResourceController extends Controller
             $data[] = $this->requiredPositiveInteger(
                 $values,
                 'family_authorized_pickup_id',
-                'Selected resource is not available for this Family.',
+                'El recurso seleccionado no está disponible para esta familia.',
                 $errors,
             );
         }
         $names = $values['names'] ?? '';
         $mobilePhone = $values['mobile_phone'] ?? '';
         if ($names === '') {
-            $errors[] = 'Names are required.';
+            $errors[] = 'Los nombres son obligatorios.';
         }
         if ($mobilePhone === '') {
-            $errors[] = 'Mobile phone is required.';
+            $errors[] = 'El teléfono móvil es obligatorio.';
         }
         $relationshipTypeId = $this->positiveInteger($values['relationship_type_id'] ?? null);
         if ($relationshipTypeId === null || !$options->hasRelationshipType($relationshipTypeId)) {
-            $errors[] = 'Select an active relationship type.';
+            $errors[] = 'Seleccione un parentesco activo.';
         }
         $documentTypeId = $this->optionalPositiveInteger(
             $values['document_type_id'] ?? '',
@@ -554,10 +557,10 @@ final class RepresentativeFamilyResourceController extends Controller
         );
         $documentNumber = $this->nullable($values['document_number'] ?? '');
         if (($documentTypeId === null) !== ($documentNumber === null)) {
-            $errors[] = 'Document type and number must be supplied together.';
+            $errors[] = 'Ingrese el tipo y el número de documento juntos.';
         }
         if ($documentTypeId !== null && !$options->hasDocumentType($documentTypeId)) {
-            $errors[] = 'Select an active document type.';
+            $errors[] = 'Seleccione un tipo de documento activo.';
         }
 
         return [$errors, array_merge($data, [
@@ -586,7 +589,7 @@ final class RepresentativeFamilyResourceController extends Controller
         } catch (RepresentativeFamilyContextUnavailable|FamilyNotFound|StudentNotFound|PersonNotFound) {
             return $this->forbidden();
         } catch (InvalidPersistedFamilyResult) {
-            return $this->contextError('The operation could not be confirmed.', 422);
+            return $this->contextError('No se pudo confirmar la operación.', 422);
         }
 
         return $this->resourceView(
@@ -613,7 +616,7 @@ final class RepresentativeFamilyResourceController extends Controller
         http_response_code($status);
 
         return $this->view('representative-portal.resources', [
-            'title' => 'Family resources',
+            'title' => 'Recursos familiares',
             'context' => $resources,
             'canChangeFamily' => $resources->canChangeFamily,
             'resources' => $resources,
@@ -654,7 +657,7 @@ final class RepresentativeFamilyResourceController extends Controller
             new DateTimeZone('UTC'),
         );
         if (!$timestamp instanceof DateTimeImmutable || $timestamp->format('Y-m-d\TH:i') !== $value) {
-            $errors[] = sprintf('%s must use the YYYY-MM-DDTHH:MM format.', ucfirst(str_replace('_', ' ', $field)));
+            $errors[] = 'Ingrese una fecha y hora válidas (AAAA-MM-DDTHH:MM).';
 
             return null;
         }
@@ -669,7 +672,7 @@ final class RepresentativeFamilyResourceController extends Controller
         }
         $id = $this->positiveInteger($value);
         if ($id === null) {
-            $errors[] = sprintf('Select a valid %s.', $label);
+            $errors[] = 'Seleccione un valor válido.';
         }
 
         return $id;
@@ -683,7 +686,7 @@ final class RepresentativeFamilyResourceController extends Controller
             if (is_string($key) && is_scalar($value)) {
                 $values[$key] = trim((string) $value);
             } elseif (is_string($key)) {
-                $errors[] = sprintf('%s must be a single value.', ucfirst(str_replace('_', ' ', $key)));
+                $errors[] = 'Ingrese un único valor por campo.';
             }
         }
 
@@ -719,7 +722,7 @@ final class RepresentativeFamilyResourceController extends Controller
         return is_string($value) ? $value : null;
     }
 
-    private function forbidden(string $message = 'The requested Family resource is not available.'): string
+    private function forbidden(string $message = 'El recurso familiar solicitado no está disponible.'): string
     {
         return $this->contextError($message, 403);
     }
@@ -727,10 +730,7 @@ final class RepresentativeFamilyResourceController extends Controller
     private function contextError(string $message, int $status): string
     {
         http_response_code($status);
-        $escaped = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
-
-        return '<h1>Family resources unavailable</h1><p role="alert">' . $escaped
-            . '</p><p><a href="/representative">Back to Representative Portal</a></p>';
+        return SafeErrorPage::render($status, $message, '/representative', 'Volver al portal');
     }
 
     private function redirect(string $location, int $status): string

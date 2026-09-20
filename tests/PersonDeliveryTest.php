@@ -83,7 +83,7 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         $content = deliverySendResponse($response);
         assertSameValue(403, http_response_code());
         assertSameValue(false, $nextCalled);
-        assertSameValue('Forbidden', $content);
+        deliveryAssertContains('No tienes permiso para acceder a esta página.', $content);
     });
 
     $runner->add('Person administration allows only the authenticated admin identity', function (): void {
@@ -120,6 +120,10 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         deliveryAssertContains('action="/persons/show"', $index);
         deliveryAssertContains('name="_csrf_token" value="delivery-csrf"', $form);
         deliveryAssertContains('action="/persons/create"', $form);
+        deliveryAssertContains('Los campos marcados con * son obligatorios.', $form);
+        deliveryAssertContains('class="form-label app-required-label" for="first-name"', $form);
+        deliveryAssertContains('name="first_name" type="text"', $form);
+        deliveryAssertContains('name="first_name" type="text" value="" required', $form);
     });
 
     $runner->add('Person detail accepts a positive ID and missing Person is safe', function (): void {
@@ -130,6 +134,10 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         $found = $controller->show();
         deliveryAssertContains('Detalle de persona', $found);
         deliveryAssertContains('Stored', $found);
+        foreach (['<dd>Document</dd>', '<dd>Sex</dd>', '<dd>Marital status</dd>', '<dd>Education level</dd>'] as $label) {
+            deliveryAssertContains($label, $found);
+        }
+        assertSameValue(false, str_contains($found, '<dd>10</dd>'));
 
         deliveryRequest('GET', '/persons/show?id=999', ['id' => '999']);
         $missing = $controller->show();
@@ -146,7 +154,7 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         assertSameValue(302, http_response_code());
 
         $index = $controller->index();
-        deliveryAssertContains('valid positive Person ID', $index);
+        deliveryAssertContains('identificador válido de persona', $index);
     });
 
     $runner->add('valid Person creation invokes Application and redirects to detail', function (): void {
@@ -167,7 +175,7 @@ function registerPersonDeliveryTests(TestRunner $runner): void
 
         $response = $controller->create();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('must both be provided', $response);
+        deliveryAssertContains('tipo como el número de documento', $response);
         assertSameValue(0, $repository->saveCalls());
     });
 
@@ -180,7 +188,7 @@ function registerPersonDeliveryTests(TestRunner $runner): void
 
         $response = $controller->create();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('Review the entered Person data.', $response);
+        deliveryAssertContains('Revisa los datos de la persona.', $response);
         deliveryAssertContains('&lt;script&gt;alert(1)&lt;/script&gt;', $response);
         assertSameValue(false, str_contains($response, '<script>'));
         assertSameValue(false, str_contains($response, 'SQLSTATE'));
@@ -194,7 +202,7 @@ function registerPersonDeliveryTests(TestRunner $runner): void
 
         $response = $controller->create();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('already uses that identification', $response);
+        deliveryAssertContains('ya utiliza esa identificación', $response);
         assertSameValue(false, str_contains($response, 'identification_key'));
         assertSameValue(0, $repository->saveCalls());
     });
@@ -210,7 +218,7 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         assertSameValue(0, $repository->saveCalls());
 
         $form = $controller->showCreate();
-        deliveryAssertContains('Your form expired', $form);
+        deliveryAssertContains('El formulario caducó', $form);
         deliveryAssertContains('value="Ada"', $form);
     });
 
@@ -218,13 +226,13 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         [$controller, $repository] = deliveryController(deliveryEmptyOptions());
 
         $form = $controller->showCreate();
-        deliveryAssertContains('required form catalogs are unavailable', $form);
+        deliveryAssertContains('faltan catálogos necesarios', $form);
         deliveryAssertContains('type="submit" disabled', $form);
 
         deliveryRequest('POST', '/persons/create', deliveryInput());
         $response = $controller->create();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('required form catalogs are unavailable', $response);
+        deliveryAssertContains('faltan catálogos necesarios', $response);
         assertSameValue(0, $repository->saveCalls());
     });
 
@@ -284,7 +292,7 @@ function registerPersonDeliveryTests(TestRunner $runner): void
 
             $html = $controller->update();
             assertSameValue(422, http_response_code());
-            deliveryAssertContains('must retain a valid personal email', $html);
+            deliveryAssertContains('debe conservar un correo personal válido', $html);
             assertSameValue(
                 'stored@example.test',
                 $persons->findById(new PersonId(60))?->contactInformation()?->email(),
@@ -332,7 +340,7 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         $response = $controller->update();
 
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('identity cannot be changed', $response);
+        deliveryAssertContains('No se puede cambiar la identidad', $response);
         assertSameValue(0, $repository->saveCalls());
         assertSameValue('Stored', $repository->findById(new PersonId(30))?->personalName()->firstName());
         assertSameValue('Stored', $repository->findById(new PersonId(31))?->personalName()->firstName());
@@ -384,7 +392,7 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         $html = $controller->update();
 
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('must retain complete identification', $html);
+        deliveryAssertContains('debe conservar su identificación completa', $html);
         assertSameValue('REP-60', $persons->findById(new PersonId(60))?->identification()?->documentNumber());
         assertSameValue('rep-60', $users->findByPersonId(new UserPersonId(60))?->loginIdentifier()->value());
     });

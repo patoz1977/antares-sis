@@ -58,7 +58,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
 
             return new Response();
         });
-        assertSameValue('Forbidden', deliverySendResponse($response));
+        deliveryAssertContains('No tienes permiso para acceder a esta página.', deliverySendResponse($response));
         assertSameValue(403, http_response_code());
 
         [$admin] = familyAdministrationMiddleware('admin');
@@ -106,6 +106,8 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         $detail = $controller->show();
         deliveryAssertContains('Existing Composite Family', $detail);
         deliveryAssertContains('Representante principal activo', $detail);
+        deliveryAssertContains('Representante de prueba', $detail);
+        deliveryAssertContains('Padre', $detail);
         deliveryAssertContains('Histórica', $detail);
         deliveryAssertContains('Agregar estudiante', $detail);
 
@@ -118,7 +120,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         deliveryRequest('GET', '/families/show?id=bad', ['id' => 'bad']);
         assertSameValue('', $controller->show());
         assertSameValue(302, http_response_code());
-        deliveryAssertContains('valid positive Family ID', $controller->index());
+        deliveryAssertContains('identificador válido de familia', $controller->index());
     });
 
     $runner->add('Representative and Family form is composite catalog-backed and escaped', function (): void {
@@ -164,7 +166,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         $primary = $created[0]->primaryRepresentative();
         assertSameValue(true, $primary->isPrimary() && $primary->isActive());
         deliveryAssertContains(
-            'Family, primary Representative and User created successfully.',
+            'Familia, representante principal y usuario creados correctamente.',
             $controller->index(),
         );
     });
@@ -240,7 +242,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             http_response_code() === 422,
             'duplicate identification returned ' . http_response_code(),
         );
-        deliveryAssertContains('already uses that identification', $response);
+        deliveryAssertContains('ya utiliza esa identificación', $response);
         assertSameValue(0, $environment->representatives->saveCalls());
         assertSameValue(0, $environment->families->saveCalls());
 
@@ -259,7 +261,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             http_response_code() === 422,
             'RelationshipType race returned ' . http_response_code(),
         );
-        deliveryAssertContains('active relationship type', $response);
+        deliveryAssertContains('tipo de relación activo', $response);
         assertCompositeRollback($environment, $before, 'delivery relationship race');
     });
 
@@ -269,12 +271,12 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             [FamilyStatus::Active, FamilyStatus::Inactive],
         ));
         $form = $controller->showCreateRepresentativeFamily();
-        deliveryAssertContains('relationship types are unavailable', $form);
+        deliveryAssertContains('faltan tipos de relación', $form);
         deliveryAssertContains('type="submit" disabled', $form);
 
         [$controller] = familyDeliveryController(personOptions: deliveryEmptyOptions());
         $form = $controller->showCreateRepresentativeFamily();
-        deliveryAssertContains('required form catalogs are unavailable', $form);
+        deliveryAssertContains('faltan catálogos necesarios', $form);
         deliveryAssertContains('type="submit" disabled', $form);
     });
 
@@ -306,7 +308,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         assertSameValue('', $controller->createStudent());
         assertSameValue(303, http_response_code());
         assertSameValue(0, $environment->persons->saveCalls());
-        deliveryAssertContains('selection expired', $controller->index());
+        deliveryAssertContains('selección de familia caducó', $controller->index());
 
         [$controller, $environment] = familyDeliveryController();
         familyOpenStudentForm($controller, $environment->familyId);
@@ -316,7 +318,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             http_response_code() === 422,
             'Family identity tampering returned ' . http_response_code(),
         );
-        deliveryAssertContains('identity cannot be changed', $response);
+        deliveryAssertContains('No se puede cambiar la identidad', $response);
         assertSameValue(0, $environment->persons->saveCalls());
 
         familyOpenStudentForm($controller, $environment->familyId);
@@ -331,7 +333,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         deliveryRequest('GET', '/families/students/create?family_id=999999', ['family_id' => '999999']);
         $missing = $controller->showCreateStudent();
         assertSameValue(404, http_response_code());
-        deliveryAssertContains('Family not found', $missing);
+        deliveryAssertContains('Familia no encontrada', $missing);
     });
 
     $runner->add('Add Student maps functional failures and rolls back every persisted stage', function (): void {
@@ -345,7 +347,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             http_response_code() === 422,
             'duplicate institutional code returned ' . http_response_code(),
         );
-        deliveryAssertContains('institutional code is already in use', $response);
+        deliveryAssertContains('código institucional ya está en uso', $response);
         assertSameValue(0, $environment->persons->saveCalls());
 
         $environment = new CompositeOrchestrationEnvironment();
@@ -360,7 +362,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             http_response_code() === 422,
             'future admission date returned ' . http_response_code(),
         );
-        deliveryAssertContains('Review the entered Student data', $response);
+        deliveryAssertContains('Revisa los datos del estudiante', $response);
         assertSameValue(0, $environment->persons->saveCalls());
 
         $environment = new CompositeOrchestrationEnvironment();
@@ -374,7 +376,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             http_response_code() === 422,
             'active Family conflict returned ' . http_response_code(),
         );
-        deliveryAssertContains('already has an active Family', $response);
+        deliveryAssertContains('ya tiene una familia activa', $response);
         assertCompositeRollback($environment, $before, 'delivery active Family conflict');
     });
 
@@ -424,6 +426,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             \App\IdentityAccess\Application\Contract\SessionManager::class,
             \App\Person\Http\PersonFormOptionsProvider::class,
             FamilyFormOptionsProvider::class,
+            \App\Family\Http\FamilyMemberLabelsProvider::class,
         ], $dependencies);
         foreach (['PDO', 'SELECT ', 'INSERT ', 'UPDATE ', 'DELETE ', 'beginTransaction', 'new Person', 'new Student', 'new Family'] as $forbidden) {
             assertSameValue(false, str_contains($controller, $forbidden));
@@ -484,6 +487,16 @@ function familyDeliveryController(
             $session,
             new FakePersonFormOptionsProvider($personOptions ?? deliveryOptions()),
             $provider,
+            new class implements \App\Family\Http\FamilyMemberLabelsProvider {
+                public function forFamily(int $familyId): \App\Family\Http\FamilyMemberLabels
+                {
+                    return new \App\Family\Http\FamilyMemberLabels(
+                        [32 => 'Representante de prueba', 501 => 'Nuevo representante de prueba'],
+                        [41 => 'Estudiante de prueba', 701 => 'Nuevo estudiante de prueba'],
+                        [11 => 'Padre'],
+                    );
+                }
+            },
         ),
         $environment,
         $session,

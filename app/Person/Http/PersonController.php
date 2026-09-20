@@ -43,7 +43,7 @@ final class PersonController extends Controller
     public function index(): string
     {
         return $this->view('persons.index', [
-            'title' => 'Persons',
+            'title' => 'Personas',
             'successMessage' => $this->flashMessage(self::FLASH_SUCCESS_KEY),
             'errorMessage' => $this->flashMessage(self::FLASH_ERROR_KEY),
         ]);
@@ -68,7 +68,7 @@ final class PersonController extends Controller
         $input = (new Request())->input();
 
         if (!$this->csrf->isValid($this->scalarValue($input, '_csrf_token'))) {
-            $this->storeFormState($input, ['Your form expired. Please try again.']);
+            $this->storeFormState($input, ['El formulario caducó. Inténtalo de nuevo.']);
 
             return $this->redirect('/persons/create', 303);
         }
@@ -89,7 +89,7 @@ final class PersonController extends Controller
             return $this->formView(
                 'create',
                 $values,
-                ['A Person already uses that identification.'],
+                ['Otra persona ya utiliza esa identificación.'],
                 $options,
                 422,
             );
@@ -97,13 +97,13 @@ final class PersonController extends Controller
             return $this->formView(
                 'create',
                 $values,
-                ['Review the entered Person data.'],
+                ['Revisa los datos de la persona.'],
                 $options,
                 422,
             );
         }
 
-        $this->session->put(self::FLASH_SUCCESS_KEY, 'Person created successfully.');
+        $this->session->put(self::FLASH_SUCCESS_KEY, 'Persona creada correctamente.');
 
         return $this->redirect('/persons/show?id=' . $person->id, 303);
     }
@@ -112,7 +112,7 @@ final class PersonController extends Controller
     {
         $id = $this->positiveInteger((new Request())->query()['id'] ?? null);
         if ($id === null) {
-            $this->session->put(self::FLASH_ERROR_KEY, 'Enter a valid positive Person ID.');
+            $this->session->put(self::FLASH_ERROR_KEY, 'Ingresa un identificador válido de persona.');
 
             return $this->redirect('/persons');
         }
@@ -124,8 +124,9 @@ final class PersonController extends Controller
         }
 
         return $this->view('persons.show', [
-            'title' => 'Person details',
+            'title' => 'Detalle de persona',
             'person' => $person,
+            'options' => $this->formOptions->get(),
             'successMessage' => $this->flashMessage(self::FLASH_SUCCESS_KEY),
         ]);
     }
@@ -134,7 +135,7 @@ final class PersonController extends Controller
     {
         $id = $this->positiveInteger((new Request())->query()['id'] ?? null);
         if ($id === null) {
-            $this->session->put(self::FLASH_ERROR_KEY, 'Enter a valid positive Person ID.');
+            $this->session->put(self::FLASH_ERROR_KEY, 'Ingresa un identificador válido de persona.');
 
             return $this->redirect('/persons');
         }
@@ -171,7 +172,7 @@ final class PersonController extends Controller
             if ($trustedId !== null) {
                 $this->session->put(self::EDIT_ID_KEY, $trustedId);
             }
-            $this->storeFormState($input, ['Your form expired. Please try again.'], $trustedId);
+            $this->storeFormState($input, ['El formulario caducó. Inténtalo de nuevo.'], $trustedId);
 
             return $this->redirect($trustedId === null ? '/persons' : '/persons/edit?id=' . $trustedId, 303);
         }
@@ -181,9 +182,9 @@ final class PersonController extends Controller
         $postedId = $this->positiveInteger($input['id'] ?? null);
 
         if ($trustedId === null) {
-            $errors[] = 'The editing session expired. Open the Person again.';
+            $errors[] = 'La sesión de edición caducó. Abre la persona nuevamente.';
         } elseif ($postedId !== $trustedId) {
-            $errors[] = 'Person identity cannot be changed.';
+            $errors[] = 'No se puede cambiar la identidad de la persona.';
         }
 
         if ($errors !== []) {
@@ -207,7 +208,7 @@ final class PersonController extends Controller
             return $this->formView(
                 'edit',
                 $values,
-                ['A Person already uses that identification.'],
+                ['Otra persona ya utiliza esa identificación.'],
                 $options,
                 422,
                 $trustedId,
@@ -218,7 +219,7 @@ final class PersonController extends Controller
             return $this->formView(
                 'edit',
                 $values,
-                ['That document number is already used as another Representative username.'],
+                ['Ese número de documento ya se utiliza para otro usuario representante.'],
                 $options,
                 422,
                 $trustedId,
@@ -229,7 +230,7 @@ final class PersonController extends Controller
             return $this->formView(
                 'edit',
                 $values,
-                ['A Representative with User must retain complete identification.'],
+                ['Un representante con usuario debe conservar su identificación completa.'],
                 $options,
                 422,
                 $trustedId,
@@ -240,7 +241,7 @@ final class PersonController extends Controller
             return $this->formView(
                 'edit',
                 $values,
-                ['A Representative must retain a valid personal email.'],
+                ['El representante debe conservar un correo personal válido.'],
                 $options,
                 422,
                 $trustedId,
@@ -251,14 +252,14 @@ final class PersonController extends Controller
             return $this->formView(
                 'edit',
                 $values,
-                ['Review the entered Person data.'],
+                ['Revisa los datos de la persona.'],
                 $options,
                 422,
                 $trustedId,
             );
         }
 
-        $this->session->put(self::FLASH_SUCCESS_KEY, 'Person updated successfully.');
+        $this->session->put(self::FLASH_SUCCESS_KEY, 'Persona actualizada correctamente.');
 
         return $this->redirect('/persons/show?id=' . $person->id, 303);
     }
@@ -273,48 +274,48 @@ final class PersonController extends Controller
 
         $birthDate = $this->dateValue($values['birth_date']);
         if ($birthDate === null) {
-            $errors[] = 'Birth date must use the YYYY-MM-DD format.';
+            $errors[] = 'La fecha de nacimiento debe tener el formato AAAA-MM-DD.';
         }
 
         $sexId = $this->positiveInteger($values['sex_id']);
         if ($sexId === null || !$options->hasSex($sexId)) {
-            $errors[] = 'Select a valid sex.';
+            $errors[] = 'Selecciona un sexo válido.';
         }
 
         $documentTypeId = $this->optionalPositiveInteger(
             $values['document_type_id'],
-            'document type',
+            'tipo de documento',
             $errors,
         );
         $maritalStatusId = $this->optionalPositiveInteger(
             $values['marital_status_id'],
-            'marital status',
+            'estado civil',
             $errors,
         );
         $educationLevelId = $this->optionalPositiveInteger(
             $values['education_level_id'],
-            'education level',
+            'nivel educativo',
             $errors,
         );
 
         if ($documentTypeId !== null && !$options->hasDocumentType($documentTypeId)) {
-            $errors[] = 'Select a valid document type.';
+            $errors[] = 'Selecciona un tipo de documento válido.';
         }
         if ($maritalStatusId !== null && !$options->hasMaritalStatus($maritalStatusId)) {
-            $errors[] = 'Select a valid marital status.';
+            $errors[] = 'Selecciona un estado civil válido.';
         }
         if ($educationLevelId !== null && !$options->hasEducationLevel($educationLevelId)) {
-            $errors[] = 'Select a valid education level.';
+            $errors[] = 'Selecciona un nivel educativo válido.';
         }
 
         $documentNumber = $this->nullableString($values['document_number']);
         if (($documentTypeId === null) !== ($documentNumber === null)) {
-            $errors[] = 'Document type and document number must both be provided or both be empty.';
+            $errors[] = 'Indica tanto el tipo como el número de documento, o deja ambos vacíos.';
         }
 
         $status = PersonStatus::tryFrom($values['status']);
         if ($status === null || !$options->hasStatus($values['status'])) {
-            $errors[] = 'Select a valid status.';
+            $errors[] = 'Selecciona un estado válido.';
         }
 
         if (!$options->isReadyForSave()) {
@@ -414,7 +415,7 @@ final class PersonController extends Controller
         http_response_code($status);
 
         return $this->view('persons.form', [
-            'title' => $mode === 'create' ? 'Create Person' : 'Edit Person',
+            'title' => $mode === 'create' ? 'Crear persona' : 'Editar persona',
             'mode' => $mode,
             'personId' => $personId,
             'values' => $values,
@@ -429,7 +430,7 @@ final class PersonController extends Controller
     {
         http_response_code(404);
 
-        return $this->view('persons.not-found', ['title' => 'Person not found']);
+        return $this->view('persons.not-found', ['title' => 'Persona no encontrada']);
     }
 
     private function flashMessage(string $key): ?string
@@ -487,7 +488,7 @@ final class PersonController extends Controller
 
         $id = $this->positiveInteger($value);
         if ($id === null) {
-            $errors[] = sprintf('Select a valid %s.', $label);
+            $errors[] = sprintf('Selecciona un valor válido para %s.', $label);
         }
 
         return $id;
@@ -507,7 +508,7 @@ final class PersonController extends Controller
 
     private function catalogUnavailableMessage(): string
     {
-        return 'Person cannot be saved because required form catalogs are unavailable.';
+        return 'No se puede guardar la persona porque faltan catálogos necesarios.';
     }
 
     private function redirect(string $location, int $status = 302): string

@@ -9,7 +9,7 @@ $timestamp = static fn (DateTimeImmutable $value): string => $value->format(Date
     <div>
         <p class="text-uppercase fw-semibold text-primary mb-2">Familias</p>
         <h1 class="display-6 fw-bold mb-2"><?= $escape($family->displayName) ?></h1>
-        <p class="text-body-secondary mb-0">Contexto operativo de membresías, recursos y acceso del representante. ID interno: <?= $escape($family->id) ?>.</p>
+        <p class="text-body-secondary mb-0">Consulta las personas asociadas y administra los recursos de esta familia.</p>
     </div>
     <div class="app-action-group">
         <a class="btn btn-primary" href="/families/students/create?family_id=<?= $escape($family->id) ?>">Agregar estudiante</a>
@@ -22,7 +22,6 @@ $timestamp = static fn (DateTimeImmutable $value): string => $value->format(Date
     <h2 class="h4" id="family-identity-heading">Identidad familiar</h2>
     <dl class="app-data-list">
         <dt>Nombre visible</dt><dd><?= $escape($family->displayName) ?></dd>
-        <dt>ID interno</dt><dd><?= $escape($family->id) ?></dd>
         <dt>Estado</dt><dd><?php $statusCode = $family->status->value; require dirname(__DIR__) . '/components/status-badge.php'; ?></dd>
     </dl>
 </section>
@@ -38,9 +37,8 @@ $timestamp = static fn (DateTimeImmutable $value): string => $value->format(Date
 <article class="app-data-card h-100">
     <h3 class="h5"><?= $membership->isPrimary && $membership->isActive ? 'Representante principal activo' : 'Membresía de representante' ?></h3>
     <dl class="app-data-list">
-        <dt>ID de membresía</dt><dd><?= $escape($membership->id) ?></dd>
-        <dt>ID de representante</dt><dd><?= $escape($membership->representativeId) ?></dd>
-        <dt>Tipo de relación (ID)</dt><dd><?= $escape($membership->relationshipTypeId) ?></dd>
+        <dt>Representante</dt><dd><?= $escape($memberLabels->representative($membership->representativeId)) ?></dd>
+        <dt>Relación</dt><dd><?= $escape($memberLabels->relationship($membership->relationshipTypeId)) ?></dd>
         <dt>Principal</dt><dd><?= $membership->isPrimary ? 'Sí' : 'No' ?></dd>
         <dt>Vigencia</dt><dd><?= $membership->isActive ? 'Activa' : 'Histórica' ?></dd>
         <dt>Inicio</dt><dd><?= $escape($timestamp($membership->startedAt)) ?></dd>
@@ -65,8 +63,7 @@ $timestamp = static fn (DateTimeImmutable $value): string => $value->format(Date
 <article class="app-data-card h-100">
     <h3 class="h5">Membresía de estudiante</h3>
     <dl class="app-data-list">
-        <dt>ID de membresía</dt><dd><?= $escape($membership->id) ?></dd>
-        <dt>ID de estudiante</dt><dd><?= $escape($membership->studentId) ?></dd>
+        <dt>Estudiante</dt><dd><?= $escape($memberLabels->student($membership->studentId)) ?></dd>
         <dt>Vigencia</dt><dd><?= $membership->isActive ? 'Activa' : 'Histórica' ?></dd>
         <dt>Inicio</dt><dd><?= $escape($timestamp($membership->startedAt)) ?></dd>
         <dt>Fin</dt><dd><?= $membership->endedAt === null ? 'Sin finalizar' : $escape($timestamp($membership->endedAt)) ?></dd>

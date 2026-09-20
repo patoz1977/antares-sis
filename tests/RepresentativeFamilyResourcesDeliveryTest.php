@@ -146,6 +146,10 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         assertSameValue(200, http_response_code());
         deliveryAssertContains('Recursos familiares', $single['portal']->index());
         deliveryAssertContains('Familia actual', $page);
+        deliveryAssertContains('Direcciones existentes y mantenimiento', $page);
+        deliveryAssertContains('Asignaciones de direcciones', $page);
+        deliveryAssertContains('Contactos existentes y mantenimiento', $page);
+        deliveryAssertContains('Asignaciones de retiros autorizados', $page);
         deliveryAssertContains('Family &lt;A&gt;', $page);
         deliveryAssertContains('&lt;script&gt;Student&lt;/script&gt; &amp; One', $page);
         assertSameValue(false, str_contains($page, '<script>Student</script>'));
@@ -177,7 +181,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         );
 
         assertSameValue(403, http_response_code());
-        deliveryAssertContains('Family resources unavailable', $response);
+        deliveryAssertContains('recurso familiar solicitado no está disponible', $response);
         assertSameValue($before, $fixture['families']->saveCalls());
         $familyB = (new GetFamilyResources($fixture['families']))->handle(600);
         assertSameValue('Address 11', familyResourcesFindById($familyB->addresses, 11)->label);
@@ -228,7 +232,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
             'ended_at' => '2026-08-11T10:00',
         ]);
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('Selected resource is not available', $denied);
+        deliveryAssertContains('recurso seleccionado no está disponible', $denied);
         assertSameValue($before, $fixture['families']->saveCalls());
 
         representativeFamilyResourcesPost($fixture['controller'], 'assignRepresentativeAddress', [
@@ -253,7 +257,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
             $before = $fixture['families']->saveCalls();
             $response = representativeFamilyResourcesPost($fixture['controller'], $method, $input);
             assertSameValue(422, http_response_code());
-            deliveryAssertContains('This address cannot be changed from your account.', $response);
+            deliveryAssertContains('No puede cambiar esta dirección desde su cuenta.', $response);
             assertSameValue(false, str_contains($response, 'Representative 44'));
             assertSameValue($before, $fixture['families']->saveCalls());
         }
@@ -280,7 +284,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
             representativeFamilyResourcesAddressPost(500, ['family_address_id' => '12']),
         );
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('This address cannot be changed from your account.', $shared);
+        deliveryAssertContains('No puede cambiar esta dirección desde su cuenta.', $shared);
     });
 
     $runner->add('Representative operates only active related Students using human labels', function (): void {
@@ -316,7 +320,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
                 'started_at' => '2026-08-11T13:00',
             ]);
             assertSameValue(422, http_response_code());
-            deliveryAssertContains('Selected resource is not available', $denied);
+            deliveryAssertContains('recurso seleccionado no está disponible', $denied);
             assertSameValue($before, $fixture['families']->saveCalls());
         }
 
@@ -379,7 +383,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
             representativeFamilyResourcesEmergencyPost(['relationship_type_id' => '999']),
         );
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('active relationship type', $invalidCatalog);
+        deliveryAssertContains('parentesco activo', $invalidCatalog);
         assertSameValue($before, $fixture['families']->saveCalls());
     });
 
