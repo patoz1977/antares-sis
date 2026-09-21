@@ -25,6 +25,7 @@ $student = $submissionReview->student;
 $studentPerson = $student->person;
 $representative = $submissionReview->representativePerson;
 $enrollment = $submissionReview->enrollment;
+$isDraft = $enrollment->status === 'DRAFT';
 $period = $submissionReview->academicPeriod;
 $billing = $enrollment->billingInformation;
 $medical = $enrollment->medicalInformation;
@@ -53,7 +54,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <p class="text-body-secondary">Revisa la información actual de <strong><?= $escape($student->displayName) ?></strong> antes del envío.</p>
     <nav class="app-section-nav" aria-label="Acciones relacionadas con la revisión">
         <a href="<?= $escape($enrollmentLocation) ?>">Corregir información</a>
-        <a href="/representative/resources">Recursos familiares</a>
+        <a href="/representative/data">Actualización de datos</a>
         <a href="/representative/acknowledgements">Aceptaciones institucionales</a>
     </nav>
 </header>
@@ -137,7 +138,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <?php endforeach; ?>
     </ul>
     <?php endif; ?>
-    <p><a href="/representative/resources">Corregir direcciones, contactos o retiros autorizados actuales</a>.</p>
+    <p><a href="/representative/data">Corregir direcciones, contactos o retiros autorizados actuales</a>.</p>
 </section>
 
 <section class="app-data-card" aria-labelledby="annual-information-heading">
@@ -195,6 +196,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <?php endif; ?>
 </section>
 
+<?php if ($isDraft): ?>
 <section class="app-consequential-panel" aria-labelledby="submission-readiness-heading">
     <h2 id="submission-readiness-heading">Preparación para el envío</h2>
     <?php if ($submissionReview->validation->isSubmittable): ?>
@@ -222,6 +224,19 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     </form>
     <?php endif; ?>
 </section>
+<?php else: ?>
+<section class="app-consequential-panel" aria-labelledby="enrollment-lifecycle-heading">
+    <h2 id="enrollment-lifecycle-heading">Estado de la matrícula</h2>
+    <?php if ($enrollment->status === 'SUBMITTED'): ?>
+    <p role="status">Esta matrícula fue enviada y está disponible para revisión institucional.</p>
+    <?php elseif ($enrollment->status === 'COMPLETED'): ?>
+    <p role="status">Esta matrícula fue completada por la institución.</p>
+    <?php elseif ($enrollment->status === 'CANCELLED'): ?>
+    <p role="status">Esta matrícula fue cancelada.</p>
+    <?php endif; ?>
+    <p>La información anual se encuentra en modo de solo lectura. Los datos actuales autorizados conservan sus propias reglas de mantenimiento.</p>
+</section>
+<?php endif; ?>
 
 <div class="app-action-group mt-4">
     <a class="btn btn-outline-secondary" href="<?= $escape($reviewLocation) ?>">Actualizar revisión</a>

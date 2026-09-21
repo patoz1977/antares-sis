@@ -118,9 +118,17 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
                 default => throw new RuntimeException('Unexpected lifecycle fixture.'),
             };
             deliveryAssertContains('>' . $statusLabel . '</span>', $html);
-            deliveryAssertContains('Esta matrícula todavía no puede enviarse.', $html);
+            $message = match ($status) {
+                EnrollmentStatus::Submitted => 'Esta matrícula fue enviada',
+                EnrollmentStatus::Completed => 'Esta matrícula fue completada',
+                EnrollmentStatus::Cancelled => 'Esta matrícula fue cancelada',
+                default => throw new RuntimeException('Unexpected lifecycle fixture.'),
+            };
+            deliveryAssertContains($message, $html);
             deliveryAssertContains('Datos actuales del SIS', $html);
             deliveryAssertContains('Recursos familiares actuales', $html);
+            assertSameValue(false, str_contains($html, 'Preparación para el envío'), $status->value);
+            assertSameValue(false, str_contains($html, 'Esta matrícula todavía no puede enviarse.'), $status->value);
             assertSameValue(false, str_contains($html, '>Enviar matrícula<'), $status->value);
             foreach (['Complete Enrollment', 'Cancel Enrollment', 'Reopen Enrollment'] as $forbidden) {
                 assertSameValue(false, str_contains($html, $forbidden), $forbidden);
@@ -269,9 +277,9 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
     });
 
     $runner->add('E012 review navigation reuses E011 autosave flush and form works without JavaScript', function (): void {
-        $portal = representativeEnrollmentNormalizedSource('resources/views/representative-portal/enrollment.php');
-        deliveryAssertContains('/representative/enrollment/review?student_id=', $portal);
-        deliveryAssertContains('data-enrollment-navigation>Revisar y enviar matrícula', $portal);
+        $portal = representativeEnrollmentNormalizedSource('resources/views/representative-portal/enrollment-summary.php');
+        deliveryAssertContains('/representative/enrollment/review', $portal);
+        deliveryAssertContains('Revisar y enviar matrícula', $portal);
 
         $script = representativeEnrollmentNormalizedSource('public/js/representative-enrollment.js');
         foreach (['a[data-enrollment-navigation]', 'await this.flushAll()', 'event.preventDefault()'] as $required) {

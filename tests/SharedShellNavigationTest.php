@@ -216,7 +216,7 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
 
         assertSameValue('representative', $shell->context);
         assertSameValue(
-            ['Inicio', 'Matrícula', 'Recursos familiares', 'Confirmaciones'],
+            ['Inicio', 'Actualización de datos', 'Matrícula'],
             array_column($shell->navigation, 'label'),
         );
         assertSameValue(true, shellItem($shell, 'Matrícula')['active']);
@@ -286,9 +286,10 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
         } finally {
             View::setSharedDataResolver(null);
         }
-        foreach (['Familia Uno', 'href="/representative/enrollment"', 'href="/representative/acknowledgements"'] as $expected) {
+        foreach (['Familia Uno', 'href="/representative/data"', 'href="/representative/enrollment"'] as $expected) {
             deliveryAssertContains($expected, $representativeHtml);
         }
+        assertSameValue(false, str_contains($representativeHtml, 'href="/representative/acknowledgements"'));
         assertSameValue(1, substr_count($representativeHtml, 'action="/logout"'));
         foreach (['href="/persons"', 'href="/families"', 'href="/reports/enrollments"'] as $excluded) {
             assertSameValue(false, str_contains($representativeHtml, $excluded));

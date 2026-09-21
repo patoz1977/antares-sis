@@ -95,14 +95,26 @@
             this.cancelTimer(state);
             if (!form.checkValidity()) {
                 state.mode = 'dirty';
+                const invalid = form.querySelector(':invalid');
+                if (invalid) {
+                    invalid.setAttribute('aria-invalid', 'true');
+                }
+                this.setStatus(form, 'Pendiente de corrección');
+                this.showErrors(form, [
+                    invalid && invalid.name === 'phone' && form.dataset.section === 'billing'
+                        ? 'El teléfono de facturación es obligatorio.'
+                        : 'Completa los campos obligatorios antes de guardar esta sección.',
+                ]);
                 if (reportValidity) {
                     form.reportValidity();
-                    this.showErrors(form, ['Completa los campos obligatorios antes de salir de esta sección.']);
                     this.focusFailure(form);
                 }
 
                 return false;
             }
+            form.querySelectorAll('[aria-invalid="true"]').forEach((field) => {
+                field.removeAttribute('aria-invalid');
+            });
 
             const sentRevision = state.revision;
             state.mode = 'saving';

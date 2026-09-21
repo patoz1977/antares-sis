@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\Family\Application\GetFamilyMembership;
 use App\Family\Domain\FamilyRepository;
 use App\Family\Http\FamilyAdministrationMiddleware;
+use App\Family\Http\FamilyMemberLabels;
+use App\Family\Http\FamilyMemberLabelsProvider;
+use App\Family\Http\RepresentativeFamilySummaryProvider;
 use App\IdentityAccess\Application\AuthenticateUser;
 use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
@@ -118,9 +122,16 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
         deliveryAssertContains('Portal de representantes', $html);
         deliveryAssertContains('Familia actual', $html);
         deliveryAssertContains('&lt;Only &amp; Family&gt;', $html);
+        deliveryAssertContains('Representante autenticado', $html);
+        deliveryAssertContains('Padre', $html);
+        deliveryAssertContains('Actualización de datos', $html);
+        deliveryAssertContains('Matrícula', $html);
+        assertSameValue(false, str_contains($html, '/representative/acknowledgements'));
+        assertSameValue(false, str_contains($html, 'Otro representante'));
         assertSameValue(false, str_contains($html, '<Only & Family>'));
         assertSameValue(false, str_contains($html, 'name="family_id"'));
         assertSameValue(false, str_contains($html, 'Cambiar familia'));
+        assertSameValue(0, substr_count($html, 'name="family_id"'));
         assertSameValue(false, str_contains($html, '>10<'));
         assertSameValue(false, str_contains($html, 'action="/logout"'));
     });
@@ -390,6 +401,10 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
             \App\InstitutionalDocuments\Application\RepresentativePortal\GetRepresentativeAcknowledgementPortalState::class,
             $fixture['acknowledgements']['state'],
         );
+        $container->instance(
+            RepresentativeFamilySummaryProvider::class,
+            representativePortalSummaryProvider($fixture['families']),
+        );
         $container->singleton(RepresentativePortalController::class, RepresentativePortalController::class);
         assertSameValue(
             true,
@@ -408,7 +423,7 @@ function registerRepresentativePortalDeliveryTests(TestRunner $runner): void
             $authenticationController,
             "return \$this->redirect('/representative');",
         ));
-        assertSameValue(4, count((new ReflectionClass(RepresentativePortalController::class))
+        assertSameValue(5, count((new ReflectionClass(RepresentativePortalController::class))
             ->getConstructor()?->getParameters() ?? []));
     });
 }
@@ -434,6 +449,7 @@ function representativePortalFixture(
         $fixture['select'],
         new FakeDeliveryCsrf(),
         $fixture['acknowledgements']['state'],
+        representativePortalSummaryProvider($fixture['families']),
     );
 
     return $fixture;
@@ -502,6 +518,7 @@ function representativePortalLoginFixture(bool $withRepresentative, string $logi
             $select,
             new FakeDeliveryCsrf(),
             $acknowledgements['state'],
+            representativePortalSummaryProvider($families),
         ),
         'session' => $session,
         'users' => $users,
@@ -509,6 +526,23 @@ function representativePortalLoginFixture(bool $withRepresentative, string $logi
         'getRepresentative' => $getRepresentative,
         'families' => $families,
     ];
+}
+
+function representativePortalSummaryProvider(FamilyRepository $families): RepresentativeFamilySummaryProvider
+{
+    return new RepresentativeFamilySummaryProvider(
+        new GetFamilyMembership($families),
+        new class implements FamilyMemberLabelsProvider {
+            public function forFamily(int $familyId): FamilyMemberLabels
+            {
+                return new FamilyMemberLabels(
+                    [33 => 'Representante autenticado', 44 => 'Otro representante', 55 => 'Otro representante'],
+                    [301 => 'Estudiante Uno', 401 => 'Estudiante Dos'],
+                    [1 => 'Padre', 201 => 'Representante legal'],
+                );
+            }
+        },
+    );
 }
 
 function representativePortalUser(

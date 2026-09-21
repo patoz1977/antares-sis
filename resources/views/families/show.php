@@ -27,7 +27,7 @@ $timestamp = static fn (DateTimeImmutable $value): string => $value->format(Date
 </section>
 
 <section class="mb-5" aria-labelledby="family-representatives-heading">
-<h2 class="h3" id="family-representatives-heading">Representantes y membresías</h2>
+<h2 class="h3" id="family-representatives-heading">Representantes</h2>
 <?php if ($family->representatives === []): ?>
 <?php $emptyStateTitle = 'No hay representantes asociados'; $emptyStateText = 'Esta familia no tiene membresías de representante registradas.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php else: ?>
@@ -53,7 +53,7 @@ $timestamp = static fn (DateTimeImmutable $value): string => $value->format(Date
 </section>
 
 <section class="mb-4" aria-labelledby="family-students-heading">
-<h2 class="h3" id="family-students-heading">Estudiantes y membresías</h2>
+<h2 class="h3" id="family-students-heading">Estudiantes</h2>
 <?php if ($family->students === []): ?>
 <?php $emptyStateTitle = 'No hay estudiantes asociados'; $emptyStateText = 'Agrega un estudiante para crear su membresía familiar.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php else: ?>

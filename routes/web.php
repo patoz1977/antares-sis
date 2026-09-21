@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\IdentityAccess\Http\AuthenticationController;
 use App\IdentityAccess\Http\RepresentativePortalController;
+use App\IdentityAccess\Http\RepresentativeDataController;
 use App\IdentityAccess\Http\RepresentativeUserController;
 use App\BulkImport\Http\BulkImportApplyController;
 use App\BulkImport\Http\BulkImportController;
@@ -30,6 +31,7 @@ use Core\Routing\Router;
 /** @var Application $app */
 $authenticationController = $app->container()->make(AuthenticationController::class);
 $representativePortalController = $app->container()->make(RepresentativePortalController::class);
+$representativeDataController = $app->container()->make(RepresentativeDataController::class);
 $representativeUserController = $app->container()->make(RepresentativeUserController::class);
 $bulkImportController = $app->container()->make(BulkImportController::class);
 $bulkImportApplyController = $app->container()->make(BulkImportApplyController::class);
@@ -229,6 +231,21 @@ $router->get(
     AuthenticationMiddleware::class,
 );
 $router->get(
+    '/representative/data',
+    [$representativeDataController, 'index'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/data/me',
+    [$representativeEnrollmentController, 'myData'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/data/students',
+    [$representativeEnrollmentController, 'studentData'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
     '/representative/acknowledgements',
     [$representativeAcknowledgementController, 'index'],
     AuthenticationMiddleware::class,
@@ -246,6 +263,31 @@ $router->post(
 $router->get(
     '/representative/enrollment',
     [$representativeEnrollmentController, 'index'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/enrollment/student/placement',
+    [$representativeEnrollmentController, 'placement'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/enrollment/student/billing',
+    [$representativeEnrollmentController, 'billing'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/enrollment/student/medical',
+    [$representativeEnrollmentController, 'medical'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/enrollment/student/transport',
+    [$representativeEnrollmentController, 'transport'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/enrollment/student/leave-alone',
+    [$representativeEnrollmentController, 'leaveAlone'],
     AuthenticationMiddleware::class,
 );
 $router->post(
@@ -306,6 +348,21 @@ $router->post(
 $router->get(
     '/representative/resources',
     [$representativeFamilyResourceController, 'index'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/resources/addresses',
+    [$representativeFamilyResourceController, 'addresses'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/resources/emergency-contacts',
+    [$representativeFamilyResourceController, 'emergencyContacts'],
+    AuthenticationMiddleware::class,
+);
+$router->get(
+    '/representative/resources/authorized-pickups',
+    [$representativeFamilyResourceController, 'authorizedPickups'],
     AuthenticationMiddleware::class,
 );
 $router->post(

@@ -16,6 +16,7 @@ use App\Enrollment\Http\RepresentativeEnrollmentAutosaveResponder;
 use App\Enrollment\Http\RepresentativeEnrollmentInputMapper;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\StudentId as FamilyStudentId;
+use App\IdentityAccess\Http\RepresentativeDataController;
 use App\Person\Http\PersonFormOption;
 use App\Person\Http\PersonFormOptions;
 use App\Person\Http\PersonFormOptionsProvider;
@@ -24,6 +25,35 @@ use Tests\Support\TestRunner;
 
 function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
 {
+    $runner->add('Representative data hub composes only the selected authorized Family', function (): void {
+        $fixture = representativeEnrollmentDeliveryFixture();
+        $controller = new RepresentativeDataController(
+            $fixture['services']['state'],
+            representativePortalSummaryProvider($fixture['services']['families']),
+        );
+        deliveryRequest('GET', '/representative/data');
+        $html = $controller->index();
+
+        assertSameValue(200, http_response_code());
+        foreach (['Actualización de datos', 'Mis datos', 'Mis estudiantes', 'Otros representantes',
+            'Revisar direcciones', 'Revisar contactos de emergencia',
+            'Revisar personas autorizadas para retirar', 'Authorized Family'] as $expected) {
+            deliveryAssertContains($expected, $html);
+        }
+        assertSameValue(false, str_contains($html, 'representative_id'));
+        assertSameValue(false, str_contains($html, 'family_id'));
+
+        $noPeriod = representativeEnrollmentDeliveryFixture(periodActive: false);
+        $noPeriodController = new RepresentativeDataController(
+            $noPeriod['services']['state'],
+            representativePortalSummaryProvider($noPeriod['services']['families']),
+        );
+        deliveryRequest('GET', '/representative/data');
+        $noPeriodHtml = $noPeriodController->index();
+        deliveryAssertContains('La consulta está disponible', $noPeriodHtml);
+        deliveryAssertContains('Actualizar mis datos', $noPeriodHtml);
+    });
+
     $runner->add('E011 Delivery exposes exact authenticated Enrollment routes without lifecycle authority', function (): void {
         $routes = representativeEnrollmentNormalizedSource('routes/web.php');
         $paths = [
@@ -39,13 +69,19 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
             '/representative/enrollment/student/leave-alone',
         ];
         foreach ($paths as $path) {
-            assertSameValue(1, substr_count($routes, "'" . $path . "'"), $path);
+            $expected = in_array($path, [
+                '/representative/enrollment/student/billing',
+                '/representative/enrollment/student/medical',
+                '/representative/enrollment/student/transport',
+                '/representative/enrollment/student/leave-alone',
+            ], true) ? 2 : 1;
+            assertSameValue($expected, substr_count($routes, "'" . $path . "'"), $path);
         }
-        assertSameValue(10, substr_count($routes, '[$representativeEnrollmentController,'));
+        assertSameValue(17, substr_count($routes, '[$representativeEnrollmentController,'));
         $start = strpos($routes, "\$router->get(\n    '/representative/enrollment'");
         $end = strpos($routes, "\$router->get(\n    '/representative/enrollment/review'", is_int($start) ? $start : 0);
         $slice = is_int($start) && is_int($end) ? substr($routes, $start, $end - $start) : '';
-        assertSameValue(10, substr_count($slice, 'AuthenticationMiddleware::class'));
+        assertSameValue(15, substr_count($slice, 'AuthenticationMiddleware::class'));
         foreach (['AdministrationMiddleware', 'family_id}', 'academic_period_id}', 'enrollment_id', '/submit', '/complete', '/cancel', '/reopen'] as $forbidden) {
             assertSameValue(false, str_contains($slice, $forbidden), $forbidden);
         }
@@ -72,9 +108,9 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         assertSameValue(false, str_contains($noPeriodHtml, 'Iniciar matrícula en borrador'));
 
         $pending = representativeEnrollmentDeliveryFixture(acknowledgementsSatisfied: false);
-        deliveryRequest('GET', '/representative/enrollment?student_id=44', ['student_id' => '44']);
+        deliveryRequest('GET', '/representative/enrollment');
         $pendingHtml = $pending['controller']->index();
-        deliveryAssertContains('Debes completar las aceptaciones institucionales', $pendingHtml);
+        deliveryAssertContains('Pendientes para este período', $pendingHtml);
         deliveryAssertContains('/representative/acknowledgements', $pendingHtml);
         assertSameValue(false, str_contains($pendingHtml, 'Iniciar matrícula en borrador'));
         assertSameValue(false, str_contains($pendingHtml, 'href="/representative/resources"'));
@@ -82,17 +118,16 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         $ready = representativeEnrollmentDeliveryFixture();
         deliveryRequest('GET', '/representative/enrollment');
         $unselected = $ready['controller']->index();
-        deliveryAssertContains('Información personal del representante', $unselected);
-        deliveryAssertContains('Elige un estudiante', $unselected);
+        deliveryAssertContains('Matrículas de tus estudiantes', $unselected);
+        deliveryAssertContains('Pendiente de iniciar', $unselected);
+        assertSameValue(false, str_contains($unselected, 'Información personal del representante'));
         assertSameValue(0, $ready['services']['enrollments']->saveCalls);
 
         deliveryRequest('GET', '/representative/enrollment?student_id=44', ['student_id' => '44']);
         $selected = $ready['controller']->index();
-        deliveryAssertContains('La matrícula en borrador todavía no ha sido iniciada', $selected);
-        deliveryAssertContains('Código institucional', $selected);
-        deliveryAssertContains('Los campos marcados con * son obligatorios.', $selected);
-        deliveryAssertContains('app-required-label', $selected);
-        assertSameValue(false, str_contains($selected, 'datos vivos'));
+        deliveryAssertContains('Pendiente de iniciar', $selected);
+        deliveryAssertContains('Revisar datos actuales', $selected);
+        deliveryAssertContains('datos vivos', $selected);
         assertSameValue(0, $ready['services']['enrollments']->saveCalls);
     });
 
@@ -121,7 +156,7 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         assertSameValue(303, http_response_code());
         assertSameValue(1, $fixture['services']['enrollments']->saveCalls);
         deliveryRequest('GET', '/representative/enrollment?student_id=44', ['student_id' => '44']);
-        deliveryAssertContains('Puedes completar este borrador sección por sección', $fixture['controller']->index());
+        deliveryAssertContains('Completar esta matrícula', $fixture['controller']->index());
     });
 
     $runner->add('E011 every Enrollment POST rejects invalid CSRF before Application', function (): void {
@@ -333,15 +368,22 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
             };
             deliveryAssertContains('>' . $statusLabel . '</span>', $html);
             deliveryAssertContains('La información anual de esta matrícula está en modo de solo lectura', $html);
-            deliveryAssertContains('Puedes seguir actualizando los datos personales y familiares que tu cuenta tenga permitidos.', $html);
-            deliveryAssertContains('Guardar información personal', $html);
-            deliveryAssertContains('Guardar información del estudiante', $html);
+            deliveryAssertContains('Los datos actuales autorizados conservan sus propias reglas de mantenimiento.', $html);
             assertSameValue(false, str_contains($html, 'Guardar información de facturación'));
             assertSameValue(false, str_contains($html, 'Guardar información médica'));
             assertSameValue(false, str_contains($html, 'Guardar transporte'));
             assertSameValue(false, str_contains($html, 'Guardar autorización de salida'));
             assertSameValue(false, str_contains($html, 'Iniciar matrícula en borrador'));
             assertSameValue(false, str_contains($html, 'Enviar matrícula'));
+
+            deliveryRequest('GET', '/representative/data/me');
+            deliveryAssertContains('Guardar información personal', $fixture['controller']->myData());
+            deliveryRequest('GET', '/representative/data/students?student_id=44', ['student_id' => '44']);
+            deliveryAssertContains('Guardar información del estudiante', $fixture['controller']->studentData());
+            deliveryRequest('GET', '/representative/enrollment/student/billing?student_id=44', ['student_id' => '44']);
+            $billingPage = $fixture['controller']->billing();
+            deliveryAssertContains('Facturación — solo lectura', $billingPage);
+            assertSameValue(false, str_contains($billingPage, 'Guardar información de facturación'));
 
             $manual = representativeEnrollmentPost(
                 $fixture['controller'],
@@ -375,11 +417,24 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
     $runner->add('E011 autosave HTML preserves fallback accessibility White Label and readonly behavior', function (): void {
         $fixture = representativeEnrollmentDeliveryFixture();
         $fixture['services']['resolveOrStart']->handle(new ResolveOrStartRepresentativeEnrollmentInput(77, 5, 44));
+        deliveryRequest('GET', '/representative/data/me');
+        $html = $fixture['controller']->myData();
+        deliveryRequest('GET', '/representative/data/students?student_id=44', ['student_id' => '44']);
+        $html .= $fixture['controller']->studentData();
+        foreach ([
+            'billing' => 'billing',
+            'medical' => 'medical',
+            'transport' => 'transport',
+            'leaveAlone' => 'leave-alone',
+        ] as $method => $path) {
+            deliveryRequest('GET', '/representative/enrollment/student/' . $path . '?student_id=44', ['student_id' => '44']);
+            $html .= $fixture['controller']->{$method}();
+        }
         deliveryRequest('GET', '/representative/enrollment?student_id=44', ['student_id' => '44']);
-        $html = $fixture['controller']->index();
+        $html .= $fixture['controller']->index();
         foreach ([
             'class="container', 'col-12', '<label', '<fieldset', '<legend', 'role="status"',
-            'Recursos familiares', '/js/representative-enrollment.js', 'data-enrollment-autosave',
+            'Personas autorizadas para retirar', '/js/representative-enrollment.js', 'data-enrollment-autosave',
             'data-enrollment-autosave-status', 'data-enrollment-autosave-errors',
             'data-enrollment-navigation', 'data-enrollment-fallback-save', 'data-progress-section="billing"',
         ] as $required) {
@@ -403,19 +458,22 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         assertSameValue(false, str_contains($source, 'name="academic_period_id"'));
         assertSameValue(true, str_contains($source, 'htmlspecialchars'));
         foreach ([
-            '<a href="/representative" data-enrollment-navigation>Portal de representantes</a>',
-            '<a href="/representative/resources" data-enrollment-navigation>Recursos familiares</a>',
-            '<a href="/representative" data-enrollment-navigation>Cambiar familia</a>',
-            'href="/representative/acknowledgements" data-enrollment-navigation',
-            '<form method="get" action="/representative/enrollment" class="row g-2 align-items-end" data-enrollment-navigation>',
+            '/representative/data',
+            '/representative/enrollment/student/billing',
+            'data-enrollment-navigation',
+            'Volver al resumen',
         ] as $navigationMarker) {
             deliveryAssertContains($navigationMarker, $source);
         }
 
         $readOnly = representativeEnrollmentDeliveryFixture();
         $readOnly['services']['enrollments']->seed(representativeEnrollmentPersistedState(EnrollmentStatus::Submitted));
-        deliveryRequest('GET', '/representative/enrollment?student_id=44', ['student_id' => '44']);
-        $readOnlyHtml = $readOnly['controller']->index();
+        deliveryRequest('GET', '/representative/data/me');
+        $readOnlyHtml = $readOnly['controller']->myData();
+        deliveryRequest('GET', '/representative/data/students?student_id=44', ['student_id' => '44']);
+        $readOnlyHtml .= $readOnly['controller']->studentData();
+        deliveryRequest('GET', '/representative/enrollment/student/billing?student_id=44', ['student_id' => '44']);
+        $readOnlyHtml .= $readOnly['controller']->billing();
         assertSameValue(4, substr_count($readOnlyHtml, ' data-enrollment-autosave data-section='));
         assertSameValue(true, str_contains($readOnlyHtml, 'Guardar información personal'));
         assertSameValue(false, str_contains($readOnlyHtml, 'Guardar información de facturación'));
@@ -565,6 +623,8 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
             "'Guardando...'", "'Guardado'", "'Error al guardar'", "'beforeunload'", "'pagehide'",
             'keepalive: true', 'form.checkValidity()', 'form.reportValidity()',
             'data-medical-controller', 'detail.value = \'\'', 'data-progress-section',
+            "'Pendiente de corrección'", "'El teléfono de facturación es obligatorio.'",
+            "invalid.setAttribute('aria-invalid', 'true')",
         ] as $required) {
             deliveryAssertContains($required, $script);
         }
@@ -646,6 +706,7 @@ function representativeEnrollmentDeliveryFixture(
         $session,
         new RepresentativeEnrollmentInputMapper(),
         new RepresentativeEnrollmentAutosaveResponder(),
+        $services['acknowledgements']['state'],
     );
 
     return ['controller' => $controller, 'services' => $services, 'session' => $session];

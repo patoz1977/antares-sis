@@ -14,7 +14,8 @@ $safeLink = static function (string $url): bool {
 ?>
 <?php
 $breadcrumbItems = [
-    ['label' => 'Portal', 'url' => '/representative'],
+    ['label' => 'Inicio', 'url' => '/representative'],
+    ['label' => 'Matrícula', 'url' => '/representative/enrollment'],
     ['label' => 'Aceptaciones institucionales'],
 ];
 require dirname(__DIR__) . '/components/breadcrumb.php';

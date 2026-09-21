@@ -113,6 +113,7 @@ use App\IdentityAccess\Application\SelectAuthorizedFamily;
 use App\IdentityAccess\Domain\UserRepository as IdentityUserRepository;
 use App\IdentityAccess\Http\AuthenticationController;
 use App\IdentityAccess\Http\RepresentativePortalController;
+use App\IdentityAccess\Http\RepresentativeDataController;
 use App\IdentityAccess\Http\RepresentativeUserController;
 use App\IdentityAccess\Infrastructure\Logging\ErrorLogSecurityEventLogger;
 use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
@@ -168,6 +169,7 @@ use App\Family\Http\FamilyMemberLabelsProvider;
 use App\Family\Http\FamilyResourceController;
 use App\Family\Http\FamilyResourceFormOptionsProvider;
 use App\Family\Http\RepresentativeFamilyResourceController;
+use App\Family\Http\RepresentativeFamilySummaryProvider;
 use App\Family\Infrastructure\Generation\RandomFamilyCodeGenerator;
 use App\Family\Infrastructure\Persistence\PdoDocumentTypeLookup;
 use App\Family\Infrastructure\Persistence\PdoFamilyFormOptionsProvider;
@@ -333,6 +335,7 @@ $container->instance(
 $container->singleton(AuthenticatedUserProviderInterface::class, AuthenticationService::class);
 $container->singleton(AuthenticationController::class, AuthenticationController::class);
 $container->singleton(RepresentativePortalController::class, RepresentativePortalController::class);
+$container->singleton(RepresentativeDataController::class, RepresentativeDataController::class);
 $container->singleton(AuthenticationMiddleware::class, AuthenticationMiddleware::class);
 $container->singleton(PersonRepository::class, PdoPersonRepository::class);
 $container->singleton(CreatePerson::class, CreatePerson::class);
@@ -416,6 +419,7 @@ $container->singleton(RelationshipTypeLookup::class, PdoRelationshipTypeLookup::
 $container->singleton(DocumentTypeLookup::class, PdoDocumentTypeLookup::class);
 $container->singleton(FamilyFormOptionsProvider::class, PdoFamilyFormOptionsProvider::class);
 $container->singleton(FamilyMemberLabelsProvider::class, PdoFamilyMemberLabelsProvider::class);
+$container->singleton(RepresentativeFamilySummaryProvider::class, RepresentativeFamilySummaryProvider::class);
 $container->singleton(
     FamilyResourceFormOptionsProvider::class,
     PdoFamilyResourceFormOptionsProvider::class,

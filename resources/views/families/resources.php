@@ -101,16 +101,7 @@ $catalogName = static function (array $catalog, ?int $id): string {
 <?php foreach ($resources->addresses as $address): ?>
 <article class="app-data-card">
     <h3><?= $escape($address->label) ?></h3>
-    <dl>
-        <dt>Calle principal</dt><dd><?= $escape($address->mainStreet) ?></dd>
-        <dt>Número</dt><dd><?= $escape($address->streetNumber ?? 'No registrado') ?></dd>
-        <dt>Calle secundaria</dt><dd><?= $escape($address->secondaryStreet ?? 'No registrado') ?></dd>
-        <dt>Sector</dt><dd><?= $escape($address->sector ?? 'No registrado') ?></dd>
-        <dt>Referencia</dt><dd><?= $escape($address->reference ?? 'No registrado') ?></dd>
-        <dt>Latitud</dt><dd><?= $escape($address->latitude ?? 'No registrada') ?></dd>
-        <dt>Longitud</dt><dd><?= $escape($address->longitude ?? 'No registrada') ?></dd>
-        <dt>Estado</dt><dd><?= $escape($address->status === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></dd>
-    </dl>
+    <p>Estado: <?= $escape($address->status === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></p>
     <form method="post" action="/families/resources/addresses/update">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
@@ -180,7 +171,7 @@ $catalogName = static function (array $catalog, ?int $id): string {
     <button type="submit"<?= $activeStudents === [] || $activeAddresses === [] ? ' disabled' : '' ?>>Asignar dirección al estudiante</button>
 </form>
 
-<h3 class="h5">Historial de asignaciones de dirección</h3>
+<h3 class="h5">Direcciones asignadas</h3>
 <?php foreach ($resources->representativeAddressAssignments as $assignment): ?>
 <article class="app-data-card">
     <p><?= $escape($memberLabels->representative($assignment->representativeId)) ?> — <?= $escape($addressLabel($assignment->familyAddressId)) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
@@ -218,6 +209,7 @@ $catalogName = static function (array $catalog, ?int $id): string {
 <?php if ($options->relationshipTypes === []): ?>
 <p class="alert alert-warning" role="alert">No hay tipos de relación activos. Los formularios de contactos de emergencia y personas autorizadas están deshabilitados.</p>
 <?php endif; ?>
+<div class="app-form-section">
 <h3 class="h5">Crear contacto de emergencia</h3>
 <form method="post" action="/families/resources/emergency-contacts/create">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
@@ -236,19 +228,13 @@ $catalogName = static function (array $catalog, ?int $id): string {
     <label>Observaciones <textarea name="observations"><?= $escape($value('observations')) ?></textarea></label>
     <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Crear contacto de emergencia</button>
 </form>
+</div>
 
 <h3 class="h5 mt-4">Contactos existentes y mantenimiento</h3>
 <?php foreach ($resources->emergencyContacts as $contact): ?>
-<article>
+<article class="app-data-card">
     <h3><?= $escape($contact->names) ?></h3>
-    <dl>
-        <dt>Relación</dt><dd><?= $escape($catalogName($options->relationshipTypes, $contact->relationshipTypeId)) ?></dd>
-        <dt>Teléfono móvil</dt><dd><?= $escape($contact->mobilePhone) ?></dd>
-        <dt>Teléfono</dt><dd><?= $escape($contact->phone ?? 'No registrado') ?></dd>
-        <dt>Correo electrónico</dt><dd><?= $escape($contact->email ?? 'No registrado') ?></dd>
-        <dt>Observaciones</dt><dd><?= $escape($contact->observations ?? 'No registradas') ?></dd>
-        <dt>Estado</dt><dd><?= $escape($contact->status === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></dd>
-    </dl>
+    <p>Estado: <?= $escape($contact->status === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></p>
     <form method="post" action="/families/resources/emergency-contacts/update">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
@@ -300,7 +286,7 @@ $catalogName = static function (array $catalog, ?int $id): string {
     <button type="submit"<?= $activeContacts === [] || $activeStudents === [] ? ' disabled' : '' ?>>Asignar contacto de emergencia</button>
 </form>
 
-<h3 class="h5">Historial de contactos de emergencia</h3>
+<h3 class="h5">Contactos de emergencia asignados</h3>
 <?php foreach ($resources->emergencyContactAssignments as $assignment): ?>
 <article>
     <p><?= $escape($contactName($assignment->familyEmergencyContactId)) ?> — <?= $escape($memberLabels->student($assignment->studentId)) ?> — Prioridad <?= $escape($assignment->priority ?? 'No registrada') ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
@@ -311,7 +297,7 @@ $catalogName = static function (array $catalog, ?int $id): string {
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="assignment_id" value="<?= $escape($assignment->id) ?>">
         <label>Fin <input name="ended_at" type="datetime-local" required></label>
-        <button type="submit">Finalizar asignación</button>
+        <button type="submit">Eliminar asignación</button>
     </form>
     <?php endif; ?>
 </article>
@@ -320,6 +306,7 @@ $catalogName = static function (array $catalog, ?int $id): string {
 
 <section class="app-resource-section mb-5" id="retiros-autorizados" aria-labelledby="pickups-heading">
 <h2 class="h3" id="pickups-heading">Personas autorizadas para retirar</h2>
+<div class="app-form-section">
 <h3 class="h5">Crear persona autorizada</h3>
 <form method="post" action="/families/resources/authorized-pickups/create">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
@@ -346,6 +333,7 @@ $catalogName = static function (array $catalog, ?int $id): string {
     <label>Observaciones <textarea name="observations"><?= $escape($value('observations')) ?></textarea></label>
     <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Crear persona autorizada</button>
 </form>
+</div>
 <?php if ($options->documentTypes === []): ?>
 <p class="alert alert-info">No hay tipos de documento activos. La persona autorizada puede guardarse sin identificación.</p>
 <?php endif; ?>
@@ -354,15 +342,7 @@ $catalogName = static function (array $catalog, ?int $id): string {
 <?php foreach ($resources->authorizedPickups as $pickup): ?>
 <article class="app-data-card">
     <h3><?= $escape($pickup->names) ?></h3>
-    <dl>
-        <dt>Relación</dt><dd><?= $escape($catalogName($options->relationshipTypes, $pickup->relationshipTypeId)) ?></dd>
-        <dt>Teléfono móvil</dt><dd><?= $escape($pickup->mobilePhone) ?></dd>
-        <dt>Teléfono</dt><dd><?= $escape($pickup->phone ?? 'No registrado') ?></dd>
-        <dt>Tipo de documento</dt><dd><?= $escape($catalogName($options->documentTypes, $pickup->documentTypeId)) ?></dd>
-        <dt>Número de documento</dt><dd><?= $escape($pickup->documentNumber ?? 'No registrado') ?></dd>
-        <dt>Observaciones</dt><dd><?= $escape($pickup->observations ?? 'No registradas') ?></dd>
-        <dt>Estado</dt><dd><?= $escape($pickup->status === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></dd>
-    </dl>
+    <p>Estado: <?= $escape($pickup->status === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></p>
     <form method="post" action="/families/resources/authorized-pickups/update">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
@@ -421,7 +401,7 @@ $catalogName = static function (array $catalog, ?int $id): string {
     <button type="submit"<?= $activePickups === [] || $activeStudents === [] ? ' disabled' : '' ?>>Asignar persona autorizada</button>
 </form>
 
-<h3 class="h5">Historial de personas autorizadas</h3>
+<h3 class="h5">Personas autorizadas asignadas</h3>
 <?php foreach ($resources->authorizedPickupAssignments as $assignment): ?>
 <article>
     <p><?= $escape($pickupName($assignment->familyAuthorizedPickupId)) ?> — <?= $escape($memberLabels->student($assignment->studentId)) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
@@ -432,7 +412,7 @@ $catalogName = static function (array $catalog, ?int $id): string {
         <input type="hidden" name="family_id" value="<?= $escape($resources->familyId) ?>">
         <input type="hidden" name="assignment_id" value="<?= $escape($assignment->id) ?>">
         <label>Fin <input name="ended_at" type="datetime-local" required></label>
-        <button type="submit">Finalizar asignación</button>
+        <button type="submit">Eliminar asignación</button>
     </form>
     <?php endif; ?>
 </article>

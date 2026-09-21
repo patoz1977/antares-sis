@@ -37,6 +37,10 @@ use App\Enrollment\Domain\Exception\InvalidEnrollmentState;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
 use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementsRequired;
+use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\ActiveAcademicPeriodUnavailable;
+use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementAccessUnavailable;
+use App\InstitutionalDocuments\Application\Exception\InvalidPersistedAcknowledgementResult;
+use App\InstitutionalDocuments\Application\RepresentativePortal\GetRepresentativeAcknowledgementPortalState;
 use App\Person\Http\PersonFormOptions;
 use App\Person\Http\PersonFormOptionsProvider;
 use App\Representative\Application\Exception\RepresentativeRequiresContactEmail;
@@ -67,10 +71,51 @@ final class RepresentativeEnrollmentController extends Controller
         private readonly SessionManager $session,
         private readonly RepresentativeEnrollmentInputMapper $inputMapper,
         private readonly RepresentativeEnrollmentAutosaveResponder $autosaveResponder,
+        private readonly GetRepresentativeAcknowledgementPortalState $getAcknowledgementState,
     ) {
     }
 
     public function index(): string
+    {
+        return $this->pageFromQuery('index', false);
+    }
+
+    public function myData(): string
+    {
+        return $this->pageFromQuery('me', false);
+    }
+
+    public function studentData(): string
+    {
+        return $this->pageFromQuery('student', true);
+    }
+
+    public function placement(): string
+    {
+        return $this->pageFromQuery('placement', true);
+    }
+
+    public function billing(): string
+    {
+        return $this->pageFromQuery('billing', true);
+    }
+
+    public function medical(): string
+    {
+        return $this->pageFromQuery('medical', true);
+    }
+
+    public function transport(): string
+    {
+        return $this->pageFromQuery('transport', true);
+    }
+
+    public function leaveAlone(): string
+    {
+        return $this->pageFromQuery('leave-alone', true);
+    }
+
+    private function pageFromQuery(string $page, bool $studentRequired): string
     {
         $query = (new Request())->query();
         $studentId = null;
@@ -80,9 +125,12 @@ final class RepresentativeEnrollmentController extends Controller
                 return $this->error('El estudiante seleccionado no está disponible.', 422);
             }
         }
+        if ($studentRequired && $studentId === null) {
+            return $this->error('Seleccione un estudiante antes de continuar.', 422);
+        }
 
         try {
-            return $this->portalView($studentId);
+            return $this->portalView($studentId, page: $page);
         } catch (RepresentativeEnrollmentFamilySelectionRequired) {
             return $this->redirect('/representative', 302);
         } catch (RepresentativeEnrollmentStudentUnavailable|RepresentativeEnrollmentContextUnavailable) {
@@ -569,7 +617,7 @@ final class RepresentativeEnrollmentController extends Controller
 
         $this->session->put(self::FLASH_SUCCESS_KEY, $success);
 
-        return $this->redirect($this->studentLocation($studentId), 303);
+        return $this->redirect($this->sectionLocation($section, $studentId), 303);
     }
 
     /** @param callable(int, int, int, bool): object $createInput */
@@ -636,7 +684,14 @@ final class RepresentativeEnrollmentController extends Controller
         int $status,
     ): string {
         try {
-            return $this->portalView($studentId, $values, $errors, $section, $status);
+            return $this->portalView(
+                $studentId,
+                $values,
+                $errors,
+                $section,
+                $status,
+                $this->pageForSection($section),
+            );
         } catch (RepresentativeEnrollmentFamilySelectionRequired) {
             return $this->redirect('/representative', 303);
         } catch (RepresentativeEnrollmentStudentUnavailable|RepresentativeEnrollmentContextUnavailable) {
@@ -676,6 +731,7 @@ final class RepresentativeEnrollmentController extends Controller
         array $errors = [],
         ?string $failedSection = null,
         int $status = 200,
+        string $page = 'index',
     ): string {
         $state = $this->getState->handle($studentId);
         $placement = null;
@@ -698,8 +754,8 @@ final class RepresentativeEnrollmentController extends Controller
 
         http_response_code($status);
 
-        return $this->view('representative-portal.enrollment', [
-            'title' => 'Matrícula del representante',
+        $presentation = [
+            'title' => $page === 'me' || $page === 'student' ? 'Actualización de datos' : 'Matrícula',
             'state' => $state,
             'options' => $this->formOptions->get(),
             'academicPlacement' => $placement,
@@ -709,7 +765,36 @@ final class RepresentativeEnrollmentController extends Controller
             'failedSection' => $failedSection,
             'successMessage' => $status === 200 ? $this->flash(self::FLASH_SUCCESS_KEY) : null,
             'errorMessage' => $status === 200 ? $this->flash(self::FLASH_ERROR_KEY) : null,
-        ]);
+            'page' => $page === 'index' ? ($studentId === null ? 'hub' : 'summary') : $page,
+        ];
+        if ($page === 'index' && $studentId === null) {
+            $acknowledgementState = null;
+            if ($state->context->academicPeriod !== null) {
+                try {
+                    $acknowledgementState = $this->getAcknowledgementState->handle();
+                } catch (ActiveAcademicPeriodUnavailable) {
+                    // The period may have changed since the first read; the hub remains read-only.
+                } catch (RepresentativeAcknowledgementAccessUnavailable|InvalidPersistedAcknowledgementResult) {
+                    return $this->forbidden();
+                }
+            }
+            $presentation['acknowledgementState'] = $acknowledgementState;
+            $enrollments = [];
+            if ($state->context->academicPeriod !== null) {
+                foreach ($state->context->students as $option) {
+                    $enrollments[$option->student->id] = $this->getState
+                        ->handle($option->student->id)->enrollment;
+                }
+            }
+            $presentation['enrollments'] = $enrollments;
+        }
+
+        return $this->view(
+            $page === 'index'
+                ? ($studentId === null ? 'representative-portal.enrollment-hub' : 'representative-portal.enrollment-summary')
+                : 'representative-portal.enrollment',
+            $presentation,
+        );
     }
 
     private function rawScalar(array $input, string $key): string
@@ -726,11 +811,28 @@ final class RepresentativeEnrollmentController extends Controller
         return is_string($value) ? $value : null;
     }
 
-    private function studentLocation(?int $studentId): string
+    private function pageForSection(string $section): string
     {
-        return $studentId === null
-            ? '/representative/enrollment'
-            : '/representative/enrollment?student_id=' . $studentId;
+        return match ($section) {
+            'representative-personal', 'representative-contact', 'representative-employment' => 'me',
+            'student-personal' => 'student',
+            'billing', 'medical', 'transport', 'leave-alone' => $section,
+            default => 'summary',
+        };
+    }
+
+    private function sectionLocation(string $section, ?int $studentId): string
+    {
+        $page = $this->pageForSection($section);
+        $path = match ($page) {
+            'me' => '/representative/data/me',
+            'student' => '/representative/data/students',
+            'billing', 'medical', 'transport', 'leave-alone' =>
+                '/representative/enrollment/student/' . $page,
+            default => '/representative/enrollment',
+        };
+
+        return $studentId === null ? $path : $path . '?student_id=' . $studentId;
     }
 
     private function forbidden(): string

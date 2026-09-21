@@ -51,6 +51,26 @@ final class RepresentativeFamilyResourceController extends Controller
 
     public function index(): string
     {
+        return $this->redirect('/representative/data', 302);
+    }
+
+    public function addresses(): string
+    {
+        return $this->show('addresses');
+    }
+
+    public function emergencyContacts(): string
+    {
+        return $this->show('emergency-contacts');
+    }
+
+    public function authorizedPickups(): string
+    {
+        return $this->show('authorized-pickups');
+    }
+
+    private function show(string $screen): string
+    {
         try {
             $resources = $this->getResources->handle();
         } catch (RepresentativeAcknowledgementsRequired) {
@@ -74,6 +94,8 @@ final class RepresentativeFamilyResourceController extends Controller
             [],
             $this->flash(self::FLASH_SUCCESS_KEY),
             $this->flash(self::FLASH_ERROR_KEY),
+            200,
+            $screen,
         );
     }
 
@@ -337,7 +359,7 @@ final class RepresentativeFamilyResourceController extends Controller
         if (!$this->csrf->isValid($this->scalar($input, '_csrf_token'))) {
             $this->session->put(self::FLASH_ERROR_KEY, 'El formulario venció. Inténtelo nuevamente.');
 
-            return $this->redirect('/representative/resources', 303);
+            return $this->redirect($this->resourceLocation(), 303);
         }
 
         $familyId = $this->positiveInteger($values['family_id'] ?? null);
@@ -390,7 +412,7 @@ final class RepresentativeFamilyResourceController extends Controller
 
         $this->session->put(self::FLASH_SUCCESS_KEY, $success);
 
-        return $this->redirect('/representative/resources', 303);
+        return $this->redirect($this->resourceLocation(), 303);
     }
 
     /** @param callable(int, int): mixed $handle */
@@ -600,6 +622,7 @@ final class RepresentativeFamilyResourceController extends Controller
             null,
             null,
             422,
+            $this->resourceScreen(),
         );
     }
 
@@ -612,7 +635,13 @@ final class RepresentativeFamilyResourceController extends Controller
         ?string $successMessage,
         ?string $errorMessage,
         int $status = 200,
+        string $screen = 'addresses',
     ): string {
+        $query = (new Request())->query();
+        $returnStudentId = $this->authorizedReturnStudentId($resources);
+        if (array_key_exists('student_id', $query) && $returnStudentId === null) {
+            return $this->forbidden();
+        }
         http_response_code($status);
 
         return $this->view('representative-portal.resources', [
@@ -631,7 +660,45 @@ final class RepresentativeFamilyResourceController extends Controller
             'errors' => $errors,
             'successMessage' => $successMessage,
             'errorMessage' => $errorMessage,
+            'screen' => $screen,
+            'returnStudentId' => $returnStudentId,
         ]);
+    }
+
+    private function authorizedReturnStudentId(RepresentativeFamilyResourcesOutput $resources): ?int
+    {
+        $studentId = $this->positiveInteger((new Request())->query()['student_id'] ?? null);
+        if ($studentId === null) {
+            return null;
+        }
+        foreach ($resources->students as $student) {
+            if ($student->studentId === $studentId) {
+                return $studentId;
+            }
+        }
+
+        return null;
+    }
+
+    private function resourceScreen(): string
+    {
+        $path = (new Request())->uri();
+        if (str_starts_with($path, '/representative/resources/emergency-contacts/')) {
+            return 'emergency-contacts';
+        }
+        if (str_starts_with($path, '/representative/resources/authorized-pickups/')) {
+            return 'authorized-pickups';
+        }
+
+        return 'addresses';
+    }
+
+    private function resourceLocation(): string
+    {
+        $location = '/representative/resources/' . $this->resourceScreen();
+        $studentId = $this->positiveInteger((new Request())->query()['student_id'] ?? null);
+
+        return $studentId === null ? $location : $location . '?student_id=' . $studentId;
     }
 
     private function requiredPositiveInteger(

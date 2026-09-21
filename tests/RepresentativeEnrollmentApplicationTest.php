@@ -376,6 +376,7 @@ function e011PortalFixture(
         'periods' => $acknowledgements['periods'],
         'requirements' => $acknowledgements['requirements'],
         'completions' => $acknowledgements['completions'],
+        'acknowledgements' => $acknowledgements,
     ];
 }
 

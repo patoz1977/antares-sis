@@ -29,8 +29,6 @@ $optionName = static function (array $items, ?int $id): string {
 };
 $selected = static fn (mixed $left, mixed $right): string => (string) $left === (string) $right ? ' selected' : '';
 $checked = static fn (mixed $left, string $right): string => (string) $left === $right ? ' checked' : '';
-$status = static fn (RepresentativeEnrollmentSectionStatus $value): string =>
-    $value === RepresentativeEnrollmentSectionStatus::Complete ? 'Completa' : 'Pendiente';
 $personName = static fn (object $person): string => trim(implode(' ', array_filter([
     $person->firstName,
     $person->middleName,
@@ -50,11 +48,40 @@ $student = $studentOption?->person;
 $studentRole = $studentOption?->student;
 $enrollment = $portal->enrollment;
 $period = $context->academicPeriod;
+$currentPage = is_string($page ?? null) ? $page : 'me';
+$pageTitles = [
+    'me' => 'Mis datos',
+    'student' => 'Datos del estudiante',
+    'placement' => 'Ubicación académica',
+    'billing' => 'Facturación',
+    'medical' => 'Información médica',
+    'transport' => 'Transporte',
+    'leave-alone' => 'Salida autónoma',
+];
+$annualPages = ['placement', 'billing', 'medical', 'transport', 'leave-alone'];
+$isAnnualPage = in_array($currentPage, $annualPages, true);
+$studentSuffix = $studentOption === null ? '' : '?student_id=' . $studentOption->student->id;
+$summaryLocation = '/representative/enrollment' . $studentSuffix;
+$currentReturn = $studentOption === null ? '/representative/data' : $summaryLocation;
+$annualOrder = [
+    'placement' => '/representative/enrollment/student/placement',
+    'billing' => '/representative/enrollment/student/billing',
+    'medical' => '/representative/enrollment/student/medical',
+    'transport' => '/representative/enrollment/student/transport',
+    'leave-alone' => '/representative/enrollment/student/leave-alone',
+];
+$annualKeys = array_keys($annualOrder);
+$annualIndex = array_search($currentPage, $annualKeys, true);
+$annualStatus = match ($currentPage) {
+    'placement' => $portal->progress->academicPlacement,
+    'billing' => $portal->progress->billing,
+    'medical' => $portal->progress->medical,
+    'transport' => $portal->progress->transport,
+    'leave-alone' => $portal->progress->pickupOrLeaveAlone,
+    default => null,
+};
 $liveDataEditable = $portal->liveDataMaintenanceEnabled;
 $draftEditable = $portal->enrollmentDraftMaintenanceEnabled && $enrollment?->status === 'DRAFT';
-$studentLocation = $studentOption === null
-    ? '/representative/enrollment'
-    : '/representative/enrollment?student_id=' . $studentOption->student->id;
 $hiddenContext = static function () use ($escape, $csrfToken, $context, $period): void {
     ?>
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
@@ -77,30 +104,41 @@ $autosaveFeedback = static function (string $section) use ($escape): void {
     <?php
 };
 ?>
-<script src="/js/representative-enrollment.js" defer></script>
 <?php
 $breadcrumbItems = [
-    ['label' => 'Portal', 'url' => '/representative'],
-    ['label' => 'Matrícula'],
+    ['label' => 'Inicio', 'url' => '/representative'],
+    ['label' => $isAnnualPage ? 'Matrícula' : 'Actualización de datos', 'url' => $isAnnualPage ? '/representative/enrollment' : '/representative/data'],
 ];
+if ($studentOption !== null) {
+    $breadcrumbItems[] = ['label' => $studentOption->displayName, 'url' => $summaryLocation];
+}
+$breadcrumbItems[] = ['label' => $pageTitles[$currentPage] ?? 'Datos'];
 require dirname(__DIR__) . '/components/breadcrumb.php';
 ?>
 <header class="app-page-header">
-    <h1>Matrícula de estudiantes</h1>
-    <p class="text-body-secondary">Actualiza datos actuales del SIS y la información anual de matrícula según el contexto autorizado.</p>
+    <h1><?= $escape($pageTitles[$currentPage] ?? 'Datos') ?></h1>
+    <?php if ($studentOption !== null): ?><p>Estudiante: <strong><?= $escape($studentOption->displayName) ?></strong></p><?php endif; ?>
+    <?php if ($period !== null): ?><p>Período académico: <?= $escape($period->name) ?></p><?php endif; ?>
+    <?php if ($annualStatus instanceof RepresentativeEnrollmentSectionStatus): ?>
+    <p>Estado de la sección: <strong data-progress-section="<?= $escape($currentPage) ?>"><?= $annualStatus === RepresentativeEnrollmentSectionStatus::Complete ? 'Completa' : 'Pendiente' ?></strong></p>
+    <?php endif; ?>
+    <p class="text-body-secondary">Familia actual: <?= $escape($context->familyDisplayName) ?></p>
     <p class="text-body-secondary">Los campos marcados con * son obligatorios.</p>
-    <nav class="app-section-nav" aria-label="Secciones de matrícula">
-        <a href="/representative" data-enrollment-navigation>Portal de representantes</a>
-        <a href="/representative" data-enrollment-navigation>Cambiar familia</a>
-        <a href="#datos-actuales-sis">Datos actuales del SIS</a>
-        <a href="#estudiantes">Estudiantes</a>
-        <a href="#informacion-anual-matricula">Información anual</a>
-        <?php if ($context->acknowledgementsSatisfied): ?>
-        <a href="/representative/resources" data-enrollment-navigation>Recursos familiares</a>
-        <?php endif; ?>
-    </nav>
 </header>
-
+<?php if ($isAnnualPage): ?>
+<nav class="app-section-nav" aria-label="Secciones de matrícula">
+    <?php if ($annualIndex !== false && $annualIndex > 0): ?>
+    <a href="<?= $escape($annualOrder[$annualKeys[$annualIndex - 1]] . $studentSuffix) ?>" data-enrollment-navigation>Anterior</a>
+    <?php endif; ?>
+    <?php if ($annualIndex !== false && $annualIndex < count($annualKeys) - 1): ?>
+    <a href="<?= $escape($annualOrder[$annualKeys[$annualIndex + 1]] . $studentSuffix) ?>" data-enrollment-navigation>Siguiente</a>
+    <?php else: ?>
+    <a href="<?= $escape('/representative/enrollment/review' . $studentSuffix) ?>" data-enrollment-navigation>Revisar y enviar</a>
+    <?php endif; ?>
+    <a href="<?= $escape($summaryLocation) ?>" data-enrollment-navigation>Volver al resumen</a>
+</nav>
+<?php endif; ?>
+<script src="/js/representative-enrollment.js" defer></script>
 <?php if ($sectionErrors !== []): ?>
 <div class="alert alert-danger" role="alert" aria-labelledby="enrollment-errors-heading">
     <h2 id="enrollment-errors-heading" class="h5">Revisa esta sección</h2>
@@ -111,101 +149,10 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     </ul>
 </div>
 <?php endif; ?>
-
-<section class="app-context-banner" aria-labelledby="academic-period-heading">
-    <div>
-    <h2 class="h4" id="academic-period-heading">Contexto actual</h2>
-    <p class="mb-1"><strong>Familia:</strong> <?= $escape($context->familyDisplayName) ?></p>
-    <?php if ($period === null): ?>
-    <p class="mb-0" role="status">No existe un período académico activo. El mantenimiento de matrícula no está disponible.</p>
-    <?php else: ?>
-    <p class="mb-0"><strong>Período:</strong> <?= $escape($period->name) ?></p>
-    <?php endif; ?>
-    </div>
-</section>
-
-<section class="app-data-card" aria-labelledby="acknowledgements-heading">
-    <h2 class="h4" id="acknowledgements-heading">Aceptaciones institucionales</h2>
-    <?php if ($period !== null && !$context->acknowledgementsSatisfied): ?>
-    <p role="alert">Debes completar las aceptaciones institucionales antes de mantener la información de matrícula.</p>
-    <p><a class="btn btn-primary" href="/representative/acknowledgements" data-enrollment-navigation>Revisar aceptaciones</a></p>
-    <?php elseif ($period !== null): ?>
-    <p class="mb-0">Completadas para el período académico actual.</p>
-    <?php else: ?>
-    <p class="mb-0">No disponibles hasta que exista un período académico activo.</p>
-    <?php endif; ?>
-</section>
-
-<section class="app-form-section" id="estudiantes" aria-labelledby="student-navigation-heading">
-    <h2 class="h4" id="student-navigation-heading">Estudiantes</h2>
-    <?php if ($context->students === []): ?>
-    <p>No hay estudiantes activos disponibles en la familia actual.</p>
-    <?php else: ?>
-    <form method="get" action="/representative/enrollment" class="row g-2 align-items-end" data-enrollment-navigation>
-        <div class="col-12 col-md-8">
-            <label for="student_id" class="form-label app-required-label">Seleccionar estudiante</label>
-            <select id="student_id" name="student_id" class="form-select" required>
-                <option value="">Elige un estudiante</option>
-                <?php foreach ($context->students as $option): ?>
-                <option value="<?= $escape($option->student->id) ?>"<?= $selected($option->student->id, $studentOption?->student->id) ?>>
-                    <?= $escape($option->displayName) ?>
-                </option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="col-12 col-md-auto">
-            <button type="submit" class="btn btn-primary">Abrir estudiante</button>
-        </div>
-    </form>
-    <?php endif; ?>
-</section>
-
-<?php if ($studentOption !== null): ?>
-<section class="app-data-card" aria-labelledby="enrollment-state-heading">
-    <h2 class="h4" id="enrollment-state-heading">Estado de matrícula</h2>
-    <p>Estudiante seleccionado: <strong><?= $escape($studentOption->displayName) ?></strong></p>
-    <?php if ($enrollment === null): ?>
-    <p>La matrícula en borrador todavía no ha sido iniciada.</p>
-    <?php if ($portal->enrollmentDraftMaintenanceEnabled): ?>
-    <form method="post" action="/representative/enrollment/open">
-        <?php $studentHidden(); ?>
-        <button type="submit" class="btn btn-primary">Iniciar matrícula en borrador</button>
-    </form>
-    <?php endif; ?>
-    <?php else: ?>
-    <p><strong>Estado:</strong> <?php $statusCode = $enrollment->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></p>
-    <p><a class="btn btn-outline-primary" href="/representative/enrollment/review?student_id=<?= $escape($studentOption->student->id) ?>" data-enrollment-navigation>Revisar y enviar matrícula</a></p>
-    <?php if (!$portal->enrollmentDraftMaintenanceEnabled): ?>
-    <p class="alert alert-info mb-0" role="status">La información anual de esta matrícula está en modo de solo lectura. Puedes seguir actualizando los datos personales y familiares que tu cuenta tenga permitidos.</p>
-    <?php else: ?>
-    <p class="mb-0">Puedes completar este borrador sección por sección.</p>
-    <?php endif; ?>
-    <?php endif; ?>
-</section>
-
-<section class="app-data-card" aria-labelledby="progress-heading">
-    <h2 class="h4" id="progress-heading">Progreso por secciones</h2>
-    <p>Estos indicadores orientan el llenado; no significan que la matrícula haya sido enviada.</p>
-    <ul class="app-progress-grid">
-        <li>Aceptaciones institucionales: <strong data-progress-section="acknowledgements"><?= $escape($status($portal->progress->acknowledgements)) ?></strong></li>
-        <li>Datos personales del representante: <strong data-progress-section="representative-personal"><?= $escape($status($portal->progress->representativePersonal)) ?></strong></li>
-        <li>Contacto del representante: <strong data-progress-section="representative-contact"><?= $escape($status($portal->progress->representativeContact)) ?></strong></li>
-        <li>Empleo: <strong data-progress-section="representative-employment"><?= $escape($status($portal->progress->employment)) ?></strong></li>
-        <li>Datos personales del estudiante: <strong data-progress-section="student-personal"><?= $escape($status($portal->progress->studentPersonal)) ?></strong></li>
-        <li>Dirección del estudiante: <strong data-progress-section="student-address"><?= $escape($status($portal->progress->studentAddress)) ?></strong></li>
-        <li>Ubicación académica: <strong data-progress-section="academic-placement"><?= $escape($status($portal->progress->academicPlacement)) ?></strong></li>
-        <li>Facturación: <strong data-progress-section="billing"><?= $escape($status($portal->progress->billing)) ?></strong></li>
-        <li>Información médica: <strong data-progress-section="medical"><?= $escape($status($portal->progress->medical)) ?></strong></li>
-        <li>Transporte: <strong data-progress-section="transport"><?= $escape($status($portal->progress->transport)) ?></strong></li>
-        <li>Contactos de emergencia: <strong data-progress-section="emergency-contacts"><?= $escape($status($portal->progress->emergencyContacts)) ?></strong></li>
-        <li>Retiro o salida autónoma: <strong data-progress-section="leave-alone"><?= $escape($status($portal->progress->pickupOrLeaveAlone)) ?></strong></li>
-    </ul>
-    <?php if ($context->acknowledgementsSatisfied): ?>
-    <p><a href="/representative/resources" data-enrollment-navigation>Mantener direcciones, contactos y retiros autorizados en Recursos familiares</a>.</p>
-    <?php endif; ?>
-</section>
+<?php if ($isAnnualPage && $enrollment === null): ?>
+<p class="alert alert-info" role="status">Inicia la matrícula desde el resumen del estudiante antes de completar esta sección anual.</p>
 <?php endif; ?>
-
+<?php if ($currentPage === 'me'): ?>
 <section class="app-context-banner" id="datos-actuales-sis" aria-labelledby="live-data-heading">
     <div>
         <h2 class="h4" id="live-data-heading">Datos actuales del SIS</h2>
@@ -271,7 +218,9 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <?php endif; ?>
 </section>
 
+<?php endif; ?>
 <?php if ($studentOption !== null && $student !== null && $studentRole !== null): ?>
+<?php if ($currentPage === 'student'): ?>
 <section class="app-data-card" aria-labelledby="student-personal-heading">
     <h2 class="h4" id="student-personal-heading">Información personal del estudiante</h2>
     <dl class="app-data-list mb-4">
@@ -298,7 +247,9 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     </form>
     <?php endif; ?>
 </section>
+<?php endif; ?>
 
+<?php if ($isAnnualPage): ?>
 <section class="app-context-banner" id="informacion-anual-matricula" aria-labelledby="annual-data-heading">
     <div>
         <h2 class="h4" id="annual-data-heading">Información anual de matrícula</h2>
@@ -306,6 +257,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     </div>
 </section>
 
+<?php if ($currentPage === 'placement'): ?>
 <section class="app-data-card app-readonly-panel" aria-labelledby="placement-heading">
     <h2 class="h4" id="placement-heading">Ubicación académica</h2>
     <p class="text-body-secondary">Información de solo lectura asignada por la institución.</p>
@@ -315,9 +267,11 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <dl class="app-data-list"><dt>Grado</dt><dd><?= $escape($academicPlacement['grade']->name) ?></dd><dt>Sección</dt><dd><?= $escape($academicPlacement['section']?->name ?? 'No asignada') ?></dd></dl>
     <?php endif; ?>
 </section>
+<?php endif; ?>
 
 <?php if ($draftEditable): ?>
 <?php $billing = $enrollment->billingInformation; ?>
+<?php if ($currentPage === 'billing'): ?>
 <section class="app-form-section" aria-labelledby="billing-heading">
     <h2 class="h4" id="billing-heading">Información de facturación</h2>
     <form method="post" action="/representative/enrollment/student/billing" class="row g-3" data-enrollment-autosave data-section="billing">
@@ -332,8 +286,10 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <div class="col-12"><button type="submit" class="btn btn-primary" data-enrollment-fallback-save>Guardar facturación</button></div>
     </form>
 </section>
+<?php endif; ?>
 
 <?php $medical = $enrollment->medicalInformation; ?>
+<?php if ($currentPage === 'medical'): ?>
 <section class="app-form-section app-sensitive-data" aria-labelledby="medical-heading">
     <h2 class="h4" id="medical-heading">Información médica</h2>
     <p>Completa el detalle relacionado únicamente cuando la respuesta sea Sí.</p>
@@ -360,7 +316,9 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <div class="col-12"><button type="submit" class="btn btn-primary" data-enrollment-fallback-save>Guardar información médica</button></div>
     </form>
 </section>
+<?php endif; ?>
 
+<?php if ($currentPage === 'transport'): ?>
 <section class="app-form-section" aria-labelledby="transport-heading">
     <h2 class="h4" id="transport-heading">Información de transporte</h2>
     <?php $transportValue = $field('transport', 'requires_institutional_transport', $enrollment->transportInformation === null ? '' : ($enrollment->transportInformation->requiresInstitutionalTransport ? '1' : '0')); ?>
@@ -371,7 +329,9 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <button type="submit" class="btn btn-primary" data-enrollment-fallback-save>Guardar transporte</button>
     </form>
 </section>
+<?php endif; ?>
 
+<?php if ($currentPage === 'leave-alone'): ?>
 <section class="app-form-section" aria-labelledby="leave-alone-heading">
     <h2 class="h4" id="leave-alone-heading">Autorización de salida autónoma</h2>
     <?php $leaveValue = $field('leave-alone', 'is_authorized_to_leave_alone', $enrollment->isAuthorizedToLeaveAlone ? '1' : '0'); ?>
@@ -382,9 +342,11 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <button type="submit" class="btn btn-primary" data-enrollment-fallback-save>Guardar autorización de salida</button>
     </form>
 </section>
+<?php endif; ?>
 <?php elseif ($enrollment !== null): ?>
 <section class="app-data-card app-readonly-panel" aria-labelledby="annual-readonly-heading">
-    <h2 class="h4" id="annual-readonly-heading">Información anual de solo lectura</h2>
+    <h2 class="h4" id="annual-readonly-heading"><?= $escape($pageTitles[$currentPage]) ?> — solo lectura</h2>
+    <?php if ($currentPage === 'billing'): ?>
     <?php if ($enrollment->billingInformation === null): ?>
     <p>Información de facturación: no informada.</p>
     <?php else: ?>
@@ -398,6 +360,8 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <dt>Teléfono</dt><dd><?= $escape($enrollment->billingInformation->phone) ?></dd>
     </dl>
     <?php endif; ?>
+    <?php endif; ?>
+    <?php if ($currentPage === 'medical'): ?>
     <?php if ($enrollment->medicalInformation === null): ?>
     <p>Información médica: no informada.</p>
     <?php else: ?>
@@ -420,13 +384,21 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     </dl>
     </div>
     <?php endif; ?>
+    <?php endif; ?>
+    <?php if ($currentPage === 'transport'): ?>
     <p class="mt-4">Requiere transporte institucional: <?= $enrollment->transportInformation === null ? 'No informado' : ($enrollment->transportInformation->requiresInstitutionalTransport ? 'Sí' : 'No') ?></p>
+    <?php endif; ?>
+    <?php if ($currentPage === 'leave-alone'): ?>
     <p>Autorización de salida autónoma: <?= $enrollment->isAuthorizedToLeaveAlone ? 'Sí' : 'No' ?></p>
+    <?php endif; ?>
 </section>
+<?php endif; ?>
 <?php endif; ?>
 <?php endif; ?>
 
 <div class="app-action-group mt-4">
-    <a class="btn btn-outline-secondary" href="<?= $escape($studentLocation) ?>" data-enrollment-navigation>Actualizar información</a>
-    <a class="btn btn-link" href="/representative" data-enrollment-navigation>Volver al portal</a>
+    <a class="btn btn-outline-secondary" href="<?= $escape($currentReturn) ?>" data-enrollment-navigation><?= $isAnnualPage ? 'Volver al resumen de matrícula' : ($studentOption === null ? 'Volver a Actualización de datos' : 'Volver a la matrícula') ?></a>
+    <?php if ($currentPage === 'leave-alone' && $studentOption !== null): ?>
+    <a class="btn btn-link" href="/representative/resources/authorized-pickups<?= $escape($studentSuffix) ?>" data-enrollment-navigation>Revisar personas autorizadas para retirar</a>
+    <?php endif; ?>
 </div>

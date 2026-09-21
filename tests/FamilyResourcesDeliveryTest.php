@@ -135,7 +135,7 @@ function registerFamilyResourcesDeliveryTests(TestRunner $runner): void
         $page = $controller->index();
 
         deliveryAssertContains('Resource Application Family', $page);
-        foreach (['Direcciones', 'Contactos de emergencia', 'Personas autorizadas para retirar', 'Historial', 'Volver a la familia', 'Familias'] as $text) {
+        foreach (['Direcciones', 'Contactos de emergencia', 'Personas autorizadas para retirar', 'Direcciones asignadas', 'Volver a la familia', 'Familias'] as $text) {
             deliveryAssertContains($text, $page);
         }
         foreach (['Direcciones existentes y mantenimiento', 'Asignaciones de direcciones', 'Contactos existentes y mantenimiento', 'Asignaciones de retiros autorizados'] as $heading) {

@@ -5,6 +5,15 @@ declare(strict_types=1);
 use App\Family\Application\RepresentativeResources\Dto\RepresentativeFamilyStudentOption;
 
 $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+$resourceScreen = in_array($screen ?? null, ['addresses', 'emergency-contacts', 'authorized-pickups'], true)
+    ? $screen
+    : 'addresses';
+$resourceTitles = [
+    'addresses' => 'Direcciones',
+    'emergency-contacts' => 'Contactos de emergencia',
+    'authorized-pickups' => 'Personas autorizadas para retirar',
+];
+$returnSuffix = is_int($returnStudentId ?? null) ? '?student_id=' . $returnStudentId : '';
 $value = static fn (string $key, mixed $fallback = ''): mixed =>
     array_key_exists($key, $values) ? $values[$key] : $fallback;
 $timestamp = static fn (DateTimeImmutable $date): string => $date->format(DateTimeImmutable::ATOM);
@@ -59,14 +68,15 @@ $pickupName = static function (int $pickupId) use ($resources): string {
 ?>
 <?php
 $breadcrumbItems = [
-    ['label' => 'Portal', 'url' => '/representative'],
-    ['label' => 'Recursos familiares'],
+    ['label' => 'Inicio', 'url' => '/representative'],
+    ['label' => 'Actualización de datos', 'url' => '/representative/data'],
+    ['label' => $resourceTitles[$resourceScreen]],
 ];
 require dirname(__DIR__) . '/components/breadcrumb.php';
 ?>
 <header class="app-page-header">
-    <h1>Recursos familiares</h1>
-    <p class="text-body-secondary">Gestiona direcciones, contactos de emergencia y personas autorizadas para retirar.</p>
+    <h1><?= $escape($resourceTitles[$resourceScreen]) ?></h1>
+    <p class="text-body-secondary">Gestiona este recurso de tu familia y sus asignaciones.</p>
 </header>
 
 <section class="app-context-banner" aria-labelledby="resources-family-heading">
@@ -80,9 +90,9 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 </section>
 
 <nav class="app-section-nav mb-4" aria-label="Tipos de recursos familiares">
-    <a href="#direcciones">Direcciones</a>
-    <a href="#contactos-emergencia">Contactos de emergencia</a>
-    <a href="#retiros-autorizados">Retiros autorizados</a>
+    <a href="/representative/resources/addresses"<?= $resourceScreen === 'addresses' ? ' aria-current="page"' : '' ?>>Direcciones</a>
+    <a href="/representative/resources/emergency-contacts"<?= $resourceScreen === 'emergency-contacts' ? ' aria-current="page"' : '' ?>>Contactos de emergencia</a>
+    <a href="/representative/resources/authorized-pickups"<?= $resourceScreen === 'authorized-pickups' ? ' aria-current="page"' : '' ?>>Personas autorizadas para retirar</a>
 </nav>
 
 <?php if ($errors !== []): ?>
@@ -96,11 +106,12 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 </div>
 <?php endif; ?>
 
+<?php if ($resourceScreen === 'addresses'): ?>
 <section class="app-resource-section" id="direcciones" aria-labelledby="portal-addresses-heading">
 <h2 id="portal-addresses-heading">Direcciones</h2>
 
 <h3 class="h4">Crear dirección</h3>
-<form class="app-form-section" method="post" action="/representative/resources/addresses/create">
+<form class="app-form-section" method="post" action="/representative/resources/addresses/create<?= $escape($returnSuffix) ?>">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
     <label>Etiqueta <input name="label" value="<?= $escape($value('label')) ?>" required></label>
@@ -131,7 +142,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <dt>Longitud</dt><dd><?= $escape($address->longitude ?? 'No informada') ?></dd>
         <dt>Estado</dt><dd><?php $statusCode = $address->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></dd>
     </dl>
-    <form method="post" action="/representative/resources/addresses/update">
+    <form method="post" action="/representative/resources/addresses/update<?= $escape($returnSuffix) ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
         <input type="hidden" name="family_address_id" value="<?= $escape($address->id) ?>">
@@ -145,7 +156,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <label>Longitud <input name="longitude" inputmode="decimal" value="<?= $escape($address->longitude) ?>"></label>
         <button type="submit">Actualizar dirección</button>
     </form>
-    <form method="post" action="/representative/resources/addresses/<?= $address->status === 'ACTIVE' ? 'deactivate' : 'activate' ?>">
+    <form method="post" action="/representative/resources/addresses/<?= $address->status === 'ACTIVE' ? 'deactivate' : 'activate' ?><?= $escape($returnSuffix) ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
         <input type="hidden" name="family_address_id" value="<?= $escape($address->id) ?>">
@@ -157,7 +168,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 
 <h3 class="h4 mt-4">Asignaciones de direcciones</h3>
 <h4 class="h5">Asignar dirección al representante</h4>
-<form class="app-form-section" method="post" action="/representative/resources/address">
+<form class="app-form-section" method="post" action="/representative/resources/address<?= $escape($returnSuffix) ?>">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
     <label>Dirección
@@ -172,7 +183,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 </form>
 
 <h4 class="h5">Asignar dirección a estudiante</h4>
-<form class="app-form-section" method="post" action="/representative/resources/students/address">
+<form class="app-form-section" method="post" action="/representative/resources/students/address<?= $escape($returnSuffix) ?>">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
     <label>Estudiante
@@ -193,7 +204,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <button type="submit"<?= $students === [] || $activeAddresses === [] ? ' disabled' : '' ?>>Asignar dirección al estudiante</button>
 </form>
 
-<h3 class="h4">Historial de direcciones del representante</h3>
+<h3 class="h4">Direcciones asignadas al representante</h3>
 <?php if ($ownRepresentativeAddressAssignments === []): ?>
 <?php $emptyStateTitle = 'Sin historial de direcciones'; $emptyStateText = 'No existen asignaciones para el representante.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php endif; ?>
@@ -202,18 +213,18 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <p><?= $escape($addressLabel($assignment->familyAddressId)) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
     <p><?= $escape($timestamp($assignment->startedAt)) ?> a <?= $assignment->endedAt === null ? 'Vigente' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
-    <form method="post" action="/representative/resources/address/end">
+    <form method="post" action="/representative/resources/address/end<?= $escape($returnSuffix) ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
         <input type="hidden" name="assignment_id" value="<?= $escape($assignment->id) ?>">
         <label>Fin <input name="ended_at" type="datetime-local" required></label>
-        <button type="submit">Finalizar mi dirección</button>
+        <button type="submit">Eliminar asignación</button>
     </form>
     <?php endif; ?>
 </article>
 <?php endforeach; ?>
 
-<h3 class="h4">Historial de direcciones de estudiantes</h3>
+<h3 class="h4">Direcciones asignadas a estudiantes</h3>
 <?php if ($studentAddressAssignments === []): ?>
 <?php $emptyStateTitle = 'Sin historial de estudiantes'; $emptyStateText = 'No existen asignaciones de dirección para estudiantes.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php endif; ?>
@@ -222,18 +233,20 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <p><?= $escape($studentName($assignment->studentId)) ?> — <?= $escape($addressLabel($assignment->familyAddressId)) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
     <p><?= $escape($timestamp($assignment->startedAt)) ?> a <?= $assignment->endedAt === null ? 'Vigente' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
-    <form method="post" action="/representative/resources/students/address/end">
+    <form method="post" action="/representative/resources/students/address/end<?= $escape($returnSuffix) ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
         <input type="hidden" name="assignment_id" value="<?= $escape($assignment->id) ?>">
         <label>Fin <input name="ended_at" type="datetime-local" required></label>
-        <button type="submit">Finalizar dirección del estudiante</button>
+        <button type="submit">Eliminar asignación</button>
     </form>
     <?php endif; ?>
 </article>
 <?php endforeach; ?>
 </section>
+<?php endif; ?>
 
+<?php if ($resourceScreen === 'emergency-contacts'): ?>
 <section class="app-resource-section" id="contactos-emergencia" aria-labelledby="portal-emergency-heading">
 <h2 id="portal-emergency-heading">Contactos de emergencia</h2>
 <?php if ($options->relationshipTypes === []): ?>
@@ -241,7 +254,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 <?php endif; ?>
 
 <h3 class="h4">Crear contacto de emergencia</h3>
-<form class="app-form-section" method="post" action="/representative/resources/emergency-contacts/create">
+<form class="app-form-section" method="post" action="/representative/resources/emergency-contacts/create<?= $escape($returnSuffix) ?>">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
     <label>Nombres <input name="names" value="<?= $escape($value('names')) ?>" required></label>
@@ -273,7 +286,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <dt>Observaciones</dt><dd><?= $escape($contact->observations ?? 'No informadas') ?></dd>
         <dt>Estado</dt><dd><?php $statusCode = $contact->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></dd>
     </dl>
-    <form method="post" action="/representative/resources/emergency-contacts/update">
+    <form method="post" action="/representative/resources/emergency-contacts/update<?= $escape($returnSuffix) ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
         <input type="hidden" name="family_emergency_contact_id" value="<?= $escape($contact->id) ?>">
@@ -291,7 +304,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <label>Observaciones <textarea name="observations"><?= $escape($contact->observations) ?></textarea></label>
         <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Actualizar contacto</button>
     </form>
-    <form method="post" action="/representative/resources/emergency-contacts/<?= $contact->status === 'ACTIVE' ? 'deactivate' : 'activate' ?>">
+    <form method="post" action="/representative/resources/emergency-contacts/<?= $contact->status === 'ACTIVE' ? 'deactivate' : 'activate' ?><?= $escape($returnSuffix) ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
         <input type="hidden" name="family_emergency_contact_id" value="<?= $escape($contact->id) ?>">
@@ -302,7 +315,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 
 <h3 class="h4 mt-4">Asignaciones de contactos de emergencia</h3>
 <h4 class="h5">Asignar contacto de emergencia</h4>
-<form class="app-form-section" method="post" action="/representative/resources/emergency-contacts/assign">
+<form class="app-form-section" method="post" action="/representative/resources/emergency-contacts/assign<?= $escape($returnSuffix) ?>">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
     <label>Contacto de emergencia
@@ -324,7 +337,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <button type="submit"<?= $activeContacts === [] || $students === [] ? ' disabled' : '' ?>>Asignar contacto</button>
 </form>
 
-<h3 class="h4">Historial de contactos de emergencia</h3>
+<h3 class="h4">Contactos de emergencia asignados</h3>
 <?php if ($emergencyContactAssignments === []): ?>
 <?php $emptyStateTitle = 'Sin historial de contactos'; $emptyStateText = 'No existen asignaciones de contactos de emergencia.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php endif; ?>
@@ -333,23 +346,25 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <p><?= $escape($contactName($assignment->familyEmergencyContactId)) ?> — <?= $escape($studentName($assignment->studentId)) ?> — Prioridad <?= $escape($assignment->priority ?? 'No informada') ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
     <p><?= $escape($timestamp($assignment->startedAt)) ?> a <?= $assignment->endedAt === null ? 'Vigente' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
-    <form method="post" action="/representative/resources/emergency-contacts/end">
+    <form method="post" action="/representative/resources/emergency-contacts/end<?= $escape($returnSuffix) ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
         <input type="hidden" name="assignment_id" value="<?= $escape($assignment->id) ?>">
         <label>Fin <input name="ended_at" type="datetime-local" required></label>
-        <button type="submit">Finalizar asignación del contacto</button>
+        <button type="submit">Eliminar asignación</button>
     </form>
     <?php endif; ?>
 </article>
 <?php endforeach; ?>
 </section>
+<?php endif; ?>
 
+<?php if ($resourceScreen === 'authorized-pickups'): ?>
 <section class="app-resource-section" id="retiros-autorizados" aria-labelledby="portal-pickups-heading">
 <h2 id="portal-pickups-heading">Personas autorizadas para retirar</h2>
 
 <h3 class="h4">Crear persona autorizada</h3>
-<form class="app-form-section" method="post" action="/representative/resources/authorized-pickups/create">
+<form class="app-form-section" method="post" action="/representative/resources/authorized-pickups/create<?= $escape($returnSuffix) ?>">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
     <label>Nombres <input name="names" value="<?= $escape($value('names')) ?>" required></label>
@@ -392,7 +407,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <dt>Observaciones</dt><dd><?= $escape($pickup->observations ?? 'No informadas') ?></dd>
         <dt>Estado</dt><dd><?php $statusCode = $pickup->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></dd>
     </dl>
-    <form method="post" action="/representative/resources/authorized-pickups/update">
+    <form method="post" action="/representative/resources/authorized-pickups/update<?= $escape($returnSuffix) ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
         <input type="hidden" name="family_authorized_pickup_id" value="<?= $escape($pickup->id) ?>">
@@ -418,7 +433,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <label>Observaciones <textarea name="observations"><?= $escape($pickup->observations) ?></textarea></label>
         <button type="submit"<?= $options->relationshipTypes === [] ? ' disabled' : '' ?>>Actualizar persona autorizada</button>
     </form>
-    <form method="post" action="/representative/resources/authorized-pickups/<?= $pickup->status === 'ACTIVE' ? 'deactivate' : 'activate' ?>">
+    <form method="post" action="/representative/resources/authorized-pickups/<?= $pickup->status === 'ACTIVE' ? 'deactivate' : 'activate' ?><?= $escape($returnSuffix) ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
         <input type="hidden" name="family_authorized_pickup_id" value="<?= $escape($pickup->id) ?>">
@@ -429,7 +444,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 
 <h3 class="h4 mt-4">Asignaciones de retiros autorizados</h3>
 <h4 class="h5">Asignar persona autorizada</h4>
-<form class="app-form-section" method="post" action="/representative/resources/authorized-pickups/assign">
+<form class="app-form-section" method="post" action="/representative/resources/authorized-pickups/assign<?= $escape($returnSuffix) ?>">
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
     <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
     <label>Persona autorizada
@@ -450,7 +465,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <button type="submit"<?= $activePickups === [] || $students === [] ? ' disabled' : '' ?>>Asignar persona autorizada</button>
 </form>
 
-<h3 class="h4">Historial de retiros autorizados</h3>
+<h3 class="h4">Personas autorizadas asignadas</h3>
 <?php if ($authorizedPickupAssignments === []): ?>
 <?php $emptyStateTitle = 'Sin historial de retiros'; $emptyStateText = 'No existen asignaciones de personas autorizadas.'; require dirname(__DIR__) . '/components/empty-state.php'; ?>
 <?php endif; ?>
@@ -459,18 +474,22 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <p><?= $escape($pickupName($assignment->familyAuthorizedPickupId)) ?> — <?= $escape($studentName($assignment->studentId)) ?> — <?= $assignment->isActive ? 'Activa' : 'Histórica' ?></p>
     <p><?= $escape($timestamp($assignment->startedAt)) ?> a <?= $assignment->endedAt === null ? 'Vigente' : $escape($timestamp($assignment->endedAt)) ?></p>
     <?php if ($assignment->isActive): ?>
-    <form method="post" action="/representative/resources/authorized-pickups/end">
+    <form method="post" action="/representative/resources/authorized-pickups/end<?= $escape($returnSuffix) ?>">
         <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken) ?>">
         <input type="hidden" name="family_id" value="<?= $escape($context->familyId) ?>">
         <input type="hidden" name="assignment_id" value="<?= $escape($assignment->id) ?>">
         <label>Fin <input name="ended_at" type="datetime-local" required></label>
-        <button type="submit">Finalizar asignación</button>
+        <button type="submit">Eliminar asignación</button>
     </form>
     <?php endif; ?>
 </article>
 <?php endforeach; ?>
 </section>
+<?php endif; ?>
 
 <div class="app-action-group mt-4">
-    <a class="btn btn-outline-secondary" href="/representative">Volver al portal</a>
+    <a class="btn btn-outline-secondary" href="/representative/data">Volver a Actualización de datos</a>
+    <?php if ($returnSuffix !== ''): ?>
+    <a class="btn btn-link" href="/representative/enrollment<?= $escape($returnSuffix) ?>">Volver al resumen de matrícula</a>
+    <?php endif; ?>
 </div>

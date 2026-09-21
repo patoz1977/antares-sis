@@ -159,18 +159,19 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
         );
         $pending['families']->seed(familyContextFamily(10, 'Family A', [33]));
         $pendingHtml = $pending['controller']->index();
-        deliveryAssertContains('Debes revisar las aceptaciones institucionales', $pendingHtml);
-        deliveryAssertContains('/representative/acknowledgements', $pendingHtml);
+        deliveryAssertContains('Actualización de datos', $pendingHtml);
+        deliveryAssertContains('/representative/enrollment', $pendingHtml);
+        assertSameValue(false, str_contains($pendingHtml, '/representative/acknowledgements'));
         assertSameValue(false, str_contains($pendingHtml, 'href="/representative/resources"'));
 
         $empty = representativePortalFixture();
         $empty['families']->seed(familyContextFamily(10, 'Family A', [33]));
-        deliveryAssertContains('href="/representative/resources"', $empty['controller']->index());
+        deliveryAssertContains('href="/representative/data"', $empty['controller']->index());
 
         $noPeriod = representativePortalFixture(academicPeriods: []);
         $noPeriod['families']->seed(familyContextFamily(10, 'Family A', [33]));
         $noPeriodHtml = $noPeriod['controller']->index();
-        deliveryAssertContains('No existe un período académico activo', $noPeriodHtml);
+        deliveryAssertContains('Matrícula', $noPeriodHtml);
         assertSameValue(false, str_contains($noPeriodHtml, 'href="/representative/resources"'));
 
         $multiple = representativePortalFixture(
@@ -180,7 +181,7 @@ function registerRepresentativeAcknowledgementsDeliveryTests(TestRunner $runner)
         $multiple['families']->seed(familyContextFamily(20, 'Family B', [33]));
         $multipleHtml = $multiple['controller']->index();
         deliveryAssertContains('Seleccionar familia', $multipleHtml);
-        deliveryAssertContains('Debes revisar las aceptaciones institucionales', $multipleHtml);
+        assertSameValue(false, str_contains($multipleHtml, '/representative/acknowledgements'));
     });
 
     $runner->add('E009 Representative acknowledgement Delivery remains thin and session-minimal', function (): void {
