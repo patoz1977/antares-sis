@@ -13,6 +13,8 @@ use RuntimeException;
 
 final class EnrollmentReportCsvWriter
 {
+    private const UTF8_BOM = "\xEF\xBB\xBF";
+
     public function summary(EnrollmentSummaryReport $report): string
     {
         $period = trim($report->academicPeriod->code . ' ' . $report->academicPeriod->name);
@@ -154,6 +156,9 @@ final class EnrollmentReportCsvWriter
         }
 
         try {
+            if (fwrite($stream, self::UTF8_BOM) !== strlen(self::UTF8_BOM)) {
+                throw new RuntimeException('CSV output is unavailable.');
+            }
             if (fputcsv($stream, $header, ',', '"', '', "\r\n") === false) {
                 throw new RuntimeException('CSV output is unavailable.');
             }
