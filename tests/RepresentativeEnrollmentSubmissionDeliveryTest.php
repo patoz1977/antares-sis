@@ -36,14 +36,16 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
 
         assertSameValue(200, http_response_code());
         foreach ([
-            'Revisar y enviar matrícula', 'Familia actual', 'Stored Complete Person Record',
-            'Período académico', 'Estado de matrícula', 'Datos actuales del SIS',
-            'información es actual', 'Recursos familiares actuales', 'Current street',
-            'Contactos de emergencia', 'Personas autorizadas para retirar', 'Información anual de matrícula',
+            'Revisar y enviar matrícula', 'Stored Complete Person Record',
+            'Período académico', 'Estado de matrícula', 'Datos actuales',
+            'Current street', 'Contactos de emergencia', 'Personas autorizadas para retirar', 'Información adicional',
             'Representative Legal Name', 'Preparación para el envío',
             'Todos los requisitos actuales para el envío están completos.', 'Enviar matrícula',
         ] as $expected) {
             deliveryAssertContains($expected, $html);
+        }
+        foreach (['Familia actual', 'Datos actuales del SIS', 'Recursos familiares actuales', 'Información anual de matrícula', 'Inicio (UTC)', 'Envío (UTC)'] as $removed) {
+            assertSameValue(false, str_contains($html, $removed), $removed);
         }
         deliveryAssertContains('method="post" action="/representative/enrollment/submit"', $html);
         foreach (['_csrf_token', 'expected_family_id', 'expected_academic_period_id', 'student_id'] as $field) {
@@ -93,6 +95,7 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
             $noPeriod['review'],
             $noPeriod['submit'],
             new RepresentativeEnrollmentSubmissionViewDataFactory(e010AcademicReferences()),
+            $noPeriod['acknowledgements']['state'],
             new FakeDeliveryCsrf(),
             $session,
         );
@@ -125,8 +128,8 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
                 default => throw new RuntimeException('Unexpected lifecycle fixture.'),
             };
             deliveryAssertContains($message, $html);
-            deliveryAssertContains('Datos actuales del SIS', $html);
-            deliveryAssertContains('Recursos familiares actuales', $html);
+            deliveryAssertContains('Datos actuales', $html);
+            deliveryAssertContains('Dirección del estudiante', $html);
             assertSameValue(false, str_contains($html, 'Preparación para el envío'), $status->value);
             assertSameValue(false, str_contains($html, 'Esta matrícula todavía no puede enviarse.'), $status->value);
             assertSameValue(false, str_contains($html, '>Enviar matrícula<'), $status->value);
@@ -148,7 +151,7 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
 
         $html = representativeEnrollmentSubmissionReview($fixture['controller']);
         deliveryAssertContains('>Borrador</span>', $html);
-        deliveryAssertContains('2026-08-20 12:00:00', $html);
+        assertSameValue(false, str_contains($html, '2026-08-20 12:00:00'));
         deliveryAssertContains('Reenviar matrícula', $html);
     });
 
@@ -331,6 +334,7 @@ function representativeEnrollmentSubmissionDeliveryFixture(
         $fixture['review'],
         $fixture['submit'],
         new RepresentativeEnrollmentSubmissionViewDataFactory(e010AcademicReferences()),
+        $fixture['acknowledgements']['state'],
         new FakeDeliveryCsrf(),
         $session,
     );

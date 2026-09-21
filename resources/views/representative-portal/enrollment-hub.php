@@ -37,6 +37,13 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <a class="btn btn-primary" href="/representative/acknowledgements">Completar aceptaciones</a>
     <?php elseif ($acknowledgements?->status === 'completed'): ?>
     <p role="status">Completadas para este período.</p>
+    <?php if ($acknowledgements->activeRequirements !== []): ?>
+    <ul>
+        <?php foreach ($acknowledgements->activeRequirements as $requirement): ?>
+        <li><?= $escape($requirement->title) ?></li>
+        <?php endforeach; ?>
+    </ul>
+    <?php endif; ?>
     <a href="/representative/acknowledgements">Revisar aceptaciones</a>
     <?php else: ?>
     <p role="status">No se requieren aceptaciones para este período.</p>
@@ -69,9 +76,9 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <div class="col-12 col-md-6">
             <article class="app-data-card h-100">
                 <h3 class="h5"><?= $escape($student->displayName) ?></h3>
-                <p><?= $escape($description) ?></p>
+                <p class="h5 text-primary"><?= $escape($description) ?></p>
                 <?php if ($period !== null): ?>
-                <a href="/representative/enrollment?student_id=<?= $escape($student->student->id) ?>"><?= $escape($action) ?></a>
+                <a class="btn btn-primary" href="/representative/enrollment?student_id=<?= $escape($student->student->id) ?>"><?= $escape($action) ?></a>
                 <?php endif; ?>
             </article>
         </div>

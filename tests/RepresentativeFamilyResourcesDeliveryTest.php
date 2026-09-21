@@ -68,6 +68,7 @@ use App\Family\Http\FamilyResourceFormOptions;
 use App\Family\Http\FamilyResourceFormOptionsProvider;
 use App\Family\Http\RepresentativeFamilyResourceController;
 use App\IdentityAccess\Http\RepresentativePortalController;
+use App\IdentityAccess\Application\Contract\Clock;
 use App\Person\Application\GetPerson;
 use App\Person\Domain\Person;
 use App\Person\Domain\PersonStatus;
@@ -146,23 +147,29 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         assertSameValue(200, http_response_code());
         deliveryAssertContains('Actualización de datos', $single['portal']->index());
         deliveryAssertContains('Familia actual', $page);
-        deliveryAssertContains('Direcciones existentes y mantenimiento', $page);
-        deliveryAssertContains('Asignaciones de direcciones', $page);
-        assertSameValue(false, str_contains($page, 'Contactos existentes y mantenimiento'));
-        assertSameValue(false, str_contains($page, 'Asignaciones de retiros autorizados'));
+        deliveryAssertContains('Recursos existentes', $page);
+        deliveryAssertContains('Asignaciones', $page);
+        deliveryAssertContains('Crear nueva dirección', $page);
+        assertSameValue(false, str_contains($page, 'Cambiar familia'));
+        assertSameValue(false, str_contains($page, 'name="started_at"'));
+        assertSameValue(false, str_contains($page, 'name="ended_at"'));
         deliveryAssertContains('Family &lt;A&gt;', $page);
         deliveryAssertContains('&lt;script&gt;Student&lt;/script&gt; &amp; One', $page);
         assertSameValue(false, str_contains($page, '<script>Student</script>'));
         assertSameValue(false, str_contains($page, 'Historical Student'));
 
         $contacts = representativeFamilyResourcesScreen($single['controller'], 'emergency-contacts');
-        deliveryAssertContains('Contactos existentes y mantenimiento', $contacts);
-        assertSameValue(false, str_contains($contacts, 'Direcciones existentes y mantenimiento'));
-        assertSameValue(false, str_contains($contacts, 'Personas existentes y mantenimiento'));
+        deliveryAssertContains('Crear nuevo contacto de emergencia', $contacts);
+        deliveryAssertContains('Teléfono fijo', $contacts);
+        deliveryAssertContains('<select name="priority">', $contacts);
+        deliveryAssertContains('<option value="10">10</option>', $contacts);
+        assertSameValue(false, str_contains($contacts, 'Crear nueva dirección'));
+        assertSameValue(false, str_contains($contacts, 'Crear nueva persona autorizada'));
         $pickups = representativeFamilyResourcesScreen($single['controller'], 'authorized-pickups');
-        deliveryAssertContains('Personas existentes y mantenimiento', $pickups);
-        assertSameValue(false, str_contains($pickups, 'Direcciones existentes y mantenimiento'));
-        assertSameValue(false, str_contains($pickups, 'Contactos existentes y mantenimiento'));
+        deliveryAssertContains('Crear nueva persona autorizada', $pickups);
+        deliveryAssertContains('Teléfono fijo', $pickups);
+        assertSameValue(false, str_contains($pickups, 'Crear nueva dirección'));
+        assertSameValue(false, str_contains($pickups, 'Crear nuevo contacto de emergencia'));
 
         $multiple = representativeFamilyResourcesFixture(withSecondFamily: true);
         assertSameValue('', representativeFamilyResourcesGet($multiple['controller']));
@@ -227,6 +234,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         ));
         assertSameValue(1, count($self));
         assertSameValue(1, count($other));
+        assertSameValue('2026-08-11 18:19:20', $self[0]->startedAt->format('Y-m-d H:i:s'));
 
         $page = representativeFamilyResourcesGet($fixture['controller']);
         assertSameValue(false, str_contains($page, 'name="representative_id"'));
@@ -687,6 +695,12 @@ function representativeFamilyResourcesFixture(
         new FakeDeliveryCsrf(),
         $identity['session'],
         $provider,
+        new class implements Clock {
+            public function now(): DateTimeImmutable
+            {
+                return new DateTimeImmutable('2026-08-11 18:19:20+00:00');
+            }
+        },
     );
 
     return array_merge($identity, [

@@ -17,6 +17,7 @@ use App\Enrollment\Application\Submission\GetRepresentativeEnrollmentSubmissionR
 use App\Enrollment\Application\Submission\SubmitRepresentativeEnrollment;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
+use App\InstitutionalDocuments\Application\RepresentativePortal\GetRepresentativeAcknowledgementPortalState;
 use Core\Http\Request;
 use Throwable;
 
@@ -29,6 +30,7 @@ final class RepresentativeEnrollmentSubmissionController extends Controller
         private readonly GetRepresentativeEnrollmentSubmissionReview $getReview,
         private readonly SubmitRepresentativeEnrollment $submitEnrollment,
         private readonly RepresentativeEnrollmentSubmissionViewDataFactory $viewData,
+        private readonly GetRepresentativeAcknowledgementPortalState $getAcknowledgementState,
         private readonly CsrfTokenManager $csrf,
         private readonly SessionManager $session,
     ) {
@@ -44,6 +46,8 @@ final class RepresentativeEnrollmentSubmissionController extends Controller
         try {
             $review = $this->getReview->handle($studentId);
             $presentation = $this->viewData->make($review);
+            $presentation['acknowledgementRequirements'] = $this->getAcknowledgementState
+                ->handle()->activeRequirements;
         } catch (RepresentativeEnrollmentFamilySelectionRequired) {
             return $this->redirect('/representative', 303);
         } catch (RepresentativeEnrollmentContextUnavailable|RepresentativeEnrollmentStudentUnavailable) {

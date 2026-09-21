@@ -62,8 +62,8 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 <section class="mt-4" aria-labelledby="family-resources-heading">
     <h2 class="h4" id="family-resources-heading">Recursos familiares</h2>
     <div class="row g-3">
-        <div class="col-12 col-md-4"><a class="card app-module-card text-decoration-none h-100" href="/representative/resources/addresses"><span class="card-body">Revisar direcciones</span></a></div>
-        <div class="col-12 col-md-4"><a class="card app-module-card text-decoration-none h-100" href="/representative/resources/emergency-contacts"><span class="card-body">Revisar contactos de emergencia</span></a></div>
-        <div class="col-12 col-md-4"><a class="card app-module-card text-decoration-none h-100" href="/representative/resources/authorized-pickups"><span class="card-body">Revisar personas autorizadas para retirar</span></a></div>
+        <div class="col-12 col-md-4"><a class="card app-module-card text-decoration-none h-100" href="/representative/resources/addresses"><span class="card-body"><span class="h5 d-block">Direcciones</span><span class="btn btn-primary mt-3">Revisar direcciones</span></span></a></div>
+        <div class="col-12 col-md-4"><a class="card app-module-card text-decoration-none h-100" href="/representative/resources/emergency-contacts"><span class="card-body"><span class="h5 d-block">Contactos de emergencia</span><span class="btn btn-primary mt-3">Revisar contactos de emergencia</span></span></a></div>
+        <div class="col-12 col-md-4"><a class="card app-module-card text-decoration-none h-100" href="/representative/resources/authorized-pickups"><span class="card-body"><span class="h5 d-block">Personas autorizadas para retirar</span><span class="btn btn-primary mt-3">Revisar personas autorizadas para retirar</span></span></a></div>
     </div>
 </section>

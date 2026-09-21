@@ -40,8 +40,8 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
             deliveryAssertContains($expected, $acknowledgements);
         }
         foreach ([
-            'Revisar y enviar matrícula', 'Datos actuales del SIS', 'Recursos familiares actuales',
-            'Información anual de matrícula', 'Preparación para el envío', 'Estado de la matrícula',
+            'Revisar y enviar matrícula', 'Datos actuales', 'Información adicional',
+            'Preparación para el envío', 'Estado de la matrícula',
             'action="/representative/enrollment/submit"', 'name="expected_family_id"',
             'name="expected_academic_period_id"', 'name="student_id"', 'name="_csrf_token"',
         ] as $expected) {
@@ -60,7 +60,7 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
 
         foreach ([
             '$portal->liveDataMaintenanceEnabled', '$portal->enrollmentDraftMaintenanceEnabled',
-            'Datos actuales del SIS', 'Ubicación académica',
+            'Información personal', 'Información del estudiante',
             'app-readonly-panel', 'data-enrollment-autosave', 'data-enrollment-fallback-save',
             'data-enrollment-navigation', 'data-medical-controller',
         ] as $expected) {
@@ -169,7 +169,7 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
         }
 
         $routes = representativeUiSource('routes/web.php');
-        assertSameValue(47, substr_count($routes, '$router->get('));
+        assertSameValue(46, substr_count($routes, '$router->get('));
         assertSameValue(71, substr_count($routes, '$router->post('));
     });
 }

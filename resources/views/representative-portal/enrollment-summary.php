@@ -26,8 +26,12 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 ?>
 <header class="app-page-header">
     <h1>Matrícula de <?= $escape($student->displayName) ?></h1>
-    <p class="text-body-secondary"><?= $period === null ? 'Sin período académico activo' : 'Año lectivo ' . $escape($period->name) ?></p>
-    <p>Familia actual: <?= $escape($portal->context->familyDisplayName) ?></p>
+    <p class="text-body-secondary"><?= $period === null ? 'Sin período académico activo' : $escape($period->name) ?></p>
+    <?php if ($academicPlacement === null): ?>
+    <p><strong>Grado:</strong> No asignado<br><strong>Sección:</strong> No asignada</p>
+    <?php else: ?>
+    <p><strong>Grado:</strong> <?= $escape($academicPlacement['grade']->name) ?><br><strong>Sección:</strong> <?= $escape($academicPlacement['section']?->name ?? 'No asignada') ?></p>
+    <?php endif; ?>
 </header>
 <?php if ($enrollment === null): ?>
 <section class="app-data-card">
@@ -52,7 +56,6 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 <?php endif; ?>
 <section class="app-data-card mt-4" aria-labelledby="current-data-heading">
     <h2 class="h4" id="current-data-heading">Revisar datos actuales</h2>
-    <p>Son datos vivos del SIS. «Revisar» no registra una confirmación ni crea una copia histórica.</p>
     <ul class="app-progress-grid">
         <li>Mis datos — <a href="/representative/data/me<?= $escape($suffix) ?>">Revisar</a></li>
         <li>Datos de <?= $escape($student->displayName) ?> — <a href="/representative/data/students<?= $escape($suffix) ?>">Revisar</a></li>
@@ -66,7 +69,6 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <h2 class="h4" id="annual-data-heading">Completar esta matrícula</h2>
     <p>El orden sugerido no es obligatorio. Puedes abrir cualquier sección y volver al resumen.</p>
     <ul class="app-progress-grid">
-        <li>Ubicación académica: <strong><?= $escape($complete($portal->progress->academicPlacement)) ?></strong> — <a href="/representative/enrollment/student/placement<?= $escape($suffix) ?>">Consultar</a></li>
         <li>Facturación: <strong><?= $escape($complete($portal->progress->billing)) ?></strong> — <a href="/representative/enrollment/student/billing<?= $escape($suffix) ?>">Abrir</a></li>
         <li>Información médica: <strong><?= $escape($complete($portal->progress->medical)) ?></strong> — <a href="/representative/enrollment/student/medical<?= $escape($suffix) ?>">Abrir</a></li>
         <li>Transporte: <strong><?= $escape($complete($portal->progress->transport)) ?></strong> — <a href="/representative/enrollment/student/transport<?= $escape($suffix) ?>">Abrir</a></li>

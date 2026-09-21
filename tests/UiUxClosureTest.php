@@ -169,7 +169,7 @@ function registerUiUxClosureTests(TestRunner $runner): void
 
     $runner->add('E014 Phase 5 keeps route ownership reports and progressive autosave contracts exact', function (): void {
         $routes = uiClosureSource('routes/web.php');
-        assertSameValue(47, substr_count($routes, '$router->get('));
+        assertSameValue(46, substr_count($routes, '$router->get('));
         assertSameValue(71, substr_count($routes, '$router->post('));
 
         foreach (['summary', 'students', 'directory', 'billing', 'medical'] as $report) {
@@ -183,22 +183,16 @@ function registerUiUxClosureTests(TestRunner $runner): void
         foreach ([
             '$portal->liveDataMaintenanceEnabled',
             '$portal->enrollmentDraftMaintenanceEnabled',
-            'Datos actuales del SIS',
-            'Información anual de matrícula',
+            'Información personal',
+            'Información del estudiante',
             'data-enrollment-fallback-save',
             'data-enrollment-navigation',
             'app-readonly-panel',
         ] as $expected) {
             deliveryAssertContains($expected, $enrollment);
         }
-        $placementStart = strpos($enrollment, 'id="placement-heading"');
-        $placementEnd = strpos($enrollment, '</section>', is_int($placementStart) ? $placementStart : 0);
-        $placement = is_int($placementStart) && is_int($placementEnd)
-            ? substr($enrollment, $placementStart, $placementEnd - $placementStart)
-            : '';
-        foreach (['<form', '<input', '<select', '<textarea'] as $control) {
-            assertSameValue(false, str_contains($placement, $control), 'AcademicPlacement ' . $control);
-        }
+        assertSameValue(false, str_contains($enrollment, 'id="placement-heading"'));
+        assertSameValue(false, str_contains($enrollment, '/representative/enrollment/student/placement'));
 
         $script = uiClosureSource('public/js/representative-enrollment.js');
         foreach ([

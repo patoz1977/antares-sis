@@ -18,9 +18,6 @@ $personName = static fn (object $person): string => trim(implode(' ', array_filt
 ], static fn (?string $part): bool => $part !== null && $part !== '')));
 $yesNo = static fn (bool $value): string => $value ? 'Sí' : 'No';
 $supplied = static fn (?string $value): string => $value === null || $value === '' ? 'No informado' : $value;
-$formatInstant = static fn (?DateTimeImmutable $value): string =>
-    $value?->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s') ?? 'No registrado';
-
 $student = $submissionReview->student;
 $studentPerson = $student->person;
 $representative = $submissionReview->representativePerson;
@@ -38,6 +35,9 @@ $pendingRequirements = array_values(array_filter(
 $studentAddresses = is_array($studentAddresses ?? null) ? $studentAddresses : [];
 $emergencyContacts = is_array($emergencyContacts ?? null) ? $emergencyContacts : [];
 $authorizedPickups = is_array($authorizedPickups ?? null) ? $authorizedPickups : [];
+$acknowledgementRequirements = is_array($acknowledgementRequirements ?? null)
+    ? $acknowledgementRequirements
+    : [];
 $reviewLocation = '/representative/enrollment/review?student_id=' . $student->student->id;
 $enrollmentLocation = '/representative/enrollment?student_id=' . $student->student->id;
 ?>
@@ -63,15 +63,10 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <div>
         <h2 class="h4" id="submission-context-heading">Contexto de matrícula</h2>
         <dl class="app-data-list">
-        <dt>Familia actual</dt><dd><?= $escape($submissionReview->familyDisplayName) ?></dd>
         <dt>Estudiante</dt><dd><?= $escape($student->displayName) ?></dd>
         <dt>Código institucional</dt><dd><?= $escape($student->student->institutionalCode) ?></dd>
         <dt>Período académico</dt><dd><?= $escape($period->name) ?></dd>
         <dt>Estado de matrícula</dt><dd><?php $statusCode = $enrollment->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></dd>
-        <dt>Inicio (UTC)</dt><dd><?= $escape($formatInstant($enrollment->startedAt)) ?></dd>
-        <dt>Envío (UTC)</dt><dd><?= $escape($formatInstant($enrollment->submittedAt)) ?></dd>
-        <dt>Finalización (UTC)</dt><dd><?= $escape($formatInstant($enrollment->completedAt)) ?></dd>
-        <dt>Cancelación (UTC)</dt><dd><?= $escape($formatInstant($enrollment->cancelledAt)) ?></dd>
         <dt>Grado</dt><dd><?= $escape(is_string($gradeName ?? null) ? $gradeName : ($placement?->gradeId ?? 'No asignado')) ?></dd>
         <dt>Sección</dt><dd><?= $escape(is_string($sectionName ?? null) ? $sectionName : ($placement?->sectionId ?? 'No asignada')) ?></dd>
     </dl>
@@ -79,8 +74,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 </section>
 
 <section class="app-data-card" aria-labelledby="current-live-data-heading">
-    <h2 id="current-live-data-heading">Datos actuales del SIS</h2>
-    <p>Esta información es actual y no constituye una copia histórica de la matrícula.</p>
+    <h2 id="current-live-data-heading">Datos actuales</h2>
     <h3 class="h5">Representante actual</h3>
     <dl class="app-data-list">
         <dt>Nombre</dt><dd><?= $escape($personName($representative)) ?></dd>
@@ -94,13 +88,12 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <dt>Nombre</dt><dd><?= $escape($personName($studentPerson)) ?></dd>
         <dt>Fecha de nacimiento</dt><dd><?= $escape($studentPerson->birthDate->format('Y-m-d')) ?></dd>
         <dt>Fecha de admisión</dt><dd><?= $escape($student->student->admissionDate->format('Y-m-d')) ?></dd>
-        <dt>Estado</dt><dd><?php $statusCode = $student->student->status->value; require dirname(__DIR__) . '/components/status-badge.php'; ?></dd>
+        <dt>Grado</dt><dd><?= $escape(is_string($gradeName ?? null) ? $gradeName : 'No asignado') ?></dd>
+        <dt>Sección</dt><dd><?= $escape(is_string($sectionName ?? null) ? $sectionName : 'No asignada') ?></dd>
     </dl>
 </section>
 
-<section class="app-data-card" aria-labelledby="current-family-resources-heading">
-    <h2 id="current-family-resources-heading">Recursos familiares actuales</h2>
-    <p>Estos son los recursos activos asignados actualmente al estudiante.</p>
+<section class="app-data-card" aria-label="Recursos actuales del estudiante">
     <h3 class="h5">Dirección del estudiante</h3>
     <?php if ($studentAddresses === []): ?>
     <p>No hay una dirección asignada actualmente.</p>
@@ -142,8 +135,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 </section>
 
 <section class="app-data-card" aria-labelledby="annual-information-heading">
-    <h2 id="annual-information-heading">Información anual de matrícula</h2>
-    <p>Esta información pertenece a la matrícula y queda en modo de solo lectura después del envío.</p>
+    <h2 id="annual-information-heading">Información adicional</h2>
     <h3 class="h5">Facturación</h3>
     <?php if ($billing === null): ?>
     <p>No informada.</p>
@@ -191,6 +183,9 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <p><?= $submissionReview->acknowledgementsSatisfied
         ? 'Completadas para el período académico actual.'
         : 'Pendientes para el período académico actual.' ?></p>
+    <?php if ($submissionReview->acknowledgementsSatisfied && $acknowledgementRequirements !== []): ?>
+    <ul><?php foreach ($acknowledgementRequirements as $requirement): ?><li><?= $escape($requirement->title) ?></li><?php endforeach; ?></ul>
+    <?php endif; ?>
     <?php if (!$submissionReview->acknowledgementsSatisfied): ?>
     <p><a href="/representative/acknowledgements">Revisar aceptaciones institucionales</a>.</p>
     <?php endif; ?>

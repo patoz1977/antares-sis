@@ -93,13 +93,15 @@ $familyMembers = is_array($members ?? null) ? $members : null;
         <div class="col-12 col-md-6">
             <a class="card app-module-card text-decoration-none h-100" href="/representative/data">
                 <span class="card-body"><span class="h5 d-block">Actualización de datos</span>
-                    <span class="text-body-secondary">Mantén tus datos, los de tus estudiantes y los recursos de tu familia.</span></span>
+                    <span class="text-body-secondary d-block">Mantén tus datos, los de tus estudiantes y los recursos de tu familia.</span>
+                    <span class="btn btn-primary mt-3">Abrir Actualización de datos</span></span>
             </a>
         </div>
         <div class="col-12 col-md-6">
             <a class="card app-module-card text-decoration-none h-100" href="/representative/enrollment">
                 <span class="card-body"><span class="h5 d-block">Matrícula</span>
-                    <span class="text-body-secondary">Revisa las aceptaciones y continúa la matrícula del período actual.</span></span>
+                    <span class="text-body-secondary d-block">Revisa las aceptaciones y continúa la matrícula del período actual.</span>
+                    <span class="btn btn-primary mt-3">Abrir Matrícula</span></span>
             </a>
         </div>
     </div>

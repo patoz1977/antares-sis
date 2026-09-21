@@ -266,11 +266,6 @@ $router->get(
     AuthenticationMiddleware::class,
 );
 $router->get(
-    '/representative/enrollment/student/placement',
-    [$representativeEnrollmentController, 'placement'],
-    AuthenticationMiddleware::class,
-);
-$router->get(
     '/representative/enrollment/student/billing',
     [$representativeEnrollmentController, 'billing'],
     AuthenticationMiddleware::class,

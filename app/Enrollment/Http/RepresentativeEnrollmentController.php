@@ -90,11 +90,6 @@ final class RepresentativeEnrollmentController extends Controller
         return $this->pageFromQuery('student', true);
     }
 
-    public function placement(): string
-    {
-        return $this->pageFromQuery('placement', true);
-    }
-
     public function billing(): string
     {
         return $this->pageFromQuery('billing', true);

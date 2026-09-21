@@ -77,11 +77,11 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
             ], true) ? 2 : 1;
             assertSameValue($expected, substr_count($routes, "'" . $path . "'"), $path);
         }
-        assertSameValue(17, substr_count($routes, '[$representativeEnrollmentController,'));
+        assertSameValue(16, substr_count($routes, '[$representativeEnrollmentController,'));
         $start = strpos($routes, "\$router->get(\n    '/representative/enrollment'");
         $end = strpos($routes, "\$router->get(\n    '/representative/enrollment/review'", is_int($start) ? $start : 0);
         $slice = is_int($start) && is_int($end) ? substr($routes, $start, $end - $start) : '';
-        assertSameValue(15, substr_count($slice, 'AuthenticationMiddleware::class'));
+        assertSameValue(14, substr_count($slice, 'AuthenticationMiddleware::class'));
         foreach (['AdministrationMiddleware', 'family_id}', 'academic_period_id}', 'enrollment_id', '/submit', '/complete', '/cancel', '/reopen'] as $forbidden) {
             assertSameValue(false, str_contains($slice, $forbidden), $forbidden);
         }
@@ -127,7 +127,8 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         $selected = $ready['controller']->index();
         deliveryAssertContains('Pendiente de iniciar', $selected);
         deliveryAssertContains('Revisar datos actuales', $selected);
-        deliveryAssertContains('datos vivos', $selected);
+        deliveryAssertContains('Revisar datos actuales', $selected);
+        assertSameValue(false, str_contains($selected, 'Ubicación académica:'));
         assertSameValue(0, $ready['services']['enrollments']->saveCalls);
     });
 
@@ -443,8 +444,9 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         assertSameValue(8, substr_count($html, ' data-enrollment-autosave data-section='));
         assertSameValue(8, substr_count($html, 'data-enrollment-autosave-status'));
         deliveryAssertContains('Identification &lt;Type&gt;', $html);
-        deliveryAssertContains('Marital &amp; Status', $html);
-        deliveryAssertContains('Education &quot;Level&quot;', $html);
+        assertSameValue(false, str_contains($html, 'Marital &amp; Status'));
+        assertSameValue(false, str_contains($html, '>Estado civil<'));
+        assertSameValue(false, str_contains($html, 'Education &quot;Level&quot;'));
 
         $source = representativeEnrollmentNormalizedSource('app/Enrollment/Http/RepresentativeEnrollmentController.php')
             . representativeEnrollmentNormalizedSource('app/Enrollment/Http/RepresentativeEnrollmentInputMapper.php')

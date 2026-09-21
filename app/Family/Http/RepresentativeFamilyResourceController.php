@@ -23,6 +23,7 @@ use App\Family\Application\RepresentativeResources\RepresentativeFamilyAuthorize
 use App\Family\Application\RepresentativeResources\RepresentativeFamilyEmergencyContactService;
 use App\Family\Domain\Exception\InvalidFamilyState;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
+use App\IdentityAccess\Application\Contract\Clock;
 use App\IdentityAccess\Application\Contract\SessionManager;
 use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\ActiveAcademicPeriodUnavailable;
 use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementAccessUnavailable;
@@ -31,7 +32,6 @@ use App\Person\Application\Exception\PersonNotFound;
 use App\Student\Application\Exception\StudentNotFound;
 use Core\Http\Request;
 use DateTimeImmutable;
-use DateTimeZone;
 
 final class RepresentativeFamilyResourceController extends Controller
 {
@@ -46,6 +46,7 @@ final class RepresentativeFamilyResourceController extends Controller
         private readonly CsrfTokenManager $csrf,
         private readonly SessionManager $session,
         private readonly FamilyResourceFormOptionsProvider $optionsProvider,
+        private readonly Clock $clock,
     ) {
     }
 
@@ -146,7 +147,7 @@ final class RepresentativeFamilyResourceController extends Controller
                     'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
-                $startedAt = $this->requiredTimestamp($values, 'started_at', $errors);
+                $startedAt = $this->clock->now();
 
                 return [$errors, [$addressId, $startedAt]];
             },
@@ -181,7 +182,7 @@ final class RepresentativeFamilyResourceController extends Controller
                     'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
-                $startedAt = $this->requiredTimestamp($values, 'started_at', $errors);
+                $startedAt = $this->clock->now();
 
                 return [$errors, [$studentId, $addressId, $startedAt]];
             },
@@ -255,7 +256,10 @@ final class RepresentativeFamilyResourceController extends Controller
                     $errors,
                 );
                 $priority = $this->optionalPositiveInteger($values['priority'] ?? '', 'priority', $errors);
-                $startedAt = $this->requiredTimestamp($values, 'started_at', $errors);
+                if ($priority !== null && $priority > 10) {
+                    $errors[] = 'Seleccione una prioridad entre 1 y 10.';
+                }
+                $startedAt = $this->clock->now();
 
                 return [$errors, [$contactId, $studentId, $priority, $startedAt]];
             },
@@ -328,7 +332,7 @@ final class RepresentativeFamilyResourceController extends Controller
                     'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
-                $startedAt = $this->requiredTimestamp($values, 'started_at', $errors);
+                $startedAt = $this->clock->now();
 
                 return [$errors, [$pickupId, $studentId, $startedAt]];
             },
@@ -447,7 +451,7 @@ final class RepresentativeFamilyResourceController extends Controller
                     'El recurso seleccionado no está disponible para esta familia.',
                     $errors,
                 );
-                $endedAt = $this->requiredTimestamp($values, 'ended_at', $errors);
+                $endedAt = $this->clock->now();
 
                 return [$errors, [$assignmentId, $endedAt]];
             },
@@ -713,23 +717,6 @@ final class RepresentativeFamilyResourceController extends Controller
         }
 
         return $id;
-    }
-
-    private function requiredTimestamp(array $values, string $field, array &$errors): ?DateTimeImmutable
-    {
-        $value = $values[$field] ?? '';
-        $timestamp = DateTimeImmutable::createFromFormat(
-            '!Y-m-d\TH:i',
-            $value,
-            new DateTimeZone('UTC'),
-        );
-        if (!$timestamp instanceof DateTimeImmutable || $timestamp->format('Y-m-d\TH:i') !== $value) {
-            $errors[] = 'Ingrese una fecha y hora válidas (AAAA-MM-DDTHH:MM).';
-
-            return null;
-        }
-
-        return $timestamp;
     }
 
     private function optionalPositiveInteger(string $value, string $label, array &$errors): ?int
