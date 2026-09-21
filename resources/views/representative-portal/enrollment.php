@@ -79,6 +79,37 @@ $annualStatus = match ($currentPage) {
 };
 $liveDataEditable = $portal->liveDataMaintenanceEnabled;
 $draftEditable = $portal->enrollmentDraftMaintenanceEnabled && $enrollment?->status === 'DRAFT';
+$relationshipName = static function (int $relationshipTypeId) use ($familyOptions): string {
+    foreach ($familyOptions?->relationshipTypes ?? [] as $option) {
+        if ($option->id === $relationshipTypeId) {
+            return $option->name;
+        }
+    }
+
+    return 'Relación no disponible';
+};
+$authorizedPickupPanel = static function (bool $visible) use (
+    $escape,
+    $portal,
+    $relationshipName,
+    $studentSuffix,
+): void {
+    ?>
+    <section class="mt-3" data-leave-alone-pickups<?= $visible ? '' : ' hidden' ?> aria-labelledby="authorized-pickups-heading">
+        <h3 class="h5" id="authorized-pickups-heading">Personas autorizadas para retirar</h3>
+        <?php if ($portal->authorizedPickups === []): ?>
+        <p>No hay personas autorizadas para retirar a este estudiante.</p>
+        <?php else: ?>
+        <ul>
+            <?php foreach ($portal->authorizedPickups as $pickup): ?>
+            <li><?= $escape($pickup->names) ?> — <?= $escape($relationshipName($pickup->relationshipTypeId)) ?></li>
+            <?php endforeach; ?>
+        </ul>
+        <?php endif; ?>
+        <a class="btn btn-link px-0" href="/representative/resources/authorized-pickups<?= $escape($studentSuffix) ?>" data-enrollment-navigation>Administrar personas autorizadas</a>
+    </section>
+    <?php
+};
 $hiddenContext = static function () use ($escape, $csrfToken, $context, $period): void {
     ?>
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
@@ -308,7 +339,8 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <?php $leaveValue = $field('leave-alone', 'is_authorized_to_leave_alone', $enrollment->isAuthorizedToLeaveAlone ? '1' : '0'); ?>
     <form method="post" action="/representative/enrollment/student/leave-alone" data-enrollment-autosave data-section="leave-alone">
         <?php $studentHidden(); ?>
-        <fieldset><legend class="h6 app-required-label">¿El estudiante puede salir solo?</legend><label><input type="radio" name="is_authorized_to_leave_alone" value="1"<?= $checked($leaveValue, '1') ?> required> Sí</label> <label><input type="radio" name="is_authorized_to_leave_alone" value="0"<?= $checked($leaveValue, '0') ?> required> No</label></fieldset>
+        <fieldset><legend class="h6 app-required-label">¿El estudiante puede salir solo?</legend><label><input type="radio" name="is_authorized_to_leave_alone" value="1" data-leave-alone-controller<?= $checked($leaveValue, '1') ?> required> Sí</label> <label><input type="radio" name="is_authorized_to_leave_alone" value="0" data-leave-alone-controller<?= $checked($leaveValue, '0') ?> required> No</label></fieldset>
+        <?php $authorizedPickupPanel($leaveValue === '0'); ?>
         <?php $autosaveFeedback('leave-alone'); ?>
         <button type="submit" class="btn btn-primary" data-enrollment-fallback-save>Guardar autorización de salida</button>
     </form>
@@ -361,6 +393,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
     <?php endif; ?>
     <?php if ($currentPage === 'leave-alone'): ?>
     <p>Autorización de salida autónoma: <?= $enrollment->isAuthorizedToLeaveAlone ? 'Sí' : 'No' ?></p>
+    <?php $authorizedPickupPanel(!$enrollment->isAuthorizedToLeaveAlone); ?>
     <?php endif; ?>
 </section>
 <?php endif; ?>
@@ -376,7 +409,4 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 <?php endif; ?>
 <div class="app-action-group mt-4">
     <?php if (!$isAnnualPage): ?><a class="btn btn-outline-secondary" href="<?= $escape($currentReturn) ?>" data-enrollment-navigation>Volver a Actualización de datos</a><?php endif; ?>
-    <?php if ($currentPage === 'leave-alone' && $studentOption !== null): ?>
-    <a class="btn btn-link" href="/representative/resources/authorized-pickups<?= $escape($studentSuffix) ?>" data-enrollment-navigation>Revisar personas autorizadas para retirar</a>
-    <?php endif; ?>
 </div>

@@ -153,6 +153,8 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         assertSameValue(false, str_contains($page, 'Cambiar familia'));
         assertSameValue(false, str_contains($page, 'name="started_at"'));
         assertSameValue(false, str_contains($page, 'name="ended_at"'));
+        deliveryAssertContains('<summary class="btn btn-link p-0">Editar</summary>', $page);
+        deliveryAssertContains('<button class="btn btn-link p-0" type="submit">Desactivar</button>', $page);
         deliveryAssertContains('Family &lt;A&gt;', $page);
         deliveryAssertContains('&lt;script&gt;Student&lt;/script&gt; &amp; One', $page);
         assertSameValue(false, str_contains($page, '<script>Student</script>'));
@@ -163,11 +165,23 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         deliveryAssertContains('Teléfono fijo', $contacts);
         deliveryAssertContains('<select name="priority">', $contacts);
         deliveryAssertContains('<option value="10">10</option>', $contacts);
+        deliveryAssertContains('<summary class="btn btn-link p-0">Editar</summary>', $contacts);
+        deliveryAssertContains('<button class="btn btn-link p-0" type="submit">Desactivar</button>', $contacts);
         assertSameValue(false, str_contains($contacts, 'Crear nueva dirección'));
         assertSameValue(false, str_contains($contacts, 'Crear nueva persona autorizada'));
         $pickups = representativeFamilyResourcesScreen($single['controller'], 'authorized-pickups');
         deliveryAssertContains('Crear nueva persona autorizada', $pickups);
         deliveryAssertContains('Teléfono fijo', $pickups);
+        deliveryAssertContains('<summary class="btn btn-link p-0">Editar</summary>', $pickups);
+        deliveryAssertContains('<button class="btn btn-link p-0" type="submit">Desactivar</button>', $pickups);
+        $viewSource = file_get_contents(dirname(__DIR__) . '/resources/views/representative-portal/resources.php');
+        if (!is_string($viewSource)) {
+            throw new RuntimeException('Representative resources View source is unavailable.');
+        }
+        deliveryAssertContains(
+            '<button class="btn btn-link p-0" type="submit">Eliminar asignación</button>',
+            $viewSource,
+        );
         assertSameValue(false, str_contains($pickups, 'Crear nueva dirección'));
         assertSameValue(false, str_contains($pickups, 'Crear nuevo contacto de emergencia'));
 

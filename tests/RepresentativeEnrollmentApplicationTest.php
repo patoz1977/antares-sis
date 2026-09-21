@@ -34,13 +34,20 @@ use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollme
 use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollmentTransportInformation;
 use App\Enrollment\Application\Support\EnrollmentDraftInitializer;
 use App\Family\Application\GetFamilyResources;
+use App\Family\Domain\AuthorizedPickupAssignment;
 use App\Family\Domain\Family;
+use App\Family\Domain\FamilyAuthorizedPickup;
 use App\Family\Domain\FamilyRepresentative;
+use App\Family\Domain\FamilyResourceStatus;
 use App\Family\Domain\FamilyStatus;
 use App\Family\Domain\FamilyStudent;
+use App\Family\Domain\ValueObject\AuthorizedPickupAssignmentId;
+use App\Family\Domain\ValueObject\AuthorizedPickupInformation;
 use App\Family\Domain\ValueObject\DisplayName;
+use App\Family\Domain\ValueObject\FamilyAuthorizedPickupId;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\FamilyRepresentativeId as FamilyRepresentativeMembershipId;
+use App\Family\Domain\ValueObject\FamilyResourceName;
 use App\Family\Domain\ValueObject\FamilyStudentId as FamilyStudentMembershipId;
 use App\Family\Domain\ValueObject\RelationshipTypeId;
 use App\Family\Domain\ValueObject\RepresentativeId as FamilyRepresentativeId;
@@ -115,6 +122,26 @@ function registerRepresentativeEnrollmentApplicationTests(TestRunner $runner): v
             )),
             RepresentativeAcknowledgementsRequired::class,
         );
+    });
+
+    $runner->add('E011 portal state exposes only active pickups assigned to the selected Student and Family', function (): void {
+        $fixture = e011PortalFixture(familyCount: 2, withPickupResources: true);
+        $fixture['selectFamily']->handle(77);
+
+        $state = $fixture['state']->handle(44);
+
+        assertSameValue(['Authorized Pickup 77'], array_map(
+            static fn (object $pickup): string => $pickup->names,
+            $state->authorizedPickups,
+        ));
+        assertSameValue(false, in_array('Other Student Pickup 77', array_map(
+            static fn (object $pickup): string => $pickup->names,
+            $state->authorizedPickups,
+        ), true));
+        assertSameValue(false, in_array('Authorized Pickup 78', array_map(
+            static fn (object $pickup): string => $pickup->names,
+            $state->authorizedPickups,
+        ), true));
     });
 
     $runner->add('E011 resolve-or-start reuses one transaction and returns the current Enrollment', function (): void {
@@ -277,14 +304,15 @@ function e011PortalFixture(
     bool $authenticated = true,
     bool $representativeExists = true,
     int $familyCount = 1,
+    bool $withPickupResources = false,
 ): array {
     $access = familyContextAuthorizationFixture($authenticated, $representativeExists);
     $families = $access['families'];
     if ($familyCount >= 1) {
-        $families->seed(e011PortalFamily());
+        $families->seed(e011PortalFamily(withPickupResources: $withPickupResources));
     }
     if ($familyCount >= 2) {
-        $families->seed(e011PortalFamily(78, 45));
+        $families->seed(e011PortalFamily(78, 45, $withPickupResources));
     }
 
     $persons = new InMemoryPersonApplicationRepository(applicationToday());
@@ -299,6 +327,9 @@ function e011PortalFixture(
     ));
     $students = new InMemoryStudentApplicationRepository();
     $students->seed(e010Student(44));
+    if ($withPickupResources) {
+        $students->seed(e010Student(45));
+    }
 
     $periods = $periodActive
         ? [representativeAcknowledgementPeriod(5, AcademicPeriodStatus::Active)]
@@ -373,6 +404,7 @@ function e011PortalFixture(
         'enrollments' => $enrollments,
         'transactions' => $transactions,
         'resolveFamilyContext' => $access['resolve'],
+        'selectFamily' => $access['select'],
         'periods' => $acknowledgements['periods'],
         'requirements' => $acknowledgements['requirements'],
         'completions' => $acknowledgements['completions'],
@@ -380,8 +412,38 @@ function e011PortalFixture(
     ];
 }
 
-function e011PortalFamily(int $familyId = 77, int $studentId = 44): Family
+function e011PortalFamily(
+    int $familyId = 77,
+    int $studentId = 44,
+    bool $withPickupResources = false,
+): Family
 {
+    $otherStudentId = $studentId === 44 ? 45 : 44;
+    $students = [new FamilyStudent(
+        new FamilyStudentMembershipId($familyId * 10 + 2),
+        new FamilyStudentId($studentId),
+        new DateTimeImmutable('2026-01-01 00:00:00+00:00'),
+        null,
+    )];
+    if ($withPickupResources) {
+        $students[] = new FamilyStudent(
+            new FamilyStudentMembershipId($familyId * 10 + 3),
+            new FamilyStudentId($otherStudentId),
+            new DateTimeImmutable('2026-01-01 00:00:00+00:00'),
+            null,
+        );
+    }
+    $pickupId = $familyId * 10 + 4;
+    $pickups = $withPickupResources ? [
+        e011PortalPickup($pickupId, 'Authorized Pickup ' . $familyId, FamilyResourceStatus::Active),
+        e011PortalPickup($pickupId + 1, 'Other Student Pickup ' . $familyId, FamilyResourceStatus::Active),
+        e011PortalPickup($pickupId + 2, 'Inactive Pickup ' . $familyId, FamilyResourceStatus::Inactive),
+    ] : [];
+    $assignments = $withPickupResources ? [
+        e011PortalPickupAssignment($familyId * 10 + 7, $pickupId, $studentId),
+        e011PortalPickupAssignment($familyId * 10 + 8, $pickupId + 1, $otherStudentId),
+    ] : [];
+
     return Family::reconstitute(
         new FamilyId($familyId),
         FamilyCodeTestFactory::next(),
@@ -395,11 +457,34 @@ function e011PortalFamily(int $familyId = 77, int $studentId = 44): Family
             new DateTimeImmutable('2026-01-01 00:00:00+00:00'),
             null,
         )],
-        [new FamilyStudent(
-            new FamilyStudentMembershipId($familyId * 10 + 2),
-            new FamilyStudentId($studentId),
-            new DateTimeImmutable('2026-01-01 00:00:00+00:00'),
-            null,
-        )],
+        $students,
+        authorizedPickups: $pickups,
+        authorizedPickupAssignments: $assignments,
+    );
+}
+
+function e011PortalPickup(
+    int $id,
+    string $name,
+    FamilyResourceStatus $status,
+): FamilyAuthorizedPickup {
+    return new FamilyAuthorizedPickup(
+        new FamilyAuthorizedPickupId($id),
+        new FamilyResourceName($name),
+        new RelationshipTypeId(201),
+        new AuthorizedPickupInformation('0999999999', null, null),
+        null,
+        $status,
+    );
+}
+
+function e011PortalPickupAssignment(int $id, int $pickupId, int $studentId): AuthorizedPickupAssignment
+{
+    return new AuthorizedPickupAssignment(
+        new AuthorizedPickupAssignmentId($id),
+        new FamilyAuthorizedPickupId($pickupId),
+        new FamilyStudentId($studentId),
+        new DateTimeImmutable('2026-09-21 16:32:00+00:00'),
+        null,
     );
 }

@@ -74,7 +74,6 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
         <li>Transporte: <strong><?= $escape($complete($portal->progress->transport)) ?></strong> — <a href="/representative/enrollment/student/transport<?= $escape($suffix) ?>">Abrir</a></li>
         <li>Retiro o salida autónoma: <strong><?= $escape($complete($portal->progress->pickupOrLeaveAlone)) ?></strong> — <a href="/representative/enrollment/student/leave-alone<?= $escape($suffix) ?>">Abrir declaración anual</a></li>
     </ul>
-    <p>Las personas autorizadas para retirar siguen siendo recursos de Family; la autorización para salir solo pertenece a esta matrícula anual.</p>
 </section>
 <section class="app-consequential-panel mt-4">
     <h2 class="h4"><?= $enrollment->status === 'DRAFT' ? 'Finalización' : 'Estado y revisión' ?></h2>

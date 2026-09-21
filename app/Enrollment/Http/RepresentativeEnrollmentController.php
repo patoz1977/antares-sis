@@ -34,6 +34,7 @@ use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollme
 use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollmentMedicalInformation;
 use App\Enrollment\Application\RepresentativePortal\UpdateRepresentativeEnrollmentTransportInformation;
 use App\Enrollment\Domain\Exception\InvalidEnrollmentState;
+use App\Family\Http\FamilyFormOptionsProvider;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
 use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementsRequired;
@@ -66,6 +67,7 @@ final class RepresentativeEnrollmentController extends Controller
         private readonly UpdateRepresentativeEnrollmentTransportInformation $updateTransport,
         private readonly UpdateRepresentativeEnrollmentLeaveAloneAuthorization $updateLeaveAlone,
         private readonly PersonFormOptionsProvider $formOptions,
+        private readonly FamilyFormOptionsProvider $familyOptions,
         private readonly AcademicPlacementReferenceProvider $academicReferences,
         private readonly CsrfTokenManager $csrf,
         private readonly SessionManager $session,
@@ -753,6 +755,7 @@ final class RepresentativeEnrollmentController extends Controller
             'title' => $page === 'me' || $page === 'student' ? 'Actualización de datos' : 'Matrícula',
             'state' => $state,
             'options' => $this->formOptions->get(),
+            'familyOptions' => $page === 'leave-alone' ? $this->familyOptions->get() : null,
             'academicPlacement' => $placement,
             'csrfToken' => $this->csrf->token(),
             'values' => $values,

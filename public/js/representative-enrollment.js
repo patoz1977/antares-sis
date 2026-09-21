@@ -13,6 +13,7 @@
         }
 
         init() {
+            this.initializeLeaveAlonePickups();
             if (typeof window.fetch !== 'function' || typeof window.FormData !== 'function') {
                 return;
             }
@@ -266,6 +267,25 @@
                     this.syncMedicalField(form, control.name, control.value === '0');
                 }
             });
+        }
+
+        initializeLeaveAlonePickups() {
+            const forms = new Set();
+            this.root.querySelectorAll('[data-leave-alone-controller]').forEach((control) => {
+                if (control.form) {
+                    forms.add(control.form);
+                    control.addEventListener('change', () => this.syncLeaveAlonePickups(control.form));
+                }
+            });
+            forms.forEach((form) => this.syncLeaveAlonePickups(form));
+        }
+
+        syncLeaveAlonePickups(form) {
+            const selected = form.querySelector('[data-leave-alone-controller]:checked');
+            const panel = form.querySelector('[data-leave-alone-pickups]');
+            if (panel) {
+                panel.hidden = !selected || selected.value !== '0';
+            }
         }
 
         syncMedicalField(form, controllerName, clearWhenNo) {

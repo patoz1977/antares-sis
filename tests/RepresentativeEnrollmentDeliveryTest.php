@@ -14,6 +14,10 @@ use App\Enrollment\Domain\ValueObject\StudentId as EnrollmentStudentId;
 use App\Enrollment\Http\RepresentativeEnrollmentController;
 use App\Enrollment\Http\RepresentativeEnrollmentAutosaveResponder;
 use App\Enrollment\Http\RepresentativeEnrollmentInputMapper;
+use App\Family\Domain\FamilyStatus;
+use App\Family\Http\FamilyFormOption;
+use App\Family\Http\FamilyFormOptions;
+use App\Family\Http\FamilyFormOptionsProvider;
 use App\Family\Domain\ValueObject\FamilyId;
 use App\Family\Domain\ValueObject\StudentId as FamilyStudentId;
 use App\IdentityAccess\Http\RepresentativeDataController;
@@ -158,6 +162,35 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         assertSameValue(1, $fixture['services']['enrollments']->saveCalls);
         deliveryRequest('GET', '/representative/enrollment?student_id=44', ['student_id' => '44']);
         deliveryAssertContains('Completar esta matrícula', $fixture['controller']->index());
+    });
+
+    $runner->add('E011 leave-alone shows only active authorized pickups for No and a safe empty state', function (): void {
+        $withPickups = representativeEnrollmentDeliveryFixture(withPickupResources: true);
+        $withPickups['services']['resolveOrStart']->handle(
+            new ResolveOrStartRepresentativeEnrollmentInput(77, 5, 44),
+        );
+        deliveryRequest('GET', '/representative/enrollment/student/leave-alone?student_id=44', [
+            'student_id' => '44',
+        ]);
+        $page = $withPickups['controller']->leaveAlone();
+        deliveryAssertContains('Personas autorizadas para retirar', $page);
+        deliveryAssertContains('Authorized Pickup 77 — Tía', $page);
+        assertSameValue(false, str_contains($page, 'Other Student Pickup 77'));
+        assertSameValue(false, str_contains($page, 'Inactive Pickup 77'));
+        deliveryAssertContains('/representative/resources/authorized-pickups?student_id=44', $page);
+        deliveryAssertContains('data-leave-alone-controller', $page);
+        deliveryAssertContains('data-leave-alone-pickups', $page);
+
+        $empty = representativeEnrollmentDeliveryFixture();
+        $empty['services']['resolveOrStart']->handle(
+            new ResolveOrStartRepresentativeEnrollmentInput(77, 5, 44),
+        );
+        deliveryRequest('GET', '/representative/enrollment/student/leave-alone?student_id=44', [
+            'student_id' => '44',
+        ]);
+        $emptyPage = $empty['controller']->leaveAlone();
+        deliveryAssertContains('No hay personas autorizadas para retirar a este estudiante.', $emptyPage);
+        deliveryAssertContains('Administrar personas autorizadas', $emptyPage);
     });
 
     $runner->add('E011 every Enrollment POST rejects invalid CSRF before Application', function (): void {
@@ -625,6 +658,8 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
             "'Guardando...'", "'Guardado'", "'Error al guardar'", "'beforeunload'", "'pagehide'",
             'keepalive: true', 'form.checkValidity()', 'form.reportValidity()',
             'data-medical-controller', 'detail.value = \'\'', 'data-progress-section',
+            'data-leave-alone-controller', 'data-leave-alone-pickups',
+            "selected.value !== '0'",
             "'Pendiente de corrección'", "'El teléfono de facturación es obligatorio.'",
             "invalid.setAttribute('aria-invalid', 'true')",
         ] as $required) {
@@ -670,6 +705,7 @@ function representativeEnrollmentDeliveryFixture(
     bool $periodActive = true,
     int $familyCount = 1,
     bool $representativeExists = true,
+    bool $withPickupResources = false,
 ): array {
     $services = e011PortalFixture(
         $acknowledgementsSatisfied,
@@ -677,6 +713,7 @@ function representativeEnrollmentDeliveryFixture(
         true,
         $representativeExists,
         $familyCount,
+        $withPickupResources,
     );
     $session = new FakeSessionManager();
     $options = new class implements PersonFormOptionsProvider {
@@ -703,6 +740,15 @@ function representativeEnrollmentDeliveryFixture(
         $services['transport'],
         $services['leave'],
         $options,
+        new class implements FamilyFormOptionsProvider {
+            public function get(): FamilyFormOptions
+            {
+                return new FamilyFormOptions(
+                    [new FamilyFormOption(201, 'AUNT', 'Tía')],
+                    [FamilyStatus::Active, FamilyStatus::Inactive],
+                );
+            }
+        },
         e010AcademicReferences(),
         new FakeDeliveryCsrf(),
         $session,
