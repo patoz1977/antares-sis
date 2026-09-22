@@ -53,7 +53,7 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
 
         $html = $controller->showManage();
 
-        deliveryAssertContains('Manage Representative User', $html);
+        deliveryAssertContains('Administrar usuario representante', $html);
         deliveryAssertContains('Representative-100', $html);
         deliveryAssertContains('action="/representative-users/create"', $html);
         deliveryAssertContains('name="password"', $html);
@@ -85,7 +85,7 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
             'representative_id' => '200',
         ]);
         $html = $controller->showManage();
-        deliveryAssertContains('Representative User created successfully.', $html);
+        deliveryAssertContains('Usuario representante creado correctamente.', $html);
         deliveryAssertContains('action="/representative-users/password"', $html);
         assertSameValue(false, str_contains($html, 'secret-five'));
         assertSameValue(false, str_contains($html, $stored?->passwordHash()->value() ?? 'not-present'));
@@ -104,7 +104,7 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
         deliveryRequest('POST', '/representative-users/create', $input);
         $mismatch = $controller->create();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('does not match', $mismatch);
+        deliveryAssertContains('no coincide', $mismatch);
         assertSameValue(false, str_contains($mismatch, 'not-matching-secret'));
         assertSameValue(0, $users->saveCalls());
 
@@ -114,7 +114,7 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
         deliveryRequest('POST', '/representative-users/create', $input);
         $short = $controller->create();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('at least five', $short);
+        deliveryAssertContains('al menos cinco', $short);
         assertSameValue(false, str_contains($short, '1234'));
 
         $users->seed(representativeUserUser(77, 100, 'representative-100'));
@@ -124,7 +124,7 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
         deliveryRequest('POST', '/representative-users/create', $input);
         $duplicate = $controller->create();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('already has a User', $duplicate);
+        deliveryAssertContains('ya tiene un usuario', $duplicate);
         assertSameValue(false, str_contains($duplicate, 'valid-password'));
     });
 
@@ -141,7 +141,7 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
 
         $html = $controller->create();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('requires a Person personal email', $html);
+        deliveryAssertContains('requiere un correo personal', $html);
         assertSameValue(false, str_contains($html, 'never-stored-secret'));
         assertSameValue(0, $users->saveCalls());
     });
@@ -158,7 +158,7 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
         ]);
         $csrf = $controller->create();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('form expired', $csrf);
+        deliveryAssertContains('formulario caducó', $csrf);
         assertSameValue(false, str_contains($csrf, 'never-stored'));
         assertSameValue(0, $users->saveCalls());
 
@@ -172,7 +172,7 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
         ]);
         $tampered = $controller->create();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('identity cannot be changed', $tampered);
+        deliveryAssertContains('No se puede cambiar la identidad', $tampered);
         assertSameValue(false, str_contains($tampered, 'tampered-secret'));
 
         [$expiredController] = representativeUserDeliveryController();
@@ -185,7 +185,7 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
         ]);
         $expired = $expiredController->create();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('session expired', $expired);
+        deliveryAssertContains('Sesión de usuario representante caducada', $expired);
         assertSameValue(false, str_contains($expired, 'expired-secret'));
     });
 
@@ -228,7 +228,7 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
             'representative_id' => '200',
         ]);
         $html = $controller->showManage();
-        deliveryAssertContains('password changed successfully', $html);
+        deliveryAssertContains('reemplazada correctamente', $html);
         assertSameValue(false, str_contains($html, 'new-secret'));
         assertSameValue(false, str_contains($html, 'old-secret'));
     });
@@ -240,7 +240,7 @@ function registerRepresentativeUserDeliveryTests(TestRunner $runner): void
         ]);
         $notFound = $controller->showManage();
         assertSameValue(404, http_response_code());
-        deliveryAssertContains('Representative not found', $notFound);
+        deliveryAssertContains('Representante no encontrado', $notFound);
         assertSameValue(false, str_contains($notFound, 'SQL'));
 
         $controllerSource = (string) file_get_contents(

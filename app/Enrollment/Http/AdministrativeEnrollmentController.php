@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Enrollment\Http;
 
+use App\Shared\Http\SafeErrorPage;
 use App\Controllers\Controller;
 use App\Enrollment\Application\Administrative\CancelEnrollment;
 use App\Enrollment\Application\Administrative\CompleteEnrollment;
@@ -40,11 +41,11 @@ final class AdministrativeEnrollmentController extends Controller
         try {
             $items = $this->listSubmittedEnrollments->handle();
         } catch (Throwable) {
-            return $this->plainError('Enrollment administration is unavailable.', 500);
+            return $this->plainError('La administración de matrículas no está disponible.', 500);
         }
 
         return $this->view('enrollments.index', [
-            'title' => 'Enrollment Administration',
+            'title' => 'Administración de matrículas',
             'items' => $items,
             'successMessage' => $this->flash(self::FLASH_SUCCESS_KEY),
             'errorMessage' => $this->flash(self::FLASH_ERROR_KEY),
@@ -55,19 +56,19 @@ final class AdministrativeEnrollmentController extends Controller
     {
         $enrollmentId = $this->positiveInteger((new Request())->query()['id'] ?? null);
         if ($enrollmentId === null) {
-            return $this->plainError('Enrollment is unavailable.', 404);
+            return $this->plainError('La matrícula no está disponible.', 404);
         }
 
         try {
             $context = $this->getReviewContext->handle($enrollmentId);
         } catch (AdministrativeEnrollmentUnavailable | AdministrativeEnrollmentNotSubmitted) {
-            return $this->plainError('Enrollment is unavailable.', 404);
+            return $this->plainError('La matrícula no está disponible.', 404);
         } catch (Throwable) {
-            return $this->plainError('Enrollment review is unavailable.', 500);
+            return $this->plainError('La revisión de la matrícula no está disponible.', 500);
         }
 
         return $this->view('enrollments.review', [
-            'title' => 'Administrative Enrollment Review',
+            'title' => 'Revisión administrativa de matrícula',
             'context' => $context,
             'csrfToken' => $this->csrf->token(),
         ]);
@@ -77,7 +78,7 @@ final class AdministrativeEnrollmentController extends Controller
     {
         return $this->mutate(
             fn (int $id): mixed => $this->reopenEnrollment->handle($id),
-            'Enrollment reopened successfully.',
+            'Matrícula reabierta correctamente.',
         );
     }
 
@@ -85,7 +86,7 @@ final class AdministrativeEnrollmentController extends Controller
     {
         return $this->mutate(
             fn (int $id): mixed => $this->completeEnrollment->handle($id),
-            'Enrollment completed successfully.',
+            'Matrícula completada correctamente.',
         );
     }
 
@@ -93,7 +94,7 @@ final class AdministrativeEnrollmentController extends Controller
     {
         return $this->mutate(
             fn (int $id): mixed => $this->cancelEnrollment->handle($id),
-            'Enrollment cancelled successfully.',
+            'Matrícula cancelada correctamente.',
         );
     }
 
@@ -102,15 +103,15 @@ final class AdministrativeEnrollmentController extends Controller
     {
         $input = (new Request())->input();
         if (!$this->csrf->isValid($this->scalar($input, '_csrf_token'))) {
-            return $this->plainError('The request could not be verified.', 403);
+            return $this->plainError('No se pudo verificar la solicitud.', 403);
         }
         if (!$this->containsOnlyLifecycleFields($input)) {
-            return $this->plainError('The Enrollment request is invalid.', 422);
+            return $this->plainError('La solicitud de matrícula no es válida.', 422);
         }
 
         $enrollmentId = $this->positiveInteger($input['enrollment_id'] ?? null);
         if ($enrollmentId === null) {
-            return $this->plainError('The Enrollment request is invalid.', 422);
+            return $this->plainError('La solicitud de matrícula no es válida.', 422);
         }
 
         try {
@@ -118,16 +119,16 @@ final class AdministrativeEnrollmentController extends Controller
         } catch (AdministrativeEnrollmentInvalidTransition) {
             $this->session->put(
                 self::FLASH_ERROR_KEY,
-                'Enrollment status changed. Review the current queue.',
+                'El estado de la matrícula cambió. Revise la lista actual.',
             );
 
             return $this->redirectToList();
         } catch (AdministrativeEnrollmentUnavailable) {
-            return $this->plainError('Enrollment is unavailable.', 404);
+            return $this->plainError('La matrícula no está disponible.', 404);
         } catch (AdministrativeEnrollmentPersistedStateMismatch) {
-            return $this->plainError('Enrollment lifecycle operation could not be confirmed.', 500);
+            return $this->plainError('No se pudo confirmar el cambio de estado de la matrícula.', 500);
         } catch (Throwable) {
-            return $this->plainError('Enrollment lifecycle operation is unavailable.', 500);
+            return $this->plainError('El cambio de estado de la matrícula no está disponible.', 500);
         }
 
         $this->session->put(self::FLASH_SUCCESS_KEY, $successMessage);
@@ -181,8 +182,6 @@ final class AdministrativeEnrollmentController extends Controller
     {
         http_response_code($status);
 
-        return '<h1>Enrollment administration unavailable</h1><p role="alert">'
-            . htmlspecialchars($message, ENT_QUOTES, 'UTF-8')
-            . '</p><p><a href="/enrollments">Back to Enrollment administration</a></p>';
+        return SafeErrorPage::render($status, $message, '/enrollments', 'Volver a matrículas');
     }
 }

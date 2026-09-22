@@ -133,16 +133,16 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         e013ReportingRequest('/reports/enrollments');
         $html = $multiple['controller']->index();
         assertSameValue(500, http_response_code());
-        e013Contains('The report could not be generated.', $html);
+        e013Contains('No se pudo generar el reporte.', $html);
         assertSameValue(false, str_contains($html, 'ACTIVE AcademicPeriod'));
     });
 
     $runner->add('E013 Phase 3 five HTML reports render approved datasets empty states CSV links and escaped output', function (): void {
         $fixture = e013ReportingFixture();
         foreach ([
-            ['summary', ['Resumen de matrículas', 'Total:', 'Borrador', 'Grade =SUM', 'Section A']],
+            ['summary', ['Resumen de matrículas', 'Total:', 'Borrador', '=SUM, Grado Ñandú', 'Sección A']],
             ['students', ['Lista de estudiantes', 'No iniciada', '&lt;script&gt;alert(1)&lt;/script&gt;']],
-            ['directory', ['Directorio de estudiantes y representantes', '@something Representative', 'Address, with comma', 'Móvil:']],
+            ['directory', ['Directorio de estudiantes y representantes', '@something Representative', 'Dirección, con coma', 'Móvil:']],
             ['billing', ['Reporte de facturación', 'Tipo de identificación', 'Dirección de facturación', 'Nombre legal']],
             ['medical', ['Reporte médico', 'Condición médica', 'Sí', 'No', 'Observaciones']],
         ] as [$method, $expected]) {
@@ -176,27 +176,33 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         $fixture = e013ReportingFixture();
         $writer = new EnrollmentReportCsvWriter();
         $exports = [
-            [$writer->summary($fixture['summaryService']->handle(8)), ['AcademicPeriod', 'Grade', 'Section', 'EnrollmentStatus', 'Count'], 2],
-            [$writer->students($fixture['students']->rows), ['Grade', 'Section', 'Student', 'Status'], 2],
+            [$writer->summary($fixture['summaryService']->handle(8)), ['AcademicPeriod', 'Grade', 'Section', 'EnrollmentStatus', 'Count'], 2, 'Ñandú', "\"'=SUM, Grado Ñandú\""],
+            [$writer->students($fixture['students']->rows), ['Grade', 'Section', 'Student', 'Status'], 2, 'Ñandú', "\"'=SUM, Grado Ñandú\""],
             [$writer->directory($fixture['directory']->rows), [
                 'Grade', 'Section', 'Student', 'StudentIdentificationType', 'StudentIdentificationNumber',
                 'PrimaryRepresentative', 'RepresentativeIdentificationType', 'RepresentativeIdentificationNumber',
                 'MobilePhone', 'LandlinePhone', 'PersonalEmail', 'WorkPhone', 'WorkEmail', 'Address', 'Status',
-            ], 2],
+            ], 2, 'Dirección', "\"Dirección, con coma\nand nueva línea\""],
             [$writer->billing($fixture['billing']->rows), [
                 'Grade', 'Section', 'Student', 'Status', 'IdentificationType', 'IdentificationNumber',
                 'LegalName', 'BillingAddress', 'BillingEmail', 'Phone',
-            ], 2],
+            ], 2, 'Razón', "\"'=SUM, Razón Social\""],
             [$writer->medical($fixture['medical']->rows), [
                 'Grade', 'Section', 'Student', 'Status', 'HasMedicalCondition', 'MedicalConditionDetail',
                 'HasAllergies', 'AllergyDetail', 'TakesPermanentMedication', 'MedicationName',
                 'RequiresSpecialCare', 'SpecialCareDetail', 'HasMedicalInsurance', 'InsuranceProvider',
                 'PediatricianName', 'PediatricianPhone', 'Observations',
-            ], 2],
+            ], 2, 'Condición', "\"'=SUM, Condición Ñandú\""],
         ];
-        foreach ($exports as [$csv, $header, $lineCount]) {
+        foreach ($exports as [$csv, $header, $lineCount, $spanishText, $quotedText]) {
+            assertSameValue('efbbbf', bin2hex(substr($csv, 0, 3)));
+            $payload = e013CsvPayload($csv);
+            assertSameValue(false, str_contains($payload, "\xEF\xBB\xBF"));
             assertSameValue(true, mb_check_encoding($csv, 'UTF-8'));
-            assertSameValue(true, str_contains($csv, "\r\n"));
+            assertSameValue(true, str_contains($payload, "\r\n"));
+            e013Contains($spanishText, $payload);
+            e013Contains($quotedText, $payload);
+            e013Contains("'=SUM", $payload);
             $records = e013CsvRecords($csv);
             assertSameValue($header, $records[0]);
             assertSameValue($lineCount, count($records));
@@ -209,7 +215,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         }
         e013Contains('Normal text', $directory);
         assertSameValue(false, str_contains($directory, "'Normal text"));
-        e013Contains("Address, with comma\nand newline", $directory);
+        e013Contains("Dirección, con coma\nand nueva línea", $directory);
 
         assertSameValue(1, count(e013CsvRecords($writer->students([]))));
         assertSameValue(1, count(e013CsvRecords($writer->directory([]))));
@@ -219,17 +225,27 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
 
     $runner->add('E013 Phase 3 CSV actions use the same services and safe response contract without partial output', function (): void {
         $fixture = e013ReportingFixture();
-        $expectedPrefixes = [
-            'summaryCsv' => 'enrollment-summary-period-',
-            'studentsCsv' => 'student-enrollment-period-',
-            'directoryCsv' => 'student-directory-period-',
-            'billingCsv' => 'student-billing-period-',
-            'medicalCsv' => 'student-medical-period-',
+        $expectedContracts = [
+            'summaryCsv' => ['enrollment-summary-period-', 'Ñandú', "\"'=SUM, Grado Ñandú\""],
+            'studentsCsv' => ['student-enrollment-period-', 'Ñandú', "\"'=SUM, Grado Ñandú\""],
+            'directoryCsv' => ['student-directory-period-', 'Dirección', "\"Dirección, con coma\nand nueva línea\""],
+            'billingCsv' => ['student-billing-period-', 'Razón', "\"'=SUM, Razón Social\""],
+            'medicalCsv' => ['student-medical-period-', 'Condición', "\"'=SUM, Condición Ñandú\""],
         ];
-        foreach ($expectedPrefixes as $method => $prefix) {
+        foreach ($expectedContracts as $method => [$prefix, $spanishText, $quotedText]) {
             e013ReportingRequest('/reports/enrollments/' . strtolower($method), ['academic_period_id' => '8']);
             $csv = $fixture['controller']->{$method}();
             assertSameValue(200, http_response_code());
+            assertSameValue('efbbbf', bin2hex(substr($csv, 0, 3)));
+            assertSameValue(1, substr_count($csv, "\xEF\xBB\xBF"));
+            $payload = e013CsvPayload($csv);
+            assertSameValue(false, str_contains($payload, "\xEF\xBB\xBF"));
+            assertSameValue(true, mb_check_encoding($payload, 'UTF-8'));
+            assertSameValue(true, str_contains($payload, "\r\n"));
+            e013Contains($spanishText, $payload);
+            e013Contains($quotedText, $payload);
+            e013Contains("'=SUM", $payload);
+            assertSameValue(true, count(e013CsvRecords($csv)) >= 2);
             assertSameValue(true, str_ends_with($csv, "\r\n"));
             e013Contains($prefix, (string) file_get_contents(dirname(__DIR__) . '/app/Enrollment/Http/EnrollmentReportingController.php'));
         }
@@ -295,9 +311,9 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
     $summaryRows = $empty ? [] : [new EnrollmentSummaryRow(
         EnrollmentReportingStatus::Draft,
         1,
-        'Grade =SUM',
+        '=SUM, Grado Ñandú',
         2,
-        'Section A',
+        'Sección A',
         1,
     )];
     $summary = new class($summaryRows) implements EnrollmentSummaryQuery {
@@ -315,7 +331,7 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
     $studentRows = $empty ? [] : [new StudentEnrollmentReportRow(
         10,
         1,
-        'Grade =SUM',
+        '=SUM, Grado Ñandú',
         2,
         'Section A',
         '<script>alert(1)</script>',
@@ -355,7 +371,7 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         'normal@example.test',
         'Normal text',
         'work@example.test',
-        "Address, with comma\nand newline",
+        "Dirección, con coma\nand nueva línea",
         EnrollmentReportingStatus::Draft,
     )];
     $directory = new class($directoryRows) implements StudentRepresentativeDirectoryQuery {
@@ -372,7 +388,7 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
     };
     $billingRows = $empty ? [] : [new StudentBillingReportRow(
         10, 1, 'Grade 1', 2, 'Section A', 'Surname', 'Name', EnrollmentReportingStatus::Submitted,
-        'RUC', '123', 'Legal Name', 'Billing Address', 'billing@example.test', '+593111',
+        'RUC', '123', '=SUM, Razón Social', 'Billing Address', 'billing@example.test', '+593111',
     )];
     $billing = new class($billingRows) implements StudentBillingReportQuery {
         public ?int $lastAcademicPeriodId = null;
@@ -388,7 +404,7 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
     };
     $medicalRows = $empty ? [] : [new StudentMedicalReportRow(
         10, 1, 'Grade 1', 2, 'Section A', 'Surname', 'Name', EnrollmentReportingStatus::Completed,
-        true, 'Condition', false, null, null, null, true, 'Care', false, null,
+        true, '=SUM, Condición Ñandú', false, null, null, null, true, 'Care', false, null,
         'Pediatrician', '+593222', '<script>alert(1)</script>',
     )];
     $medical = new class($medicalRows) implements StudentMedicalReportQuery {
@@ -443,7 +459,7 @@ function e013CsvRecords(string $csv): array
     if ($stream === false) {
         throw new \RuntimeException('Test stream unavailable.');
     }
-    fwrite($stream, $csv);
+    fwrite($stream, e013CsvPayload($csv));
     rewind($stream);
     $rows = [];
     while (($row = fgetcsv($stream, null, ',', '"', '')) !== false) {
@@ -452,6 +468,16 @@ function e013CsvRecords(string $csv): array
     fclose($stream);
 
     return $rows;
+}
+
+function e013CsvPayload(string $csv): string
+{
+    $bom = "\xEF\xBB\xBF";
+    if (substr($csv, 0, 3) !== $bom || substr_count($csv, $bom) !== 1) {
+        throw new \RuntimeException('Expected exactly one UTF-8 BOM at the start of the CSV.');
+    }
+
+    return substr($csv, 3);
 }
 
 function e013Contains(string $needle, string $haystack): void

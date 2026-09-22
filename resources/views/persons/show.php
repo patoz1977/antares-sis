@@ -4,6 +4,18 @@ declare(strict_types=1);
 
 $escape = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 $optional = static fn (mixed $value): string => $value === null || $value === '' ? 'No registrado' : (string) $value;
+$optionName = static function (array $options, ?int $id): string {
+    if ($id === null) {
+        return 'No registrado';
+    }
+    foreach ($options as $option) {
+        if ($option->id === $id) {
+            return $option->name;
+        }
+    }
+
+    return 'No disponible';
+};
 $statusCode = $person->status->value;
 ?>
 <header class="app-page-header d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-start">
@@ -25,13 +37,12 @@ $statusCode = $person->status->value;
             <dl class="app-data-list">
                 <dt>Nombre completo</dt>
                 <dd><?= $escape(trim(implode(' ', array_filter([$person->firstName, $person->middleName, $person->firstSurname, $person->secondSurname])))) ?></dd>
-                <dt>ID interno</dt><dd><?= $escape($person->id) ?></dd>
-                <dt>Tipo de documento (ID)</dt><dd><?= $escape($optional($person->documentTypeId)) ?></dd>
+                <dt>Tipo de documento</dt><dd><?= $escape($optionName($options->documentTypes, $person->documentTypeId)) ?></dd>
                 <dt>Número de documento</dt><dd><?= $escape($optional($person->documentNumber)) ?></dd>
                 <dt>Fecha de nacimiento</dt><dd><?= $escape($person->birthDate->format('Y-m-d')) ?></dd>
-                <dt>Sexo (ID)</dt><dd><?= $escape($person->sexId) ?></dd>
-                <dt>Estado civil (ID)</dt><dd><?= $escape($optional($person->maritalStatusId)) ?></dd>
-                <dt>Nivel educativo (ID)</dt><dd><?= $escape($optional($person->educationLevelId)) ?></dd>
+                <dt>Sexo</dt><dd><?= $escape($optionName($options->sexes, $person->sexId)) ?></dd>
+                <dt>Estado civil</dt><dd><?= $escape($optionName($options->maritalStatuses, $person->maritalStatusId)) ?></dd>
+                <dt>Nivel educativo</dt><dd><?= $escape($optionName($options->educationLevels, $person->educationLevelId)) ?></dd>
             </dl>
         </div>
     </section>

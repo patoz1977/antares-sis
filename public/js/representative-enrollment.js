@@ -13,6 +13,7 @@
         }
 
         init() {
+            this.initializeLeaveAlonePickups();
             if (typeof window.fetch !== 'function' || typeof window.FormData !== 'function') {
                 return;
             }
@@ -95,14 +96,26 @@
             this.cancelTimer(state);
             if (!form.checkValidity()) {
                 state.mode = 'dirty';
+                const invalid = form.querySelector(':invalid');
+                if (invalid) {
+                    invalid.setAttribute('aria-invalid', 'true');
+                }
+                this.setStatus(form, 'Pendiente de corrección');
+                this.showErrors(form, [
+                    invalid && invalid.name === 'phone' && form.dataset.section === 'billing'
+                        ? 'El teléfono de facturación es obligatorio.'
+                        : 'Completa los campos obligatorios antes de guardar esta sección.',
+                ]);
                 if (reportValidity) {
                     form.reportValidity();
-                    this.showErrors(form, ['Completa los campos obligatorios antes de salir de esta sección.']);
                     this.focusFailure(form);
                 }
 
                 return false;
             }
+            form.querySelectorAll('[aria-invalid="true"]').forEach((field) => {
+                field.removeAttribute('aria-invalid');
+            });
 
             const sentRevision = state.revision;
             state.mode = 'saving';
@@ -254,6 +267,25 @@
                     this.syncMedicalField(form, control.name, control.value === '0');
                 }
             });
+        }
+
+        initializeLeaveAlonePickups() {
+            const forms = new Set();
+            this.root.querySelectorAll('[data-leave-alone-controller]').forEach((control) => {
+                if (control.form) {
+                    forms.add(control.form);
+                    control.addEventListener('change', () => this.syncLeaveAlonePickups(control.form));
+                }
+            });
+            forms.forEach((form) => this.syncLeaveAlonePickups(form));
+        }
+
+        syncLeaveAlonePickups(form) {
+            const selected = form.querySelector('[data-leave-alone-controller]:checked');
+            const panel = form.querySelector('[data-leave-alone-pickups]');
+            if (panel) {
+                panel.hidden = !selected || selected.value !== '0';
+            }
         }
 
         syncMedicalField(form, controllerName, clearWhenNo) {

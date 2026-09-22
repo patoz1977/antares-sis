@@ -14,7 +14,8 @@ $safeLink = static function (string $url): bool {
 ?>
 <?php
 $breadcrumbItems = [
-    ['label' => 'Portal', 'url' => '/representative'],
+    ['label' => 'Inicio', 'url' => '/representative'],
+    ['label' => 'Matrícula', 'url' => '/representative/enrollment'],
     ['label' => 'Aceptaciones institucionales'],
 ];
 require dirname(__DIR__) . '/components/breadcrumb.php';
@@ -22,7 +23,7 @@ require dirname(__DIR__) . '/components/breadcrumb.php';
 
 <header class="app-page-header">
     <h1>Aceptaciones institucionales</h1>
-    <p class="text-body-secondary">Revisa los requisitos configurados para el período académico vigente.</p>
+    <p class="text-body-secondary">Abre y revisa cada documento o recurso mostrado. Marca su casilla y confirma cuando hayas revisado todos los requisitos.</p>
 </header>
 
 <?php if ($portalState === null): ?>
@@ -36,10 +37,6 @@ require dirname(__DIR__) . '/components/empty-state.php';
     <div>
         <p class="text-body-secondary mb-1" id="acknowledgement-period-heading">Período académico</p>
         <p class="h4 mb-1"><?= $escape($portalState->context->academicPeriodName) ?></p>
-        <p class="mb-0">
-            <?= $escape($portalState->context->academicPeriodCode) ?>
-            · <?= $escape($portalState->context->startsOn) ?> a <?= $escape($portalState->context->endsOn) ?>
-        </p>
     </div>
     <?php $statusCode = strtoupper($portalState->status); require dirname(__DIR__) . '/components/status-badge.php'; ?>
 </section>

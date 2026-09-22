@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Shared\Http\SharedShellDataFactory;
+use App\Shared\Http\SafeErrorPage;
 use Core\Foundation\Kernel;
 use Core\View\View;
 
@@ -24,5 +25,13 @@ require dirname(__DIR__) . '/routes/web.php';
 View::setSharedDataResolver(static fn (): array => [
     'shell' => $app->container()->make(SharedShellDataFactory::class)->forRequest($app->request()),
 ]);
+$router->setNotFoundRenderer(static fn (): string => SafeErrorPage::render(
+    404,
+    'La página solicitada no está disponible.',
+));
+$app->kernel()->setServerErrorRenderer(static fn (): string => SafeErrorPage::render(
+    500,
+    'No se pudo completar la solicitud. Inténtelo nuevamente.',
+));
 
 $app->kernel()->handle();

@@ -36,7 +36,10 @@ function registerAdministrativeUiBaselineTests(TestRunner $runner): void
             '/families/resources/emergency-contacts/create',
             '/families/resources/authorized-pickups/create',
             'name="_csrf_token"',
-            'Historial',
+            'Direcciones asignadas',
+            'Contactos de emergencia asignados',
+            'Personas autorizadas asignadas',
+            'Eliminar asignación',
             'Personas autorizadas para retirar',
         ] as $expected) {
             deliveryAssertContains($expected, $resources);

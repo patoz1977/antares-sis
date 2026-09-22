@@ -182,9 +182,9 @@ function registerEnrollmentAdministrativeDeliveryTests(TestRunner $runner): void
 
     $runner->add('E012 administrative lifecycle actions use CSRF PRG flash and leave the Submitted queue', function (): void {
         foreach ([
-            ['reopen', 'DRAFT', 'Enrollment reopened successfully.'],
-            ['complete', 'COMPLETED', 'Enrollment completed successfully.'],
-            ['cancel', 'CANCELLED', 'Enrollment cancelled successfully.'],
+            ['reopen', 'DRAFT', 'Matrícula reabierta correctamente.'],
+            ['complete', 'COMPLETED', 'Matrícula completada correctamente.'],
+            ['cancel', 'CANCELLED', 'Matrícula cancelada correctamente.'],
         ] as [$method, $expectedStatus, $message]) {
             $fixture = e012AdministrativeDeliveryFixture();
             deliveryRequest('POST', '/enrollments/' . $method, [
@@ -215,7 +215,7 @@ function registerEnrollmentAdministrativeDeliveryTests(TestRunner $runner): void
                 ]);
                 $html = $fixture['controller']->{$method}();
                 assertSameValue(403, http_response_code());
-                deliveryAssertContains('could not be verified', $html);
+                deliveryAssertContains('No se pudo verificar la solicitud', $html);
                 assertSameValue('SUBMITTED', $fixture['enrollments']->findById(new EnrollmentId(900))?->status()->value);
             }
         }
@@ -263,7 +263,7 @@ function registerEnrollmentAdministrativeDeliveryTests(TestRunner $runner): void
         assertSameValue(303, http_response_code());
         assertSameValue('COMPLETED', $fixture['enrollments']->findById(new EnrollmentId(900))?->status()->value);
         assertSameValue(
-            'Enrollment status changed. Review the current queue.',
+            'El estado de la matrícula cambió. Revise la lista actual.',
             $fixture['session']->get('_flash_enrollment_administration_error'),
         );
     });

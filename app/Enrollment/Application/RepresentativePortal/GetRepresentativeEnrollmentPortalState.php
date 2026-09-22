@@ -13,6 +13,8 @@ use App\Enrollment\Domain\EnrollmentRepository;
 use App\Enrollment\Domain\EnrollmentStatus;
 use App\Enrollment\Domain\ValueObject\AcademicPeriodId;
 use App\Enrollment\Domain\ValueObject\StudentId;
+use App\Family\Application\Dto\FamilyAuthorizedPickupOutput;
+use App\Family\Application\Dto\FamilyResourcesOutput;
 use App\Family\Application\GetFamilyResources;
 use App\Person\Application\Dto\PersonOutput;
 use App\Person\Domain\PersonRepository;
@@ -79,6 +81,7 @@ final readonly class GetRepresentativeEnrollmentPortalState
             && $context->acknowledgementsSatisfied;
         $enrollmentDraftMaintenanceEnabled = $liveDataMaintenanceEnabled
             && ($enrollment === null || $enrollment->status === EnrollmentStatus::Draft->value);
+        $authorizedPickups = $this->authorizedPickups($selectedStudent, $resources);
 
         return new RepresentativeEnrollmentPortalState(
             $context,
@@ -89,6 +92,7 @@ final readonly class GetRepresentativeEnrollmentPortalState
             $context->academicPeriod !== null,
             $liveDataMaintenanceEnabled,
             $enrollmentDraftMaintenanceEnabled,
+            $authorizedPickups,
             $progress,
         );
     }
@@ -108,12 +112,45 @@ final readonly class GetRepresentativeEnrollmentPortalState
         return null;
     }
 
+    /** @return list<FamilyAuthorizedPickupOutput> */
+    private function authorizedPickups(
+        ?RepresentativeEnrollmentStudentOption $student,
+        ?FamilyResourcesOutput $resources,
+    ): array {
+        if ($student === null || $resources === null) {
+            return [];
+        }
+
+        $assignedPickupIds = [];
+        foreach ($resources->authorizedPickupAssignments as $assignment) {
+            if ($assignment->isActive && $assignment->studentId === $student->student->id) {
+                $assignedPickupIds[$assignment->familyAuthorizedPickupId] = true;
+            }
+        }
+
+        $pickups = array_values(array_filter(
+            $resources->authorizedPickups,
+            static fn (FamilyAuthorizedPickupOutput $pickup): bool =>
+                $pickup->status === 'ACTIVE' && isset($assignedPickupIds[$pickup->id]),
+        ));
+        usort($pickups, static function (
+            FamilyAuthorizedPickupOutput $left,
+            FamilyAuthorizedPickupOutput $right,
+        ): int {
+            $nameOrder = strcasecmp($left->names, $right->names);
+
+            return $nameOrder !== 0 ? $nameOrder : $left->id <=> $right->id;
+        });
+
+        return $pickups;
+    }
+
     private function progress(
         bool $acknowledgementsSatisfied,
         PersonOutput $representative,
         ?RepresentativeEnrollmentStudentOption $student,
         ?\App\Enrollment\Application\Dto\EnrollmentOutput $enrollment,
-        ?\App\Family\Application\Dto\FamilyResourcesOutput $resources,
+        ?FamilyResourcesOutput $resources,
     ): RepresentativeEnrollmentProgress {
         $complete = RepresentativeEnrollmentSectionStatus::Complete;
         $pending = RepresentativeEnrollmentSectionStatus::Pending;

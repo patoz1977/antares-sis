@@ -85,15 +85,18 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
         $page = $controller->index();
         assertSameValue(9, $session->get('_institutional_acknowledgements_trusted_academic_period_id'));
         deliveryAssertContains('Period A Requirement', $page);
+        deliveryAssertContains('Ciclo de vida de períodos académicos', $page);
+        deliveryAssertContains('Crear requisito', $page);
+        deliveryAssertContains('Requisitos existentes y mantenimiento', $page);
         assertSameValue(false, str_contains($page, 'Period B Requirement'));
 
         deliveryRequest('GET', '/institutional-acknowledgements?academic_period_id=bad', ['academic_period_id' => 'bad']);
-        deliveryAssertContains('Select a valid Academic Period', $controller->index());
+        deliveryAssertContains('Seleccione un período académico válido', $controller->index());
         assertSameValue(422, http_response_code());
         assertSameValue(null, $session->get('_institutional_acknowledgements_trusted_academic_period_id'));
 
         deliveryRequest('GET', '/institutional-acknowledgements?academic_period_id=999', ['academic_period_id' => '999']);
-        deliveryAssertContains('Academic Period not found', $controller->index());
+        deliveryAssertContains('No se encontró el período académico', $controller->index());
         assertSameValue(404, http_response_code());
     });
 
@@ -108,7 +111,7 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
         assertSameValue(1, $repository->saveCount);
         assertSameValue(9, $repository->findById(new AcknowledgementRequirementId(100))?->academicPeriodId()->value());
         assertSameValue(null, $repository->findById(new AcknowledgementRequirementId(100))?->officialReference());
-        assertSameValue('Requirement created successfully.', $session->get('_flash_institutional_acknowledgements_success'));
+        assertSameValue('Requisito creado correctamente.', $session->get('_flash_institutional_acknowledgements_success'));
 
         institutionalAcknowledgementOpen($controller, 9);
         deliveryRequest('POST', '/institutional-acknowledgements/requirements/create', institutionalAcknowledgementPost([
@@ -170,7 +173,7 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
             deliveryRequest('POST', '/institutional-acknowledgements/requirements/' . $method, institutionalAcknowledgementPost($input));
             $response = $controller->{$method}();
             assertSameValue(422, http_response_code());
-            deliveryAssertContains('Requirement was not found', $response);
+            deliveryAssertContains('No se encontró el requisito', $response);
             assertSameValue(false, str_contains($response, 'Period B Requirement'));
             assertSameValue(false, str_contains($response, 'belongs to'));
             assertSameValue(0, $repository->saveCount);
@@ -196,7 +199,7 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
         ]));
         $response = $controller->update();
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('Requirement could not be changed', $response);
+        deliveryAssertContains('No se pudo cambiar el requisito', $response);
         assertSameValue('Period A Requirement', $repository->findById(new AcknowledgementRequirementId(1))?->title()->value());
         assertSameValue('new/url', $repository->findById(new AcknowledgementRequirementId(1))?->url()->value());
     });
@@ -224,7 +227,7 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
         assertSameValue(303, http_response_code());
         assertSameValue(10, $periodRepository->findActive()?->id()?->value());
         assertSameValue('INACTIVE', $periodRepository->findById(new CoreAcademicPeriodId(9))?->status()->value);
-        assertSameValue('Academic Period activated successfully.', $session->get('_flash_institutional_acknowledgements_success'));
+        assertSameValue('Período académico activado correctamente.', $session->get('_flash_institutional_acknowledgements_success'));
 
         deliveryRequest('POST', '/institutional-acknowledgements/academic-period/deactivate', [
             '_csrf_token' => 'delivery-csrf',
@@ -262,7 +265,7 @@ function registerInstitutionalAcknowledgementsAdministratorDeliveryTests(TestRun
         ]);
         $response = $controller->activateAcademicPeriod();
         assertSameValue(409, http_response_code());
-        deliveryAssertContains('operation is unavailable', $response);
+        deliveryAssertContains('operación del período académico no está disponible', $response);
         assertSameValue(false, str_contains($response, 'Forced AcademicPeriod'));
         assertSameValue(9, $periodRepository->findActive()?->id()?->value());
     });

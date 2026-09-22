@@ -15,6 +15,7 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
     <p class="text-uppercase fw-semibold text-primary mb-2">Familias</p>
     <h1 class="display-6 fw-bold mb-2">Crear representante y familia</h1>
     <p class="text-body-secondary mb-0">Registra la persona representante, su información propia y el nuevo contexto familiar en una sola operación.</p>
+    <p class="text-body-secondary mb-0">Los campos marcados con * son obligatorios.</p>
 </header>
 
 <?php require dirname(__DIR__) . '/components/validation-summary.php'; ?>
@@ -25,7 +26,7 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
     <fieldset class="app-form-section">
         <legend>Datos personales del representante</legend>
         <div>
-            <label class="form-label" for="first-name">Primer nombre</label>
+            <label class="form-label app-required-label" for="first-name">Primer nombre</label>
             <input class="form-control" id="first-name" name="first_name" type="text" value="<?= $escape($values['first_name'] ?? '') ?>" required>
         </div>
         <div>
@@ -33,7 +34,7 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
             <input class="form-control" id="middle-name" name="middle_name" type="text" value="<?= $escape($values['middle_name'] ?? '') ?>">
         </div>
         <div>
-            <label class="form-label" for="first-surname">Primer apellido</label>
+            <label class="form-label app-required-label" for="first-surname">Primer apellido</label>
             <input class="form-control" id="first-surname" name="first_surname" type="text" value="<?= $escape($values['first_surname'] ?? '') ?>" required>
         </div>
         <div>
@@ -41,7 +42,7 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
             <input class="form-control" id="second-surname" name="second_surname" type="text" value="<?= $escape($values['second_surname'] ?? '') ?>">
         </div>
         <div>
-            <label class="form-label" for="document-type">Tipo de documento</label>
+            <label class="form-label app-required-label" for="document-type">Tipo de documento</label>
             <select class="form-select" id="document-type" name="document_type_id" required>
                 <option value="">Selecciona una opción</option>
                 <?php foreach ($personOptions->documentTypes as $option): ?>
@@ -51,15 +52,15 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
             </select>
         </div>
         <div>
-            <label class="form-label" for="document-number">Número de documento</label>
+            <label class="form-label app-required-label" for="document-number">Número de documento</label>
             <input class="form-control" id="document-number" name="document_number" type="text" value="<?= $escape($values['document_number'] ?? '') ?>" required>
         </div>
         <div>
-            <label class="form-label" for="birth-date">Fecha de nacimiento</label>
+            <label class="form-label app-required-label" for="birth-date">Fecha de nacimiento</label>
             <input class="form-control" id="birth-date" name="birth_date" type="date" value="<?= $escape($values['birth_date'] ?? '') ?>" required>
         </div>
         <div>
-            <label class="form-label" for="sex">Sexo</label>
+            <label class="form-label app-required-label" for="sex">Sexo</label>
             <select class="form-select" id="sex" name="sex_id" required>
                 <option value="">Selecciona una opción</option>
                 <?php foreach ($personOptions->sexes as $option): ?>
@@ -86,7 +87,7 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
             </select>
         </div>
         <div>
-            <label class="form-label" for="email">Correo electrónico personal</label>
+            <label class="form-label app-required-label" for="email">Correo electrónico personal</label>
             <input class="form-control" id="email" name="email" type="email" value="<?= $escape($values['email'] ?? '') ?>" required>
         </div>
         <div>
@@ -98,7 +99,7 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
             <input class="form-control" id="landline-phone" name="landline_phone" type="text" value="<?= $escape($values['landline_phone'] ?? '') ?>">
         </div>
         <div>
-            <label class="form-label" for="person-status">Estado de la persona</label>
+            <label class="form-label app-required-label" for="person-status">Estado de la persona</label>
             <select class="form-select" id="person-status" name="person_status" required>
                 <?php foreach ($personOptions->statuses as $option): ?>
                 <option value="<?= $escape($option->code) ?>"<?= $selected($values['person_status'] ?? '', $option->code) ?>><?= $escape($option->name) ?></option>
@@ -111,7 +112,7 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
         <legend>Acceso del representante</legend>
         <p class="text-body-secondary">El identificador de acceso se deriva del número de documento. La contraseña no se conserva después del envío.</p>
         <div>
-            <label class="form-label" for="user-status">Estado del usuario</label>
+            <label class="form-label app-required-label" for="user-status">Estado del usuario</label>
             <select class="form-select" id="user-status" name="user_status" required>
                 <?php foreach (UserStatus::cases() as $status): ?>
                 <option value="<?= $escape($status->value) ?>"<?= $selected($values['user_status'] ?? '', $status->value) ?>><?= $escape($status === UserStatus::Active ? 'Activo' : 'Deshabilitado') ?></option>
@@ -119,11 +120,11 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
             </select>
         </div>
         <div>
-            <label class="form-label" for="initial-password">Contraseña inicial</label>
+            <label class="form-label app-required-label" for="initial-password">Contraseña inicial</label>
             <input class="form-control" id="initial-password" name="initial_password" type="password" minlength="5" autocomplete="new-password" required>
         </div>
         <div>
-            <label class="form-label" for="initial-password-confirmation">Confirmar contraseña inicial</label>
+            <label class="form-label app-required-label" for="initial-password-confirmation">Confirmar contraseña inicial</label>
             <input class="form-control" id="initial-password-confirmation" name="initial_password_confirmation" type="password" minlength="5" autocomplete="new-password" required>
         </div>
     </fieldset>
@@ -136,7 +137,7 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
         <div><label class="form-label" for="work-phone">Teléfono laboral</label><input class="form-control" id="work-phone" name="work_phone" type="text" value="<?= $escape($values['work_phone'] ?? '') ?>"></div>
         <div><label class="form-label" for="work-email">Correo laboral</label><input class="form-control" id="work-email" name="work_email" type="email" value="<?= $escape($values['work_email'] ?? '') ?>"></div>
         <div>
-            <label class="form-label" for="representative-status">Estado del representante</label>
+            <label class="form-label app-required-label" for="representative-status">Estado del representante</label>
             <select class="form-select" id="representative-status" name="representative_status" required>
                 <?php foreach (RepresentativeStatus::cases() as $status): ?>
                 <option value="<?= $escape($status->value) ?>"<?= $selected($values['representative_status'] ?? '', $status->value) ?>><?= $escape($status->value === 'ACTIVE' ? 'Activo' : 'Inactivo') ?></option>
@@ -147,9 +148,9 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
 
     <fieldset class="app-form-section">
         <legend>Familia y membresía</legend>
-        <div><label class="form-label" for="display-name">Nombre visible</label><input class="form-control" id="display-name" name="display_name" type="text" value="<?= $escape($values['display_name'] ?? '') ?>" required></div>
+        <div><label class="form-label app-required-label" for="display-name">Nombre visible</label><input class="form-control" id="display-name" name="display_name" type="text" value="<?= $escape($values['display_name'] ?? '') ?>" required></div>
         <div>
-            <label class="form-label" for="family-status">Estado de la familia</label>
+            <label class="form-label app-required-label" for="family-status">Estado de la familia</label>
             <select class="form-select" id="family-status" name="family_status" required>
                 <?php foreach ($familyOptions->statuses as $status): ?>
                 <option value="<?= $escape($status->value) ?>"<?= $selected($values['family_status'] ?? '', $status->value) ?>><?= $escape($status->value === 'ACTIVE' ? 'Activa' : 'Inactiva') ?></option>
@@ -157,7 +158,7 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
             </select>
         </div>
         <div>
-            <label class="form-label" for="relationship-type">Tipo de relación</label>
+            <label class="form-label app-required-label" for="relationship-type">Tipo de relación</label>
             <select class="form-select" id="relationship-type" name="relationship_type_id" required>
                 <option value="">Selecciona una opción</option>
                 <?php foreach ($familyOptions->relationshipTypes as $option): ?>
@@ -165,7 +166,7 @@ $selected = static fn (mixed $actual, mixed $expected): string => (string) $actu
                 <?php endforeach; ?>
             </select>
         </div>
-        <div><label class="form-label" for="started-at">Inicio de la membresía</label><input class="form-control" id="started-at" name="started_at" type="datetime-local" value="<?= $escape($values['started_at'] ?? '') ?>" required></div>
+        <div><label class="form-label app-required-label" for="started-at">Inicio de la membresía</label><input class="form-control" id="started-at" name="started_at" type="datetime-local" value="<?= $escape($values['started_at'] ?? '') ?>" required></div>
     </fieldset>
 
     <div class="app-action-group">

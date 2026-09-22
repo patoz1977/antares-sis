@@ -18,6 +18,7 @@ class Kernel
     private array $globalMiddleware = [];
     private array $routeMiddleware = [];
     private ?Closure $middlewareResolver = null;
+    private ?Closure $serverErrorRenderer = null;
     private bool $displayDiagnostics = false;
 
     public function __construct(Request $request, Router $router)
@@ -29,6 +30,11 @@ class Kernel
     public function setMiddlewareResolver(Closure $resolver): void
     {
         $this->middlewareResolver = $resolver;
+    }
+
+    public function setServerErrorRenderer(?Closure $renderer): void
+    {
+        $this->serverErrorRenderer = $renderer;
     }
 
     public function registerGlobalMiddleware(string|MiddlewareInterface $middleware): void
@@ -56,9 +62,18 @@ class Kernel
                 throw $exception;
             }
 
-            $response = (new Response())
-                ->status(500)
-                ->content('Internal Server Error');
+            $content = 'Internal Server Error';
+            if ($this->serverErrorRenderer !== null) {
+                try {
+                    $rendered = ($this->serverErrorRenderer)();
+                    if (is_string($rendered)) {
+                        $content = $rendered;
+                    }
+                } catch (Throwable) {
+                    // Keep the original generic fallback when presentation is unavailable.
+                }
+            }
+            $response = (new Response())->status(500)->content($content);
         }
 
         $response->send();

@@ -18,6 +18,7 @@ $action = $isEdit ? '/persons/update' : '/persons/create';
 <?php require dirname(__DIR__) . '/components/validation-summary.php'; ?>
 
 <form class="app-content-narrow" method="post" action="<?= $escape($action) ?>">
+    <p class="text-body-secondary">Los campos marcados con * son obligatorios.</p>
     <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
     <?php if ($isEdit): ?>
     <input type="hidden" name="id" value="<?= $escape($personId ?? '') ?>">
@@ -26,13 +27,13 @@ $action = $isEdit ? '/persons/update' : '/persons/create';
     <fieldset class="app-form-section">
         <legend>Datos personales</legend>
         <div class="app-form-grid">
-            <div><label class="form-label" for="first-name">Primer nombre</label><input class="form-control" id="first-name" name="first_name" type="text" value="<?= $escape($values['first_name'] ?? '') ?>" required></div>
+            <div><label class="form-label app-required-label" for="first-name">Primer nombre</label><input class="form-control" id="first-name" name="first_name" type="text" value="<?= $escape($values['first_name'] ?? '') ?>" required></div>
             <div><label class="form-label" for="middle-name">Segundo nombre</label><input class="form-control" id="middle-name" name="middle_name" type="text" value="<?= $escape($values['middle_name'] ?? '') ?>"></div>
-            <div><label class="form-label" for="first-surname">Primer apellido</label><input class="form-control" id="first-surname" name="first_surname" type="text" value="<?= $escape($values['first_surname'] ?? '') ?>" required></div>
+            <div><label class="form-label app-required-label" for="first-surname">Primer apellido</label><input class="form-control" id="first-surname" name="first_surname" type="text" value="<?= $escape($values['first_surname'] ?? '') ?>" required></div>
             <div><label class="form-label" for="second-surname">Segundo apellido</label><input class="form-control" id="second-surname" name="second_surname" type="text" value="<?= $escape($values['second_surname'] ?? '') ?>"></div>
-            <div><label class="form-label" for="birth-date">Fecha de nacimiento</label><input class="form-control" id="birth-date" name="birth_date" type="date" value="<?= $escape($values['birth_date'] ?? '') ?>" required></div>
+            <div><label class="form-label app-required-label" for="birth-date">Fecha de nacimiento</label><input class="form-control" id="birth-date" name="birth_date" type="date" value="<?= $escape($values['birth_date'] ?? '') ?>" required></div>
             <div>
-                <label class="form-label" for="sex">Sexo</label>
+                <label class="form-label app-required-label" for="sex">Sexo</label>
                 <select class="form-select" id="sex" name="sex_id" required>
                     <option value="">Selecciona una opción</option>
                     <?php foreach ($options->sexes as $option): ?>
@@ -89,7 +90,7 @@ $action = $isEdit ? '/persons/update' : '/persons/create';
 
     <fieldset class="app-form-section">
         <legend>Estado</legend>
-        <label class="form-label" for="status">Estado de la persona</label>
+        <label class="form-label app-required-label" for="status">Estado de la persona</label>
         <select class="form-select" id="status" name="status" required>
             <?php foreach ($options->statuses as $option): ?>
             <option value="<?= $escape($option->code) ?>"<?= $selected($values['status'] ?? '', $option->code) ?>><?= $escape($option->name) ?></option>

@@ -14,8 +14,8 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
         $forbidden = representativeUiSource('resources/views/representative-portal/forbidden.php');
 
         foreach ([
-            'Portal de representantes', 'Familia actual', 'Aceptaciones institucionales',
-            'Matrícula', 'Recursos familiares', 'action="/representative/family"',
+            'Bienvenido al portal de representantes', 'Familia actual', 'Actualización de datos',
+            'Matrícula', 'Tu familia', 'action="/representative/family"',
             'name="_csrf_token"', 'name="family_id"', 'Seleccionar familia',
         ] as $expected) {
             deliveryAssertContains($expected, $portal);
@@ -40,8 +40,8 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
             deliveryAssertContains($expected, $acknowledgements);
         }
         foreach ([
-            'Revisar y enviar matrícula', 'Datos actuales del SIS', 'Recursos familiares actuales',
-            'Información anual de matrícula', 'Preparación para el envío',
+            'Revisar y enviar matrícula', 'Datos actuales', 'Información adicional',
+            'Preparación para el envío', 'Estado de la matrícula',
             'action="/representative/enrollment/submit"', 'name="expected_family_id"',
             'name="expected_academic_period_id"', 'name="student_id"', 'name="_csrf_token"',
         ] as $expected) {
@@ -54,15 +54,23 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
 
     $runner->add('E014 Phase 4 Enrollment separates live and annual ownership without changing autosave', function (): void {
         $enrollment = representativeUiSource('resources/views/representative-portal/enrollment.php');
+        $summary = representativeUiSource('resources/views/representative-portal/enrollment-summary.php');
+        $hub = representativeUiSource('resources/views/representative-portal/enrollment-hub.php');
         $script = representativeUiSource('public/js/representative-enrollment.js');
 
         foreach ([
             '$portal->liveDataMaintenanceEnabled', '$portal->enrollmentDraftMaintenanceEnabled',
-            'Datos actuales del SIS', 'Información anual de matrícula', 'Ubicación académica',
+            'Información personal', 'Información del estudiante',
             'app-readonly-panel', 'data-enrollment-autosave', 'data-enrollment-fallback-save',
             'data-enrollment-navigation', 'data-medical-controller',
         ] as $expected) {
             deliveryAssertContains($expected, $enrollment);
+        }
+        foreach (['Revisar datos actuales', 'Completar esta matrícula', 'Revisar y enviar matrícula'] as $expected) {
+            deliveryAssertContains($expected, $summary);
+        }
+        foreach (['Aceptaciones institucionales', 'Matrículas de tus estudiantes'] as $expected) {
+            deliveryAssertContains($expected, $hub);
         }
         $placementStart = strpos($enrollment, 'id="placement-heading"');
         $placementEnd = strpos($enrollment, '</section>', is_int($placementStart) ? $placementStart : 0);
@@ -73,7 +81,6 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
             assertSameValue(false, str_contains($placement, $editableControl), $editableControl);
         }
         foreach ([
-            '/representative/enrollment/open',
             '/representative/enrollment/representative/personal',
             '/representative/enrollment/representative/contact',
             '/representative/enrollment/representative/employment',
@@ -85,6 +92,7 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
         ] as $action) {
             assertSameValue(1, substr_count($enrollment, 'action="' . $action . '"'), $action);
         }
+        assertSameValue(1, substr_count($summary, 'action="/representative/enrollment/open"'));
         foreach ([
             'const DEBOUNCE_MS = 900;', "credentials: 'same-origin'", 'new window.FormData(form)',
             'await this.flushAll()', "'Guardando...'", "'Guardado'", "'Error al guardar'",
@@ -100,7 +108,7 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
         $resources = representativeUiSource('resources/views/representative-portal/resources.php');
 
         foreach ([
-            'Recursos familiares', 'Direcciones', 'Contactos de emergencia',
+            'Tipos de recursos familiares', 'Direcciones', 'Contactos de emergencia',
             'Personas autorizadas para retirar', 'name="_csrf_token"', 'name="family_id"',
             '/representative/resources/addresses/create', '/representative/resources/addresses/update',
             '/representative/resources/address', '/representative/resources/students/address',
@@ -129,6 +137,9 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
             representativeUiSource('resources/views/representative-portal/enrollment.php'),
             representativeUiSource('resources/views/representative-portal/enrollment-submission-review.php'),
             representativeUiSource('resources/views/representative-portal/resources.php'),
+            representativeUiSource('resources/views/representative-portal/data.php'),
+            representativeUiSource('resources/views/representative-portal/enrollment-hub.php'),
+            representativeUiSource('resources/views/representative-portal/enrollment-summary.php'),
         ];
         foreach ($views as $view) {
             assertSameValue(false, str_contains($view, '<html'), 'shared shell ownership');
@@ -158,7 +169,7 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
         }
 
         $routes = representativeUiSource('routes/web.php');
-        assertSameValue(36, substr_count($routes, '$router->get('));
+        assertSameValue(46, substr_count($routes, '$router->get('));
         assertSameValue(71, substr_count($routes, '$router->post('));
     });
 }

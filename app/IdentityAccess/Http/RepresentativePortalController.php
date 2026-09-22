@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\IdentityAccess\Http;
 
 use App\Controllers\Controller;
+use App\Family\Application\Exception\FamilyNotFound;
+use App\Family\Application\Exception\InvalidPersistedFamilyResult;
+use App\Family\Http\RepresentativeFamilySummaryProvider;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Exception\FamilyContextNotAuthorized;
 use App\IdentityAccess\Application\ResolveFamilyContext;
@@ -22,6 +25,7 @@ final class RepresentativePortalController extends Controller
         private readonly SelectAuthorizedFamily $selectAuthorizedFamily,
         private readonly CsrfTokenManager $csrf,
         private readonly GetRepresentativeAcknowledgementPortalState $getAcknowledgementState,
+        private readonly RepresentativeFamilySummaryProvider $familySummary,
     ) {
     }
 
@@ -35,7 +39,7 @@ final class RepresentativePortalController extends Controller
             http_response_code(403);
 
             return $this->view('representative-portal.no-family', [
-                'title' => 'Representative Portal unavailable',
+                'title' => 'Portal de representantes no disponible',
                 'csrfToken' => $this->csrf->token(),
             ]);
         }
@@ -48,14 +52,27 @@ final class RepresentativePortalController extends Controller
             return $this->forbidden();
         }
 
+        $members = null;
+        if ($access->context !== null) {
+            try {
+                $members = $this->familySummary->forContext($access->context);
+            } catch (FamilyNotFound|InvalidPersistedFamilyResult) {
+                return $this->forbidden();
+            }
+            if ($members === null) {
+                return $this->forbidden();
+            }
+        }
+
         http_response_code(200);
 
         return $this->view('representative-portal.index', [
-            'title' => 'Representative Portal',
+            'title' => 'Portal de representantes',
             'authorizedFamilies' => $access->authorizedFamilies,
             'context' => $access->context,
             'requiresSelection' => $access->requiresSelection,
             'acknowledgementState' => $acknowledgementState,
+            'members' => $members,
             'csrfToken' => $this->csrf->token(),
         ]);
     }
@@ -86,7 +103,7 @@ final class RepresentativePortalController extends Controller
         http_response_code(403);
 
         return $this->view('representative-portal.forbidden', [
-            'title' => 'Representative Portal unavailable',
+            'title' => 'Portal de representantes no disponible',
             'csrfToken' => $this->csrf->token(),
         ]);
     }

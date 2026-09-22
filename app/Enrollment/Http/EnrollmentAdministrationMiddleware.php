@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Enrollment\Http;
 
+use App\Shared\Http\SafeErrorPage;
 use App\IdentityAccess\Application\GetAuthenticatedUser;
 use Closure;
 use Core\Http\Request;
@@ -26,7 +27,7 @@ final readonly class EnrollmentAdministrationMiddleware implements MiddlewareInt
         }
 
         if ($user->loginIdentifier !== 'admin') {
-            return (new Response())->status(403)->content('Forbidden');
+            return (new Response())->status(403)->content(SafeErrorPage::render(403, 'No tienes permiso para acceder a esta página.'));
         }
 
         return $next($request);

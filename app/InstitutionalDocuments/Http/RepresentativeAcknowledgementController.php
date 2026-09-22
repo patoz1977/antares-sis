@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\InstitutionalDocuments\Http;
 
+use App\Shared\Http\SafeErrorPage;
 use App\Controllers\Controller;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
@@ -38,13 +39,13 @@ final class RepresentativeAcknowledgementController extends Controller
         } catch (RepresentativeAcknowledgementAccessUnavailable) {
             return $this->forbidden();
         } catch (InvalidPersistedAcknowledgementResult) {
-            return $this->error('The operation could not be confirmed.', 422);
+            return $this->error('No se pudo confirmar la operación.', 422);
         }
 
         http_response_code(200);
 
         return $this->view('representative-portal.acknowledgements', [
-            'title' => 'Institutional Acknowledgements',
+            'title' => 'Aceptaciones institucionales',
             'state' => $state,
             'csrfToken' => $this->csrf->token(),
             'successMessage' => $this->flash(self::FLASH_SUCCESS_KEY),
@@ -56,7 +57,7 @@ final class RepresentativeAcknowledgementController extends Controller
     {
         $input = (new Request())->input();
         if (!$this->csrf->isValid($this->scalar($input, '_csrf_token'))) {
-            return $this->error('The request could not be verified.', 403);
+            return $this->error('No se pudo verificar la solicitud.', 403);
         }
 
         try {
@@ -65,30 +66,30 @@ final class RepresentativeAcknowledgementController extends Controller
             $this->session->put(
                 self::FLASH_SUCCESS_KEY,
                 $output->completionId === null
-                    ? 'No institutional acknowledgements are required for this Academic Period.'
-                    : 'Institutional Acknowledgements completed successfully.',
+                    ? 'No se requieren aceptaciones institucionales para este período académico.'
+                    : 'Aceptaciones institucionales completadas correctamente.',
             );
         } catch (InstitutionalAcknowledgementsAlreadyCompleted) {
             $this->session->put(
                 self::FLASH_SUCCESS_KEY,
-                'Institutional Acknowledgements were already completed for this Academic Period.',
+                'Las aceptaciones institucionales ya están completas para este período académico.',
             );
         } catch (InvalidAcknowledgementConfirmation) {
             $this->session->put(
                 self::FLASH_ERROR_KEY,
-                'The requirements changed. Review the current requirements and try again.',
+                'Los requisitos cambiaron. Revise los requisitos actuales e inténtelo nuevamente.',
             );
         } catch (ActiveAcademicPeriodUnavailable) {
             $this->session->put(
                 self::FLASH_ERROR_KEY,
-                'No active Academic Period is currently configured.',
+                'No hay un período académico activo configurado.',
             );
 
             return $this->redirect('/representative', 303);
         } catch (RepresentativeAcknowledgementAccessUnavailable) {
             return $this->forbidden();
         } catch (InvalidPersistedAcknowledgementResult) {
-            return $this->error('The operation could not be confirmed.', 422);
+            return $this->error('No se pudo confirmar la operación.', 422);
         }
 
         return $this->redirect('/representative/acknowledgements', 303);
@@ -99,7 +100,7 @@ final class RepresentativeAcknowledgementController extends Controller
     {
         if (!is_array($values)) {
             throw new InvalidAcknowledgementConfirmation(
-                'Institutional Acknowledgements confirmation is invalid.'
+                'La confirmación de aceptaciones institucionales no es válida.'
             );
         }
 
@@ -107,13 +108,13 @@ final class RepresentativeAcknowledgementController extends Controller
         foreach ($values as $value) {
             if (!is_int($value) && !is_string($value)) {
                 throw new InvalidAcknowledgementConfirmation(
-                    'Institutional Acknowledgements confirmation is invalid.'
+                    'La confirmación de aceptaciones institucionales no es válida.'
                 );
             }
             $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
             if (!is_int($id)) {
                 throw new InvalidAcknowledgementConfirmation(
-                    'Institutional Acknowledgements confirmation is invalid.'
+                    'La confirmación de aceptaciones institucionales no es válida.'
                 );
             }
             $ids[] = $id;
@@ -138,16 +139,14 @@ final class RepresentativeAcknowledgementController extends Controller
 
     private function forbidden(): string
     {
-        return $this->error('Representative acknowledgement access is unavailable.', 403);
+        return $this->error('No tiene acceso a las aceptaciones institucionales.', 403);
     }
 
     private function error(string $message, int $status): string
     {
         http_response_code($status);
 
-        return '<h1>Institutional Acknowledgements unavailable</h1><p role="alert">'
-            . htmlspecialchars($message, ENT_QUOTES, 'UTF-8')
-            . '</p><p><a href="/representative">Back to Representative Portal</a></p>';
+        return SafeErrorPage::render($status, $message, '/representative', 'Volver al portal');
     }
 
     private function redirect(string $location, int $status): string

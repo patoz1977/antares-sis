@@ -64,9 +64,8 @@ final readonly class SharedShellDataFactory
     {
         return [
             $this->item('Inicio', '/representative', 'bi-house-door', $path, ['/representative'], true),
-            $this->item('Matrícula', '/representative/enrollment', 'bi-journal-check', $path, ['/representative/enrollment']),
-            $this->item('Recursos familiares', '/representative/resources', 'bi-house-heart', $path, ['/representative/resources']),
-            $this->item('Confirmaciones', '/representative/acknowledgements', 'bi-file-earmark-check', $path, ['/representative/acknowledgements']),
+            $this->item('Actualización de datos', '/representative/data', 'bi-person-lines-fill', $path, ['/representative/data', '/representative/resources']),
+            $this->item('Matrícula', '/representative/enrollment', 'bi-journal-check', $path, ['/representative/enrollment', '/representative/acknowledgements']),
         ];
     }
 

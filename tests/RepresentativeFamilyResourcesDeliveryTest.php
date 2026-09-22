@@ -68,6 +68,7 @@ use App\Family\Http\FamilyResourceFormOptions;
 use App\Family\Http\FamilyResourceFormOptionsProvider;
 use App\Family\Http\RepresentativeFamilyResourceController;
 use App\IdentityAccess\Http\RepresentativePortalController;
+use App\IdentityAccess\Application\Contract\Clock;
 use App\Person\Application\GetPerson;
 use App\Person\Domain\Person;
 use App\Person\Domain\PersonStatus;
@@ -119,13 +120,13 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         foreach ($approved as $route) {
             deliveryAssertContains($route, $routes);
         }
-        assertSameValue(21, substr_count($routes, "'/representative/resources"));
-        assertSameValue(21, substr_count($routes, '[$representativeFamilyResourceController,'));
+        assertSameValue(24, substr_count($routes, "'/representative/resources"));
+        assertSameValue(24, substr_count($routes, '[$representativeFamilyResourceController,'));
 
         $start = strpos($routes, "\$router->get(\n    '/representative/resources'");
         $end = strpos($routes, "\$router->get('/persons'", is_int($start) ? $start : 0);
         $portalRoutes = is_int($start) && is_int($end) ? substr($routes, $start, $end - $start) : '';
-        assertSameValue(21, substr_count($portalRoutes, 'AuthenticationMiddleware::class'));
+        assertSameValue(24, substr_count($portalRoutes, 'AuthenticationMiddleware::class'));
         assertSameValue(false, str_contains($portalRoutes, 'FamilyAdministrationMiddleware'));
         assertSameValue(false, str_contains($portalRoutes, 'PersonAdministrationMiddleware'));
         assertSameValue(21, substr_count($routes, "'/families/resources"));
@@ -144,12 +145,45 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         $single = representativeFamilyResourcesFixture();
         $page = representativeFamilyResourcesGet($single['controller']);
         assertSameValue(200, http_response_code());
-        deliveryAssertContains('Recursos familiares', $single['portal']->index());
+        deliveryAssertContains('Actualización de datos', $single['portal']->index());
         deliveryAssertContains('Familia actual', $page);
+        deliveryAssertContains('Recursos existentes', $page);
+        deliveryAssertContains('Asignaciones', $page);
+        deliveryAssertContains('Crear nueva dirección', $page);
+        assertSameValue(false, str_contains($page, 'Cambiar familia'));
+        assertSameValue(false, str_contains($page, 'name="started_at"'));
+        assertSameValue(false, str_contains($page, 'name="ended_at"'));
+        deliveryAssertContains('<summary class="btn btn-link p-0">Editar</summary>', $page);
+        deliveryAssertContains('<button class="btn btn-link p-0" type="submit">Desactivar</button>', $page);
         deliveryAssertContains('Family &lt;A&gt;', $page);
         deliveryAssertContains('&lt;script&gt;Student&lt;/script&gt; &amp; One', $page);
         assertSameValue(false, str_contains($page, '<script>Student</script>'));
         assertSameValue(false, str_contains($page, 'Historical Student'));
+
+        $contacts = representativeFamilyResourcesScreen($single['controller'], 'emergency-contacts');
+        deliveryAssertContains('Crear nuevo contacto de emergencia', $contacts);
+        deliveryAssertContains('Teléfono fijo', $contacts);
+        deliveryAssertContains('<select name="priority">', $contacts);
+        deliveryAssertContains('<option value="10">10</option>', $contacts);
+        deliveryAssertContains('<summary class="btn btn-link p-0">Editar</summary>', $contacts);
+        deliveryAssertContains('<button class="btn btn-link p-0" type="submit">Desactivar</button>', $contacts);
+        assertSameValue(false, str_contains($contacts, 'Crear nueva dirección'));
+        assertSameValue(false, str_contains($contacts, 'Crear nueva persona autorizada'));
+        $pickups = representativeFamilyResourcesScreen($single['controller'], 'authorized-pickups');
+        deliveryAssertContains('Crear nueva persona autorizada', $pickups);
+        deliveryAssertContains('Teléfono fijo', $pickups);
+        deliveryAssertContains('<summary class="btn btn-link p-0">Editar</summary>', $pickups);
+        deliveryAssertContains('<button class="btn btn-link p-0" type="submit">Desactivar</button>', $pickups);
+        $viewSource = file_get_contents(dirname(__DIR__) . '/resources/views/representative-portal/resources.php');
+        if (!is_string($viewSource)) {
+            throw new RuntimeException('Representative resources View source is unavailable.');
+        }
+        deliveryAssertContains(
+            '<button class="btn btn-link p-0" type="submit">Eliminar asignación</button>',
+            $viewSource,
+        );
+        assertSameValue(false, str_contains($pickups, 'Crear nueva dirección'));
+        assertSameValue(false, str_contains($pickups, 'Crear nuevo contacto de emergencia'));
 
         $multiple = representativeFamilyResourcesFixture(withSecondFamily: true);
         assertSameValue('', representativeFamilyResourcesGet($multiple['controller']));
@@ -177,7 +211,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         );
 
         assertSameValue(403, http_response_code());
-        deliveryAssertContains('Family resources unavailable', $response);
+        deliveryAssertContains('recurso familiar solicitado no está disponible', $response);
         assertSameValue($before, $fixture['families']->saveCalls());
         $familyB = (new GetFamilyResources($fixture['families']))->handle(600);
         assertSameValue('Address 11', familyResourcesFindById($familyB->addresses, 11)->label);
@@ -214,6 +248,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         ));
         assertSameValue(1, count($self));
         assertSameValue(1, count($other));
+        assertSameValue('2026-08-11 18:19:20', $self[0]->startedAt->format('Y-m-d H:i:s'));
 
         $page = representativeFamilyResourcesGet($fixture['controller']);
         assertSameValue(false, str_contains($page, 'name="representative_id"'));
@@ -228,7 +263,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
             'ended_at' => '2026-08-11T10:00',
         ]);
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('Selected resource is not available', $denied);
+        deliveryAssertContains('recurso seleccionado no está disponible', $denied);
         assertSameValue($before, $fixture['families']->saveCalls());
 
         representativeFamilyResourcesPost($fixture['controller'], 'assignRepresentativeAddress', [
@@ -253,7 +288,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
             $before = $fixture['families']->saveCalls();
             $response = representativeFamilyResourcesPost($fixture['controller'], $method, $input);
             assertSameValue(422, http_response_code());
-            deliveryAssertContains('This address cannot be changed from your account.', $response);
+            deliveryAssertContains('No puede cambiar esta dirección desde su cuenta.', $response);
             assertSameValue(false, str_contains($response, 'Representative 44'));
             assertSameValue($before, $fixture['families']->saveCalls());
         }
@@ -280,7 +315,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
             representativeFamilyResourcesAddressPost(500, ['family_address_id' => '12']),
         );
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('This address cannot be changed from your account.', $shared);
+        deliveryAssertContains('No puede cambiar esta dirección desde su cuenta.', $shared);
     });
 
     $runner->add('Representative operates only active related Students using human labels', function (): void {
@@ -316,7 +351,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
                 'started_at' => '2026-08-11T13:00',
             ]);
             assertSameValue(422, http_response_code());
-            deliveryAssertContains('Selected resource is not available', $denied);
+            deliveryAssertContains('recurso seleccionado no está disponible', $denied);
             assertSameValue($before, $fixture['families']->saveCalls());
         }
 
@@ -379,7 +414,7 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
             representativeFamilyResourcesEmergencyPost(['relationship_type_id' => '999']),
         );
         assertSameValue(422, http_response_code());
-        deliveryAssertContains('active relationship type', $invalidCatalog);
+        deliveryAssertContains('parentesco activo', $invalidCatalog);
         assertSameValue($before, $fixture['families']->saveCalls());
     });
 
@@ -534,7 +569,12 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
                 'observations' => '"quoted" & safe',
             ]),
         );
-        $page = representativeFamilyResourcesGet($fixture['controller']);
+        $pages = [
+            representativeFamilyResourcesGet($fixture['controller']),
+            representativeFamilyResourcesScreen($fixture['controller'], 'emergency-contacts'),
+            representativeFamilyResourcesScreen($fixture['controller'], 'authorized-pickups'),
+        ];
+        $page = implode("\n", $pages);
         foreach (['&lt;script&gt;Address', '&lt;script&gt;Contact', '&lt;script&gt;Pickup', '&amp;'] as $escaped) {
             deliveryAssertContains($escaped, $page);
         }
@@ -560,10 +600,13 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         $view = (string) file_get_contents(
             dirname(__DIR__) . '/resources/views/representative-portal/resources.php'
         );
-        foreach (['Enrollment', 'Submission', 'InstitutionalDocument', 'Billing', 'Medical', 'Transport',
+        foreach (['Submission', 'InstitutionalDocument', 'Billing', 'Medical', 'Transport',
             'leave-alone', 'Student Portal', 'ajax', 'province', 'canton', 'parish'] as $forbidden) {
             assertSameValue(false, stripos($view, $forbidden) !== false, $forbidden);
         }
+        deliveryAssertContains('/representative/enrollment', $view);
+        deliveryAssertContains('Eliminar asignación', $view);
+        assertSameValue(false, str_contains($controller, 'return_url'));
         assertSameValue(0, preg_match('/antares|ueant|colegio/i', $view));
         assertSameValue(true, str_contains($view, 'htmlspecialchars'));
 
@@ -666,6 +709,12 @@ function representativeFamilyResourcesFixture(
         new FakeDeliveryCsrf(),
         $identity['session'],
         $provider,
+        new class implements Clock {
+            public function now(): DateTimeImmutable
+            {
+                return new DateTimeImmutable('2026-08-11 18:19:20+00:00');
+            }
+        },
     );
 
     return array_merge($identity, [
@@ -675,6 +724,7 @@ function representativeFamilyResourcesFixture(
             $identity['select'],
             new FakeDeliveryCsrf(),
             $acknowledgements['state'],
+            representativePortalSummaryProvider($families),
         ),
         'persons' => $persons,
         'students' => $students,
@@ -849,9 +899,22 @@ function representativeFamilyResourcesStudent(
 
 function representativeFamilyResourcesGet(RepresentativeFamilyResourceController $controller): string
 {
-    deliveryRequest('GET', '/representative/resources');
+    deliveryRequest('GET', '/representative/resources/addresses');
 
-    return $controller->index();
+    return $controller->addresses();
+}
+
+function representativeFamilyResourcesScreen(
+    RepresentativeFamilyResourceController $controller,
+    string $screen,
+): string {
+    deliveryRequest('GET', '/representative/resources/' . $screen);
+
+    return match ($screen) {
+        'emergency-contacts' => $controller->emergencyContacts(),
+        'authorized-pickups' => $controller->authorizedPickups(),
+        default => $controller->addresses(),
+    };
 }
 
 function representativeFamilyResourcesStatus(RepresentativeFamilyResourceController $controller): int

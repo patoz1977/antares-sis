@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\InstitutionalDocuments\Http;
 
+use App\Shared\Http\SafeErrorPage;
 use App\AcademicCore\Application\ActivateAcademicPeriod;
 use App\AcademicCore\Application\DeactivateAcademicPeriod;
 use App\AcademicCore\Application\Exception\AcademicPeriodNotFound;
@@ -59,14 +60,14 @@ final class InstitutionalAcknowledgementController extends Controller
         if ($periodId === null) {
             $this->session->remove(self::TRUSTED_PERIOD_KEY);
 
-            return $this->contextError('Select a valid Academic Period.', 422, $options);
+            return $this->contextError('Seleccione un período académico válido.', 422, $options);
         }
 
         $period = $this->periods->findById($periodId);
         if ($period === null) {
             $this->session->remove(self::TRUSTED_PERIOD_KEY);
 
-            return $this->contextError('Academic Period not found.', 404, $options);
+            return $this->contextError('No se encontró el período académico.', 404, $options);
         }
 
         $this->session->put(self::TRUSTED_PERIOD_KEY, $periodId);
@@ -95,7 +96,7 @@ final class InstitutionalAcknowledgementController extends Controller
                 $data['officialReference'],
                 $data['status'],
             ));
-        }, 'Requirement created successfully.');
+        }, 'Requisito creado correctamente.');
     }
 
     public function update(): string
@@ -104,7 +105,7 @@ final class InstitutionalAcknowledgementController extends Controller
             [$data, $errors] = $this->requirementData($values, false);
             $requirementId = $this->positiveInteger($values['requirement_id'] ?? null);
             if ($requirementId === null) {
-                $errors[] = 'Select a valid Requirement.';
+                $errors[] = 'Seleccione un requisito válido.';
             }
             if ($errors !== []) {
                 throw new InvalidFormInput($errors);
@@ -116,26 +117,26 @@ final class InstitutionalAcknowledgementController extends Controller
                 $data['url'],
                 $data['officialReference'],
             ));
-        }, 'Requirement updated successfully.');
+        }, 'Requisito actualizado correctamente.');
     }
 
     public function activate(): string
     {
         return $this->status(fn (int $id, int $periodId): mixed =>
-            $this->activateRequirement->handle($id, $periodId), 'Requirement activated successfully.');
+            $this->activateRequirement->handle($id, $periodId), 'Requisito activado correctamente.');
     }
 
     public function deactivate(): string
     {
         return $this->status(fn (int $id, int $periodId): mixed =>
-            $this->deactivateRequirement->handle($id, $periodId), 'Requirement deactivated successfully.');
+            $this->deactivateRequirement->handle($id, $periodId), 'Requisito desactivado correctamente.');
     }
 
     public function activateAcademicPeriod(): string
     {
         return $this->changeAcademicPeriodStatus(
             fn (int $id): mixed => $this->activateAcademicPeriod->handle($id),
-            'Academic Period activated successfully.',
+            'Período académico activado correctamente.',
         );
     }
 
@@ -143,7 +144,7 @@ final class InstitutionalAcknowledgementController extends Controller
     {
         return $this->changeAcademicPeriodStatus(
             fn (int $id): mixed => $this->deactivateAcademicPeriod->handle($id),
-            'Academic Period deactivated successfully.',
+            'Período académico desactivado correctamente.',
         );
     }
 
@@ -153,12 +154,12 @@ final class InstitutionalAcknowledgementController extends Controller
         $input = (new Request())->input();
         $token = $this->scalar($input, '_csrf_token');
         if (!$this->csrf->isValid($token)) {
-            return $this->plainError('The request could not be verified.', 419);
+            return $this->plainError('No se pudo verificar la solicitud.', 419);
         }
 
         $period = $this->trustedPeriod($input);
         if ($period === null) {
-            return $this->plainError('Academic Period context is unavailable.', 422);
+            return $this->plainError('El contexto del período académico no está disponible.', 422);
         }
 
         $errors = [];
@@ -171,11 +172,11 @@ final class InstitutionalAcknowledgementController extends Controller
         } catch (InvalidFormInput $exception) {
             return $this->renderFailure($period, $values, $exception->errors);
         } catch (AcknowledgementRequirementNotFound) {
-            return $this->renderFailure($period, $values, ['Requirement was not found.']);
+            return $this->renderFailure($period, $values, ['No se encontró el requisito.']);
         } catch (InvalidInstitutionalAcknowledgementState) {
-            return $this->renderFailure($period, $values, ['Requirement could not be changed.']);
+            return $this->renderFailure($period, $values, ['No se pudo cambiar el requisito.']);
         } catch (InvalidPersistedAcknowledgementResult) {
-            return $this->renderFailure($period, $values, ['The operation could not be confirmed.']);
+            return $this->renderFailure($period, $values, ['No se pudo confirmar la operación.']);
         }
 
         $this->session->put(self::FLASH_SUCCESS_KEY, $success);
@@ -188,7 +189,7 @@ final class InstitutionalAcknowledgementController extends Controller
         return $this->mutate(function (int $periodId, array $values) use ($operation): void {
             $requirementId = $this->positiveInteger($values['requirement_id'] ?? null);
             if ($requirementId === null) {
-                throw new InvalidFormInput(['Select a valid Requirement.']);
+                throw new InvalidFormInput(['Seleccione un requisito válido.']);
             }
             $operation($requirementId, $periodId);
         }, $success);
@@ -199,24 +200,24 @@ final class InstitutionalAcknowledgementController extends Controller
     {
         $input = (new Request())->input();
         if (!$this->csrf->isValid($this->scalar($input, '_csrf_token'))) {
-            return $this->plainError('The request could not be verified.', 419);
+            return $this->plainError('No se pudo verificar la solicitud.', 419);
         }
 
         $periodId = $this->positiveInteger($input['academic_period_id'] ?? null);
         if ($periodId === null) {
-            return $this->plainError('Select a valid Academic Period.', 422);
+            return $this->plainError('Seleccione un período académico válido.', 422);
         }
 
         try {
             $operation($periodId);
         } catch (AcademicPeriodNotFound) {
-            return $this->plainError('Academic Period was not found.', 404);
+            return $this->plainError('No se encontró el período académico.', 404);
         } catch (AcademicPeriodOperationalStateConflict) {
-            return $this->plainError('Academic Period operational state is inconsistent.', 409);
+            return $this->plainError('El estado del período académico es inconsistente.', 409);
         } catch (InvalidPersistedAcademicPeriodResult) {
-            return $this->plainError('The Academic Period operation could not be confirmed.', 409);
+            return $this->plainError('No se pudo confirmar la operación del período académico.', 409);
         } catch (RuntimeException) {
-            return $this->plainError('The Academic Period operation is unavailable.', 409);
+            return $this->plainError('La operación del período académico no está disponible.', 409);
         }
 
         $this->session->put(self::FLASH_SUCCESS_KEY, $success);
@@ -244,16 +245,16 @@ final class InstitutionalAcknowledgementController extends Controller
         $officialReference = $values['official_reference'] ?? '';
         $status = $creating ? ($values['status'] ?? '') : '';
         if ($title === '' || mb_strlen($title) > 200) {
-            $errors[] = 'Title is required and must not exceed 200 characters.';
+            $errors[] = 'El título es obligatorio y no debe superar 200 caracteres.';
         }
         if ($url === '' || mb_strlen($url) > 500) {
-            $errors[] = 'URL is required and must not exceed 500 characters.';
+            $errors[] = 'La URL es obligatoria y no debe superar 500 caracteres.';
         }
         if (mb_strlen($officialReference) > 255) {
-            $errors[] = 'Official Reference must not exceed 255 characters.';
+            $errors[] = 'La referencia oficial no debe superar 255 caracteres.';
         }
         if ($creating && !in_array($status, self::ALLOWED_STATUSES, true)) {
-            $errors[] = 'Select a valid Status.';
+            $errors[] = 'Seleccione un estado válido.';
         }
 
         return [[
@@ -297,7 +298,7 @@ final class InstitutionalAcknowledgementController extends Controller
         http_response_code($status);
 
         return $this->view('institutional-acknowledgements.index', [
-            'title' => 'Institutional Acknowledgements',
+            'title' => 'Aceptaciones institucionales',
             'periods' => $periods,
             'selectedPeriod' => $selectedPeriod,
             'requirements' => $requirements,
@@ -359,8 +360,6 @@ final class InstitutionalAcknowledgementController extends Controller
     {
         http_response_code($status);
 
-        return '<h1>Institutional Acknowledgements unavailable</h1><p role="alert">'
-            . htmlspecialchars($message, ENT_QUOTES, 'UTF-8')
-            . '</p><p><a href="/institutional-acknowledgements">Back</a></p>';
+        return SafeErrorPage::render($status, $message, '/institutional-acknowledgements', 'Volver a documentos');
     }
 }
