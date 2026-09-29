@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\AcademicCore\Infrastructure\Persistence;
 
+use App\AcademicCore\Application\AcademicPeriodCodeLookup;
 use App\AcademicCore\Domain\AcademicPeriod;
 use App\AcademicCore\Domain\AcademicPeriodRepository;
 use App\AcademicCore\Domain\AcademicPeriodStatus;
@@ -18,7 +19,7 @@ use DateTimeZone;
 use PDO;
 use RuntimeException;
 
-final class PdoAcademicPeriodRepository implements AcademicPeriodRepository
+final class PdoAcademicPeriodRepository implements AcademicPeriodRepository, AcademicPeriodCodeLookup
 {
     private const STATUS_TYPE = 'GENERAL_STATUS';
 
@@ -36,6 +37,18 @@ final class PdoAcademicPeriodRepository implements AcademicPeriodRepository
         $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
         if (count($rows) > 1) {
             throw new RuntimeException('AcademicPeriod identity resolved more than one row.');
+        }
+
+        return $rows === [] ? null : $this->mapRow($rows[0]);
+    }
+
+    public function findByCode(AcademicPeriodCode $code): ?AcademicPeriod
+    {
+        $statement = $this->connection->prepare($this->selectSql() . ' WHERE ap.code = :code');
+        $statement->execute([':code' => $code->value()]);
+        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+        if (count($rows) > 1) {
+            throw new RuntimeException('AcademicPeriod code resolved more than one row.');
         }
 
         return $rows === [] ? null : $this->mapRow($rows[0]);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\AcademicCore\Infrastructure\Persistence;
 
+use App\AcademicCore\Application\AcademicPlacementCodeReferenceProvider;
 use App\AcademicCore\Application\AcademicPlacementReferenceProvider;
 use App\AcademicCore\Application\Dto\AcademicGradeReference;
 use App\AcademicCore\Application\Dto\AcademicSectionReference;
@@ -11,7 +12,9 @@ use Core\Database\ConnectionManager;
 use PDO;
 use RuntimeException;
 
-final class PdoAcademicPlacementReferenceProvider implements AcademicPlacementReferenceProvider
+final class PdoAcademicPlacementReferenceProvider implements
+    AcademicPlacementReferenceProvider,
+    AcademicPlacementCodeReferenceProvider
 {
     private const STATUS_TYPE = 'GENERAL_STATUS';
 
@@ -48,6 +51,24 @@ final class PdoAcademicPlacementReferenceProvider implements AcademicPlacementRe
         return $rows === [] ? null : $this->mapSection($rows[0]);
     }
 
+    public function findGradeByCode(string $gradeCode): ?AcademicGradeReference
+    {
+        $statement = $this->connection->prepare($this->gradeSql() . ' WHERE g.code = :code');
+        $statement->execute([':code' => $gradeCode]);
+
+        return $this->mapUniqueGrade($statement->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    public function findSectionByCode(string $sectionCode): ?AcademicSectionReference
+    {
+        $statement = $this->connection->prepare(
+            $this->sectionSql() . ' WHERE s.code = :code'
+        );
+        $statement->execute([':code' => $sectionCode]);
+
+        return $this->mapUniqueSection($statement->fetchAll(PDO::FETCH_ASSOC));
+    }
+
     public function findNextActiveGradeAfterSortOrder(int $sortOrder): ?AcademicGradeReference
     {
         if ($sortOrder <= 0) {
@@ -76,6 +97,14 @@ final class PdoAcademicPlacementReferenceProvider implements AcademicPlacementRe
             . 'INNER JOIN status_types status_type ON status_type.id = status_row.status_type_id';
     }
 
+    private function sectionSql(): string
+    {
+        return 'SELECT s.id, s.code, s.name, status_row.code AS status_code, '
+            . 'status_type.code AS status_type_code FROM sections s '
+            . 'INNER JOIN statuses status_row ON status_row.id = s.status_id '
+            . 'INNER JOIN status_types status_type ON status_type.id = status_row.status_type_id';
+    }
+
     /** @param list<array<string, mixed>> $rows */
     private function mapUniqueGrade(array $rows): ?AcademicGradeReference
     {
@@ -84,6 +113,16 @@ final class PdoAcademicPlacementReferenceProvider implements AcademicPlacementRe
         }
 
         return $rows === [] ? null : $this->mapGrade($rows[0]);
+    }
+
+    /** @param list<array<string, mixed>> $rows */
+    private function mapUniqueSection(array $rows): ?AcademicSectionReference
+    {
+        if (count($rows) > 1) {
+            throw new RuntimeException('Section lookup resolved more than one row.');
+        }
+
+        return $rows === [] ? null : $this->mapSection($rows[0]);
     }
 
     /** @param array<string, mixed> $row */
