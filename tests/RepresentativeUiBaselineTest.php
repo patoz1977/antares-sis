@@ -169,8 +169,8 @@ function registerRepresentativeUiBaselineTests(TestRunner $runner): void
         }
 
         $routes = representativeUiSource('routes/web.php');
-        assertSameValue(46, substr_count($routes, '$router->get('));
-        assertSameValue(71, substr_count($routes, '$router->post('));
+        assertSameValue(48, substr_count($routes, '$router->get('));
+        assertSameValue(73, substr_count($routes, '$router->post('));
     });
 }
 

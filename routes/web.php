@@ -10,6 +10,8 @@ use App\BulkImport\Http\BulkImportApplyController;
 use App\BulkImport\Http\BulkImportController;
 use App\BulkImport\Http\BulkImportTemplateController;
 use App\Enrollment\Http\AdministrativeEnrollmentController;
+use App\Enrollment\Http\AcademicInitializationApplyController;
+use App\Enrollment\Http\AcademicInitializationController;
 use App\Enrollment\Http\EnrollmentAdministrationMiddleware;
 use App\Enrollment\Http\EnrollmentReportingController;
 use App\Enrollment\Http\RepresentativeEnrollmentController;
@@ -36,6 +38,10 @@ $representativeUserController = $app->container()->make(RepresentativeUserContro
 $bulkImportController = $app->container()->make(BulkImportController::class);
 $bulkImportApplyController = $app->container()->make(BulkImportApplyController::class);
 $bulkImportTemplateController = $app->container()->make(BulkImportTemplateController::class);
+$academicInitializationController = $app->container()->make(AcademicInitializationController::class);
+$academicInitializationApplyController = $app->container()->make(
+    AcademicInitializationApplyController::class,
+);
 $administrativeEnrollmentController = $app->container()->make(AdministrativeEnrollmentController::class);
 $enrollmentReportingController = $app->container()->make(EnrollmentReportingController::class);
 $representativeEnrollmentController = $app->container()->make(RepresentativeEnrollmentController::class);
@@ -108,6 +114,26 @@ $router->post(
 $router->post(
     '/admin/bulk-import/apply',
     [$bulkImportApplyController, 'apply'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->get(
+    '/admin/academic-initialization',
+    [$academicInitializationController, 'index'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->get(
+    '/admin/academic-initialization/result',
+    [$academicInitializationController, 'result'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->post(
+    '/admin/academic-initialization/preview',
+    [$academicInitializationController, 'preview'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->post(
+    '/admin/academic-initialization/apply',
+    [$academicInitializationApplyController, 'apply'],
     $enrollmentAdministrationMiddleware,
 );
 $router->get(

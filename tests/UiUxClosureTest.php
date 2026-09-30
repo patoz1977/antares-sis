@@ -169,8 +169,8 @@ function registerUiUxClosureTests(TestRunner $runner): void
 
     $runner->add('E014 Phase 5 keeps route ownership reports and progressive autosave contracts exact', function (): void {
         $routes = uiClosureSource('routes/web.php');
-        assertSameValue(46, substr_count($routes, '$router->get('));
-        assertSameValue(71, substr_count($routes, '$router->post('));
+        assertSameValue(48, substr_count($routes, '$router->get('));
+        assertSameValue(73, substr_count($routes, '$router->post('));
 
         foreach (['summary', 'students', 'directory', 'billing', 'medical'] as $report) {
             $view = uiClosureSource('resources/views/reports/enrollments/' . $report . '.php');

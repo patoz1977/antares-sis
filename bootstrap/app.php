@@ -19,6 +19,8 @@ use Core\Session\SessionInterface;
 use App\AcademicCore\Application\ActivateAcademicPeriod;
 use App\AcademicCore\Application\DeactivateAcademicPeriod;
 use App\AcademicCore\Application\GetActiveAcademicPeriod;
+use App\AcademicCore\Application\AcademicPeriodCodeLookup;
+use App\AcademicCore\Application\AcademicPlacementCodeReferenceProvider;
 use App\AcademicCore\Application\AcademicPlacementReferenceProvider;
 use App\AcademicCore\Domain\AcademicPeriodRepository;
 use App\AcademicCore\Infrastructure\Persistence\PdoAcademicPeriodRepository;
@@ -44,6 +46,11 @@ use App\Enrollment\Application\Administrative\GetAdministrativeEnrollmentReview;
 use App\Enrollment\Application\Administrative\GetAdministrativeEnrollmentReviewContext;
 use App\Enrollment\Application\Administrative\ListSubmittedEnrollments;
 use App\Enrollment\Application\Administrative\ReopenEnrollment;
+use App\Enrollment\Application\AcademicInitialization\AcademicInitializationPreflight;
+use App\Enrollment\Application\AcademicInitialization\AcademicInitializationStateClassifier;
+use App\Enrollment\Application\AcademicInitialization\ApplyAcademicInitialization;
+use App\Enrollment\Application\AcademicInitialization\Contract\AcademicInitializationManifestReader;
+use App\Enrollment\Application\AcademicInitialization\PreviewAcademicInitialization;
 use App\Enrollment\Application\Administrative\SubmittedEnrollmentIdQuery;
 use App\Enrollment\Application\Reporting\AcademicPeriodReportingQuery;
 use App\Enrollment\Application\Reporting\EnrollmentSummaryQuery;
@@ -76,6 +83,10 @@ use App\Enrollment\Application\Submission\SubmitRepresentativeEnrollment;
 use App\Enrollment\Application\Support\EnrollmentDraftInitializer;
 use App\Enrollment\Domain\EnrollmentRepository;
 use App\Enrollment\Http\AdministrativeEnrollmentController;
+use App\Enrollment\Http\AcademicInitializationApplyController;
+use App\Enrollment\Http\AcademicInitializationController;
+use App\Enrollment\Http\AcademicInitializationDeliverySession;
+use App\Enrollment\Http\AcademicInitializationTemporaryFileStore;
 use App\Enrollment\Http\EnrollmentAdministrationMiddleware;
 use App\Enrollment\Http\EnrollmentReportCsvWriter;
 use App\Enrollment\Http\EnrollmentReportingController;
@@ -85,6 +96,8 @@ use App\Enrollment\Http\RepresentativeEnrollmentSubmissionViewDataFactory;
 use App\Enrollment\Http\RepresentativeEnrollmentAutosaveResponder;
 use App\Enrollment\Http\RepresentativeEnrollmentInputMapper;
 use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
+use App\Enrollment\Infrastructure\Csv\CsvAcademicInitializationManifestReader;
+use App\Enrollment\Infrastructure\Filesystem\LocalAcademicInitializationTemporaryFileStore;
 use App\Enrollment\Infrastructure\Persistence\PdoSubmittedEnrollmentIdQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoAcademicPeriodReportingQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoEnrollmentSummaryQuery;
@@ -192,6 +205,7 @@ use App\Representative\Domain\RepresentativeRepository;
 use App\Representative\Infrastructure\Persistence\PdoRepresentativeRepository;
 use App\Student\Application\CreateStudent;
 use App\Student\Application\GetStudent;
+use App\Student\Application\LockingStudentRepository;
 use App\Student\Domain\StudentRepository;
 use App\Student\Infrastructure\Persistence\PdoStudentRepository;
 use App\InstitutionalDocuments\Application\ActivateAcknowledgementRequirement;
@@ -388,13 +402,47 @@ $container->singleton(BulkImportErrorCsvWriter::class, BulkImportErrorCsvWriter:
 $container->singleton(BulkImportController::class, BulkImportController::class);
 $container->singleton(BulkImportApplyController::class, BulkImportApplyController::class);
 $container->singleton(BulkImportTemplateController::class, BulkImportTemplateController::class);
+$container->singleton(
+    AcademicInitializationManifestReader::class,
+    CsvAcademicInitializationManifestReader::class,
+);
+$container->singleton(
+    AcademicInitializationStateClassifier::class,
+    AcademicInitializationStateClassifier::class,
+);
+$container->singleton(AcademicInitializationPreflight::class, AcademicInitializationPreflight::class);
+$container->singleton(PreviewAcademicInitialization::class, PreviewAcademicInitialization::class);
+$container->singleton(ApplyAcademicInitialization::class, ApplyAcademicInitialization::class);
+$container->singleton(
+    AcademicInitializationDeliverySession::class,
+    AcademicInitializationDeliverySession::class,
+);
+$container->instance(
+    AcademicInitializationTemporaryFileStore::class,
+    new LocalAcademicInitializationTemporaryFileStore(
+        $root . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'tmp'
+            . DIRECTORY_SEPARATOR . 'academic-initialization',
+        $root . DIRECTORY_SEPARATOR . 'public',
+    ),
+);
+$container->singleton(AcademicInitializationController::class, AcademicInitializationController::class);
+$container->singleton(
+    AcademicInitializationApplyController::class,
+    AcademicInitializationApplyController::class,
+);
 $container->singleton(AcademicPeriodRepository::class, PdoAcademicPeriodRepository::class);
+$container->singleton(AcademicPeriodCodeLookup::class, PdoAcademicPeriodRepository::class);
 $container->singleton(AcademicPlacementReferenceProvider::class, PdoAcademicPlacementReferenceProvider::class);
+$container->singleton(
+    AcademicPlacementCodeReferenceProvider::class,
+    PdoAcademicPlacementReferenceProvider::class,
+);
 $container->singleton(GetActiveAcademicPeriod::class, GetActiveAcademicPeriod::class);
 $container->singleton(ActivateAcademicPeriod::class, ActivateAcademicPeriod::class);
 $container->singleton(DeactivateAcademicPeriod::class, DeactivateAcademicPeriod::class);
 $container->singleton(RepresentativeRepository::class, PdoRepresentativeRepository::class);
 $container->singleton(StudentRepository::class, PdoStudentRepository::class);
+$container->singleton(LockingStudentRepository::class, PdoStudentRepository::class);
 $container->singleton(EnrollmentRepository::class, PdoEnrollmentRepository::class);
 $container->singleton(SubmittedEnrollmentIdQuery::class, PdoSubmittedEnrollmentIdQuery::class);
 $container->singleton(AcademicPeriodReportingQuery::class, PdoAcademicPeriodReportingQuery::class);
