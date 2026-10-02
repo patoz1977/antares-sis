@@ -62,4 +62,40 @@ $reportCsvPath = is_string($reportCsvPath ?? null) ? $reportCsvPath : null;
 <p class="report-notice" role="status">Selecciona un período académico para generar este reporte.</p>
 <?php else: ?>
 <p>Período seleccionado: <strong><?= $escape($selectedPeriod->code . ' — ' . $selectedPeriod->name) ?></strong> (<?= $escape($selectedPeriod->status->value === 'ACTIVE' ? 'Activo' : 'Inactivo') ?>)</p>
+
+<section class="app-form-section" aria-labelledby="report-grade-section-heading">
+    <div class="d-flex flex-column flex-md-row justify-content-between gap-2 align-items-md-start">
+        <div>
+            <h2 class="h4" id="report-grade-section-heading">Grados y paralelos</h2>
+            <p class="text-body-secondary mb-0">Selecciona una o varias combinaciones de grado y paralelo presentes en este período. Sin selección se muestran todos.</p>
+        </div>
+        <?php if ($gradeSectionFilterActive): ?>
+        <a class="btn btn-sm btn-outline-secondary" href="<?= $escape($reportPath . $allGradeSectionsQuery) ?>">Mostrar todos</a>
+        <?php else: ?>
+        <span class="badge text-bg-primary">Todos</span>
+        <?php endif; ?>
+    </div>
+
+    <?php if ($gradeSectionOptions === []): ?>
+    <p class="report-notice mt-3 mb-0" role="status">Este período no tiene combinaciones completas de grado y paralelo disponibles para filtrar.</p>
+    <?php else: ?>
+    <form class="mt-3" method="get" action="<?= $escape($reportPath) ?>">
+        <input type="hidden" name="academic_period_id" value="<?= $escape($selectedPeriodId) ?>">
+        <fieldset>
+            <legend class="visually-hidden">Combinaciones de grado y paralelo</legend>
+            <div class="row g-2">
+<?php foreach ($gradeSectionOptions as $option): ?>
+                <div class="col-md-6 col-xl-4">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="grade_section[]" id="grade_section_<?= $escape($option->gradeId . '_' . $option->sectionId) ?>" value="<?= $escape($option->key()) ?>"<?= in_array($option->key(), $selectedGradeSections, true) ? ' checked' : '' ?>>
+                        <label class="form-check-label" for="grade_section_<?= $escape($option->gradeId . '_' . $option->sectionId) ?>"><?= $escape($option->label()) ?></label>
+                    </div>
+                </div>
+<?php endforeach; ?>
+            </div>
+        </fieldset>
+        <button class="btn btn-outline-primary mt-3" type="submit">Aplicar filtro</button>
+    </form>
+    <?php endif; ?>
+</section>
 <?php endif; ?>

@@ -54,6 +54,7 @@ use App\Enrollment\Application\AcademicInitialization\PreviewAcademicInitializat
 use App\Enrollment\Application\Administrative\SubmittedEnrollmentIdQuery;
 use App\Enrollment\Application\Reporting\AcademicPeriodReportingQuery;
 use App\Enrollment\Application\Reporting\EnrollmentSummaryQuery;
+use App\Enrollment\Application\Reporting\GradeSectionReportingQuery;
 use App\Enrollment\Application\Reporting\GetEnrollmentReportingPeriods;
 use App\Enrollment\Application\Reporting\GetEnrollmentSummaryReport;
 use App\Enrollment\Application\Reporting\GetStudentBillingReport;
@@ -61,6 +62,7 @@ use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
 use App\Enrollment\Application\Reporting\GetStudentMedicalReport;
 use App\Enrollment\Application\Reporting\GetStudentRepresentativeDirectory;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingPeriod;
+use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingContext;
 use App\Enrollment\Application\Reporting\StudentBillingReportQuery;
 use App\Enrollment\Application\Reporting\StudentEnrollmentListQuery;
 use App\Enrollment\Application\Reporting\StudentMedicalReportQuery;
@@ -101,6 +103,7 @@ use App\Enrollment\Infrastructure\Filesystem\LocalAcademicInitializationTemporar
 use App\Enrollment\Infrastructure\Persistence\PdoSubmittedEnrollmentIdQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoAcademicPeriodReportingQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoEnrollmentSummaryQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoGradeSectionReportingQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentBillingReportQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentEnrollmentListQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentMedicalReportQuery;
@@ -446,6 +449,7 @@ $container->singleton(LockingStudentRepository::class, PdoStudentRepository::cla
 $container->singleton(EnrollmentRepository::class, PdoEnrollmentRepository::class);
 $container->singleton(SubmittedEnrollmentIdQuery::class, PdoSubmittedEnrollmentIdQuery::class);
 $container->singleton(AcademicPeriodReportingQuery::class, PdoAcademicPeriodReportingQuery::class);
+$container->singleton(GradeSectionReportingQuery::class, PdoGradeSectionReportingQuery::class);
 $container->singleton(EnrollmentSummaryQuery::class, PdoEnrollmentSummaryQuery::class);
 $container->singleton(StudentEnrollmentListQuery::class, PdoStudentEnrollmentListQuery::class);
 $container->singleton(
@@ -456,6 +460,7 @@ $container->singleton(StudentBillingReportQuery::class, PdoStudentBillingReportQ
 $container->singleton(StudentMedicalReportQuery::class, PdoStudentMedicalReportQuery::class);
 $container->singleton(GetEnrollmentReportingPeriods::class, GetEnrollmentReportingPeriods::class);
 $container->singleton(ResolveEnrollmentReportingPeriod::class, ResolveEnrollmentReportingPeriod::class);
+$container->singleton(ResolveEnrollmentReportingContext::class, ResolveEnrollmentReportingContext::class);
 $container->singleton(GetEnrollmentSummaryReport::class, GetEnrollmentSummaryReport::class);
 $container->singleton(GetStudentEnrollmentReport::class, GetStudentEnrollmentReport::class);
 $container->singleton(GetStudentRepresentativeDirectory::class, GetStudentRepresentativeDirectory::class);

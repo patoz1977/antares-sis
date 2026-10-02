@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Enrollment\Infrastructure\Reporting;
 
 use App\Enrollment\Application\Reporting\EnrollmentReportingStatus;
+use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
 use App\Enrollment\Domain\ValueObject\BillingInformation;
 use App\Enrollment\Domain\ValueObject\IdentificationTypeId;
 use App\Enrollment\Domain\ValueObject\MedicalInformation;
@@ -36,6 +37,32 @@ abstract class PdoEnrollmentReportingQuery
         $statement->execute($parameters);
 
         return $statement->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** @param array<string, int|string> $parameters */
+    protected function gradeSectionPredicate(
+        string $enrollmentAlias,
+        int $academicPeriodId,
+        ?ReportingGradeSectionFilter $filter,
+        array &$parameters,
+    ): string {
+        $filter ??= ReportingGradeSectionFilter::all($academicPeriodId);
+        $filter->assertAcademicPeriod($academicPeriodId);
+        if ($filter->isAll()) {
+            return '1 = 1';
+        }
+
+        $pairs = [];
+        foreach ($filter->options() as $index => $option) {
+            $gradeParameter = ':reportGrade' . $index;
+            $sectionParameter = ':reportSection' . $index;
+            $pairs[] = "({$enrollmentAlias}.grade_id = {$gradeParameter} "
+                . "AND {$enrollmentAlias}.section_id = {$sectionParameter})";
+            $parameters[$gradeParameter] = $option->gradeId;
+            $parameters[$sectionParameter] = $option->sectionId;
+        }
+
+        return '(' . implode(' OR ', $pairs) . ')';
     }
 
     protected function positiveInt(mixed $value, string $field): int

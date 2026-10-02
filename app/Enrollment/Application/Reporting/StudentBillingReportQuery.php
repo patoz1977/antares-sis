@@ -9,5 +9,8 @@ use App\Enrollment\Application\Reporting\Dto\StudentBillingReportRow;
 interface StudentBillingReportQuery
 {
     /** @return list<StudentBillingReportRow> */
-    public function fetch(int $academicPeriodId): array;
+    public function fetch(
+        int $academicPeriodId,
+        ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+    ): array;
 }

@@ -14,10 +14,15 @@ final readonly class GetEnrollmentSummaryReport
     ) {
     }
 
-    public function handle(int $academicPeriodId): EnrollmentSummaryReport
+    public function handle(
+        int $academicPeriodId,
+        ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+    ): EnrollmentSummaryReport
     {
         $period = $this->resolvePeriod->handle($academicPeriodId);
-        $rows = $this->query->fetch($period->id);
+        $gradeSectionFilter ??= ReportingGradeSectionFilter::all($period->id);
+        $gradeSectionFilter->assertAcademicPeriod($period->id);
+        $rows = $this->query->fetch($period->id, $gradeSectionFilter);
         $total = array_sum(array_map(static fn ($row): int => $row->count, $rows));
 
         return new EnrollmentSummaryReport($period, $rows, $total);

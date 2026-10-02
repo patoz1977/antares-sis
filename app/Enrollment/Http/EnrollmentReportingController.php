@@ -5,16 +5,18 @@ declare(strict_types=1);
 namespace App\Enrollment\Http;
 
 use App\Controllers\Controller;
+use App\Enrollment\Application\Reporting\Dto\EnrollmentReportingContext;
 use App\Enrollment\Application\Reporting\Dto\EnrollmentReportingPeriods;
-use App\Enrollment\Application\Reporting\Dto\ReportingAcademicPeriod;
 use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingPeriodNotFound;
+use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingSelectionInvalid;
 use App\Enrollment\Application\Reporting\GetEnrollmentReportingPeriods;
 use App\Enrollment\Application\Reporting\GetEnrollmentSummaryReport;
 use App\Enrollment\Application\Reporting\GetStudentBillingReport;
 use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
 use App\Enrollment\Application\Reporting\GetStudentMedicalReport;
 use App\Enrollment\Application\Reporting\GetStudentRepresentativeDirectory;
-use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingPeriod;
+use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingContext;
 use App\Shared\Http\SafeErrorPage;
 use Core\Http\Request;
 use InvalidArgumentException;
@@ -24,7 +26,7 @@ final class EnrollmentReportingController extends Controller
 {
     public function __construct(
         private readonly GetEnrollmentReportingPeriods $getPeriods,
-        private readonly ResolveEnrollmentReportingPeriod $resolvePeriod,
+        private readonly ResolveEnrollmentReportingContext $resolveContext,
         private readonly GetEnrollmentSummaryReport $getSummary,
         private readonly GetStudentEnrollmentReport $getStudents,
         private readonly GetStudentRepresentativeDirectory $getDirectory,
@@ -37,14 +39,14 @@ final class EnrollmentReportingController extends Controller
     public function index(): string
     {
         try {
-            [$periods, $selected] = $this->reportingContext();
+            [$periods, $context] = $this->reportingContext();
             $this->noStore();
 
             return $this->view('reports.enrollments.index', $this->viewData(
                 'Basic Enrollment Reports',
                 '/reports/enrollments',
                 $periods,
-                $selected,
+                $context,
             ));
         } catch (Throwable $exception) {
             return $this->safeError($exception);
@@ -57,7 +59,8 @@ final class EnrollmentReportingController extends Controller
             'Enrollment Summary',
             '/reports/enrollments/summary',
             'reports.enrollments.summary',
-            fn (int $periodId): mixed => $this->getSummary->handle($periodId),
+            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
+                $this->getSummary->handle($periodId, $filter),
         );
     }
 
@@ -67,7 +70,8 @@ final class EnrollmentReportingController extends Controller
             'Student Enrollment List',
             '/reports/enrollments/students',
             'reports.enrollments.students',
-            fn (int $periodId): mixed => $this->getStudents->handle($periodId),
+            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
+                $this->getStudents->handle($periodId, $filter),
         );
     }
 
@@ -77,7 +81,8 @@ final class EnrollmentReportingController extends Controller
             'Student and Representative Directory',
             '/reports/enrollments/directory',
             'reports.enrollments.directory',
-            fn (int $periodId): mixed => $this->getDirectory->handle($periodId),
+            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
+                $this->getDirectory->handle($periodId, $filter),
         );
     }
 
@@ -87,7 +92,8 @@ final class EnrollmentReportingController extends Controller
             'Student Billing Information',
             '/reports/enrollments/billing',
             'reports.enrollments.billing',
-            fn (int $periodId): mixed => $this->getBilling->handle($periodId),
+            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
+                $this->getBilling->handle($periodId, $filter),
         );
     }
 
@@ -97,7 +103,8 @@ final class EnrollmentReportingController extends Controller
             'Student Medical Information',
             '/reports/enrollments/medical',
             'reports.enrollments.medical',
-            fn (int $periodId): mixed => $this->getMedical->handle($periodId),
+            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
+                $this->getMedical->handle($periodId, $filter),
         );
     }
 
@@ -105,7 +112,8 @@ final class EnrollmentReportingController extends Controller
     {
         return $this->csvReport(
             'enrollment-summary-period-',
-            fn (int $periodId): mixed => $this->getSummary->handle($periodId),
+            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
+                $this->getSummary->handle($periodId, $filter),
             fn (mixed $dataset): string => $this->csv->summary($dataset),
         );
     }
@@ -114,7 +122,8 @@ final class EnrollmentReportingController extends Controller
     {
         return $this->csvReport(
             'student-enrollment-period-',
-            fn (int $periodId): mixed => $this->getStudents->handle($periodId),
+            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
+                $this->getStudents->handle($periodId, $filter),
             fn (mixed $dataset): string => $this->csv->students($dataset),
         );
     }
@@ -123,7 +132,8 @@ final class EnrollmentReportingController extends Controller
     {
         return $this->csvReport(
             'student-directory-period-',
-            fn (int $periodId): mixed => $this->getDirectory->handle($periodId),
+            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
+                $this->getDirectory->handle($periodId, $filter),
             fn (mixed $dataset): string => $this->csv->directory($dataset),
         );
     }
@@ -132,7 +142,8 @@ final class EnrollmentReportingController extends Controller
     {
         return $this->csvReport(
             'student-billing-period-',
-            fn (int $periodId): mixed => $this->getBilling->handle($periodId),
+            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
+                $this->getBilling->handle($periodId, $filter),
             fn (mixed $dataset): string => $this->csv->billing($dataset),
         );
     }
@@ -141,20 +152,23 @@ final class EnrollmentReportingController extends Controller
     {
         return $this->csvReport(
             'student-medical-period-',
-            fn (int $periodId): mixed => $this->getMedical->handle($periodId),
+            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
+                $this->getMedical->handle($periodId, $filter),
             fn (mixed $dataset): string => $this->csv->medical($dataset),
         );
     }
 
-    /** @param callable(int): mixed $load */
+    /** @param callable(int, ReportingGradeSectionFilter): mixed $load */
     private function htmlReport(string $title, string $path, string $view, callable $load): string
     {
         try {
-            [$periods, $selected] = $this->reportingContext();
-            $dataset = $selected === null ? null : $load($selected->id);
+            [$periods, $context] = $this->reportingContext();
+            $dataset = $context === null
+                ? null
+                : $load($context->academicPeriod->id, $context->gradeSectionFilter);
             $this->noStore();
 
-            return $this->view($view, $this->viewData($title, $path, $periods, $selected) + [
+            return $this->view($view, $this->viewData($title, $path, $periods, $context) + [
                 'dataset' => $dataset,
             ]);
         } catch (Throwable $exception) {
@@ -162,18 +176,18 @@ final class EnrollmentReportingController extends Controller
         }
     }
 
-    /** @param callable(int): mixed $load @param callable(mixed): string $write */
+    /** @param callable(int, ReportingGradeSectionFilter): mixed $load @param callable(mixed): string $write */
     private function csvReport(string $filenamePrefix, callable $load, callable $write): string
     {
         try {
-            [, $selected] = $this->reportingContext();
-            if ($selected === null) {
+            [, $context] = $this->reportingContext();
+            if ($context === null) {
                 throw new InvalidArgumentException('An AcademicPeriod selection is required.');
             }
 
-            $dataset = $load($selected->id);
+            $dataset = $load($context->academicPeriod->id, $context->gradeSectionFilter);
             $content = $write($dataset);
-            $filename = $filenamePrefix . $selected->id . '.csv';
+            $filename = $filenamePrefix . $context->academicPeriod->id . '.csv';
 
             header('Content-Type: text/csv; charset=UTF-8');
             header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -186,14 +200,16 @@ final class EnrollmentReportingController extends Controller
         }
     }
 
-    /** @return array{EnrollmentReportingPeriods, ?ReportingAcademicPeriod} */
+    /** @return array{EnrollmentReportingPeriods, ?EnrollmentReportingContext} */
     private function reportingContext(): array
     {
         $query = (new Request())->query();
         $keys = array_keys($query);
         sort($keys, SORT_STRING);
-        if ($keys !== [] && $keys !== ['academic_period_id']) {
-            throw new InvalidArgumentException('Invalid reporting selector.');
+        foreach ($keys as $key) {
+            if (!in_array($key, ['academic_period_id', 'grade_section'], true)) {
+                throw new InvalidArgumentException('Invalid reporting selector.');
+            }
         }
 
         $periods = $this->getPeriods->handle();
@@ -205,7 +221,18 @@ final class EnrollmentReportingController extends Controller
             }
         }
 
-        return [$periods, $periodId === null ? null : $this->resolvePeriod->handle($periodId)];
+        $requestedGradeSections = $query['grade_section'] ?? null;
+        if ($periodId === null) {
+            if ($requestedGradeSections !== null) {
+                throw new EnrollmentReportingSelectionInvalid(
+                    'Grade/Section selection requires an AcademicPeriod.'
+                );
+            }
+
+            return [$periods, null];
+        }
+
+        return [$periods, $this->resolveContext->handle($periodId, $requestedGradeSections)];
     }
 
     /** @return array<string, mixed> */
@@ -213,9 +240,21 @@ final class EnrollmentReportingController extends Controller
         string $title,
         string $path,
         EnrollmentReportingPeriods $periods,
-        ?ReportingAcademicPeriod $selected,
+        ?EnrollmentReportingContext $context,
     ): array {
-        $periodQuery = $selected === null ? '' : '?academic_period_id=' . $selected->id;
+        $selected = $context?->academicPeriod;
+        $selectedGradeSections = $context?->gradeSectionFilter->keys() ?? [];
+        $periodParameters = $selected === null ? [] : ['academic_period_id' => $selected->id];
+        $reportParameters = $periodParameters;
+        if ($selectedGradeSections !== []) {
+            $reportParameters['grade_section'] = $selectedGradeSections;
+        }
+        $periodQuery = $reportParameters === []
+            ? ''
+            : '?' . http_build_query($reportParameters, '', '&', PHP_QUERY_RFC3986);
+        $allGradeSectionsQuery = $periodParameters === []
+            ? ''
+            : '?' . http_build_query($periodParameters, '', '&', PHP_QUERY_RFC3986);
 
         return [
             'title' => $title,
@@ -225,6 +264,10 @@ final class EnrollmentReportingController extends Controller
             'selectedPeriodId' => $selected?->id,
             'selectionRequired' => $selected === null,
             'periodQuery' => $periodQuery,
+            'allGradeSectionsQuery' => $allGradeSectionsQuery,
+            'gradeSectionOptions' => $context?->gradeSectionOptions ?? [],
+            'selectedGradeSections' => $selectedGradeSections,
+            'gradeSectionFilterActive' => $selectedGradeSections !== [],
         ];
     }
 
@@ -246,7 +289,9 @@ final class EnrollmentReportingController extends Controller
             default => 500,
         };
         $message = match ($status) {
-            400 => 'Seleccione un período académico válido.',
+            400 => $exception instanceof EnrollmentReportingSelectionInvalid
+                ? 'Selecciona combinaciones válidas de grado y paralelo.'
+                : 'Seleccione un período académico válido.',
             404 => 'El período académico no está disponible.',
             default => 'No se pudo generar el reporte.',
         };

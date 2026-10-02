@@ -9,5 +9,8 @@ use App\Enrollment\Application\Reporting\Dto\StudentRepresentativeDirectoryRow;
 interface StudentRepresentativeDirectoryQuery
 {
     /** @return list<StudentRepresentativeDirectoryRow> */
-    public function fetch(int $academicPeriodId): array;
+    public function fetch(
+        int $academicPeriodId,
+        ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+    ): array;
 }

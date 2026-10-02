@@ -6,13 +6,24 @@ namespace App\Enrollment\Infrastructure\Reporting;
 
 use App\Enrollment\Application\Reporting\Dto\StudentMedicalReportRow;
 use App\Enrollment\Application\Reporting\StudentMedicalReportQuery;
+use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
 use RuntimeException;
 
 final class PdoStudentMedicalReportQuery extends PdoEnrollmentReportingQuery implements StudentMedicalReportQuery
 {
-    public function fetch(int $academicPeriodId): array
+    public function fetch(
+        int $academicPeriodId,
+        ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+    ): array
     {
         $this->positiveInt($academicPeriodId, 'AcademicPeriod identity');
+        $parameters = [':academicPeriodId' => $academicPeriodId];
+        $gradeSectionPredicate = $this->gradeSectionPredicate(
+            'e',
+            $academicPeriodId,
+            $gradeSectionFilter,
+            $parameters,
+        );
         $rows = $this->rows(
             'SELECT s.id AS student_id, student_status_type.code AS student_status_type, '
             . 'student_status.code AS student_status_code, '
@@ -37,10 +48,11 @@ final class PdoStudentMedicalReportQuery extends PdoEnrollmentReportingQuery imp
             . 'ON enrollment_status_type.id = enrollment_status.status_type_id '
             . 'LEFT JOIN grades g ON g.id = e.grade_id '
             . 'LEFT JOIN sections sec ON sec.id = e.section_id '
+            . 'WHERE ' . $gradeSectionPredicate . ' '
             . 'ORDER BY CASE WHEN g.id IS NULL THEN 1 ELSE 0 END, g.sort_order, g.id, '
             . 'CASE WHEN sec.id IS NULL THEN 1 ELSE 0 END, sec.name, sec.id, '
             . 'p.first_surname, p.second_surname, p.first_name, p.middle_name, s.id',
-            [':academicPeriodId' => $academicPeriodId],
+            $parameters,
         );
 
         $seen = [];
