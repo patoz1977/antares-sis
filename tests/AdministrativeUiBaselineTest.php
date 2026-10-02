@@ -87,7 +87,7 @@ function registerAdministrativeUiBaselineTests(TestRunner $runner): void
         assertSameValue(false, str_contains($review, 'target_status'));
     });
 
-    $runner->add('E014 Phase 3 reports keep five destinations responsive tables and exact CSV links', function (): void {
+    $runner->add('Reporting UI keeps five responsive destinations and accessible server-rendered filters', function (): void {
         $navigation = administrativeUiSource('resources/views/reports/enrollments/_navigation.php');
         foreach (['summary', 'students', 'directory', 'billing', 'medical'] as $report) {
             deliveryAssertContains("/reports/enrollments/{$report}", $navigation);
@@ -97,7 +97,18 @@ function registerAdministrativeUiBaselineTests(TestRunner $runner): void
             deliveryAssertContains("/reports/enrollments/{$report}/csv", $view);
         }
         deliveryAssertContains('name="academic_period_id"', $navigation);
+        foreach ([
+            'Grados y paralelos',
+            'name="grade_section[]"',
+            'type="checkbox"',
+            '<fieldset>',
+            'Mostrar todos',
+            'Aplicar filtro',
+        ] as $expected) {
+            deliveryAssertContains($expected, $navigation);
+        }
         assertSameValue(false, str_contains($navigation, '<style>'));
+        assertSameValue(false, str_contains($navigation, '<script'));
     });
 
     $runner->add('E014 Phase 3 shared presentation is escaped semantic responsive and JavaScript independent', function (): void {

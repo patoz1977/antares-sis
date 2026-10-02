@@ -149,6 +149,7 @@ use App\Enrollment\Infrastructure\Persistence\PdoEnrollmentRepository;
 use App\Enrollment\Infrastructure\Persistence\PdoSubmittedEnrollmentIdQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoAcademicPeriodReportingQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoEnrollmentSummaryQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoGradeSectionReportingQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentBillingReportQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentEnrollmentListQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentMedicalReportQuery;
@@ -175,6 +176,7 @@ use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
 use App\Enrollment\Application\Reporting\GetStudentMedicalReport;
 use App\Enrollment\Application\Reporting\GetStudentRepresentativeDirectory;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingPeriod;
+use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingContext;
 use App\Enrollment\Domain\EnrollmentRepository;
 use App\Enrollment\Domain\Exception\InvalidEnrollmentState;
 use Core\Database\ConnectionFactory;
@@ -3391,7 +3393,7 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
     $saveEnrollment($studentIds[2], $activePeriodId, 'DRAFT', $gradeOneId, $sectionOneId, false, 'CurrentDraft');
     $saveEnrollment($studentIds[3], $activePeriodId, 'SUBMITTED', $gradeOneId, null, true, 'Current');
     $saveEnrollment($studentIds[4], $activePeriodId, 'COMPLETED', null, null, false, 'CurrentComplete');
-    $saveEnrollment($studentIds[5], $activePeriodId, 'CANCELLED', $gradeTwoId, null, false, 'CurrentCancel');
+    $saveEnrollment($studentIds[5], $activePeriodId, 'CANCELLED', $gradeTwoId, $sectionOneId, false, 'CurrentCancel');
     $saveEnrollment($studentIds[6], $activePeriodId, 'DRAFT', null, null, false, 'Inactive');
     $saveEnrollment($studentIds[2], $historicalPeriodId, 'COMPLETED', $gradeTwoId, null, true, 'Historical');
 
@@ -3427,6 +3429,35 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
         && count($summaryStatuses) === 4
         && count(array_filter($summary->rows, static fn ($row): bool => $row->gradeId === null)) === 2,
         'E013 Enrollment Summary did not count exact existing Enrollments, statuses or null placement.'
+    );
+
+    $reportingContextResolver = new ResolveEnrollmentReportingContext(
+        $periodResolver,
+        new PdoGradeSectionReportingQuery($manager),
+    );
+    $allReportingContext = $reportingContextResolver->handle($activePeriodId, null);
+    $gradeSectionOptions = $allReportingContext->gradeSectionOptions;
+    assertIntegration(
+        count($gradeSectionOptions) === 2
+        && $allReportingContext->gradeSectionFilter->isAll()
+        && $gradeSectionOptions[0]->gradeId === $gradeOneId
+        && $gradeSectionOptions[0]->sectionId === $sectionOneId
+        && $gradeSectionOptions[1]->gradeId === $gradeTwoId
+        && $gradeSectionOptions[1]->sectionId === $sectionOneId,
+        'Reporting Grade/Section options are not the exact complete pairs present in the selected period.'
+    );
+    $singleReportingContext = $reportingContextResolver->handle(
+        $activePeriodId,
+        [$gradeSectionOptions[0]->key()],
+    );
+    $multipleReportingContext = $reportingContextResolver->handle(
+        $activePeriodId,
+        [$gradeSectionOptions[1]->key(), $gradeSectionOptions[0]->key(), $gradeSectionOptions[1]->key()],
+    );
+    assertIntegration(
+        $multipleReportingContext->gradeSectionFilter->keys()
+            === [$gradeSectionOptions[1]->key(), $gradeSectionOptions[0]->key()],
+        'Reporting Grade/Section duplicate selection was not normalized deterministically.'
     );
 
     $studentRows = (new GetStudentEnrollmentReport(
@@ -3472,6 +3503,33 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
         && count(array_filter($studentRows, static fn ($row): bool => $row->studentId === $studentIds[6])) === 0,
         'E013 ACTIVE Student population or reporting status mapping is incorrect.'
     );
+
+    $filteredSummary = (new GetEnrollmentSummaryReport(
+        $periodResolver,
+        new PdoEnrollmentSummaryQuery($manager),
+    ))->handle($activePeriodId, $singleReportingContext->gradeSectionFilter);
+    assertIntegration(
+        $filteredSummary->total === 1
+        && count($filteredSummary->rows) === 1
+        && $filteredSummary->rows[0]->gradeId === $gradeOneId
+        && $filteredSummary->rows[0]->sectionId === $sectionOneId,
+        'Reporting Summary did not apply the Grade/Section criterion before aggregation.'
+    );
+    foreach ([
+        new PdoStudentEnrollmentListQuery($manager),
+        new PdoStudentRepresentativeDirectoryQuery($manager),
+        new PdoStudentBillingReportQuery($manager),
+        new PdoStudentMedicalReportQuery($manager),
+    ] as $reportQuery) {
+        $singleRows = $reportQuery->fetch($activePeriodId, $singleReportingContext->gradeSectionFilter);
+        $multipleRows = $reportQuery->fetch($activePeriodId, $multipleReportingContext->gradeSectionFilter);
+        assertIntegration(
+            array_column($singleRows, 'studentId') === [$studentIds[2]]
+            && array_column($multipleRows, 'studentId') === [$studentIds[2], $studentIds[5]]
+            && !in_array($studentIds[1], array_column($singleRows, 'studentId'), true),
+            'One or more physical reports did not apply the exact single/multiple Grade/Section union.'
+        );
+    }
 
     $directory = $byStudent($directoryRows, $studentIds[2]);
     assertIntegration(

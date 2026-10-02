@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Tests;
 
 use App\Enrollment\Application\Reporting\EnrollmentReportingStatus;
+use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
 use App\Enrollment\Infrastructure\Reporting\PdoAcademicPeriodReportingQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoEnrollmentSummaryQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoGradeSectionReportingQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentBillingReportQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentEnrollmentListQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentMedicalReportQuery;
@@ -40,6 +42,59 @@ function registerEnrollmentReportingPersistenceTests(TestRunner $runner): void
             array_map(static fn ($row): string => $row->status->value, $rows),
         );
         assertSameValue(false, property_exists($rows[0], 'familyId'));
+    });
+
+    $runner->add('Reporting PDO options are distinct complete actual period pairs in authoritative order', function (): void {
+        [$manager] = enrollmentReportingFixture();
+        $options = (new PdoGradeSectionReportingQuery($manager))->findForAcademicPeriod(101);
+
+        assertSameValue(['EGB_1:A', 'EGB_2:B'], array_map(static fn ($option): string => $option->key(), $options));
+        assertSameValue(['Grade One — A', 'Grade Two — B'], array_map(
+            static fn ($option): string => $option->label(),
+            $options,
+        ));
+        assertSameValue([], (new PdoGradeSectionReportingQuery($manager))->findForAcademicPeriod(100));
+    });
+
+    $runner->add('Reporting PDO applies one and multiple exact pairs consistently across all five reports', function (): void {
+        [$manager] = enrollmentReportingFixture();
+        $options = (new PdoGradeSectionReportingQuery($manager))->findForAcademicPeriod(101);
+        $one = ReportingGradeSectionFilter::selected(101, [$options[0]]);
+        $multiple = ReportingGradeSectionFilter::selected(101, $options);
+
+        $summary = (new PdoEnrollmentSummaryQuery($manager))->fetch(101, $one);
+        assertSameValue(2, array_sum(array_map(static fn ($row): int => $row->count, $summary)));
+        assertSameValue(false, count(array_filter($summary, static fn ($row): bool => $row->gradeId === null)) > 0);
+
+        foreach ([
+            new PdoStudentEnrollmentListQuery($manager),
+            new PdoStudentRepresentativeDirectoryQuery($manager),
+            new PdoStudentBillingReportQuery($manager),
+            new PdoStudentMedicalReportQuery($manager),
+        ] as $query) {
+            assertSameValue([2, 3], array_column($query->fetch(101, $one), 'studentId'));
+            assertSameValue([2, 3, 5], array_column($query->fetch(101, $multiple), 'studentId'));
+        }
+
+        assertSameValue(3, array_sum(array_map(
+            static fn ($row): int => $row->count,
+            (new PdoEnrollmentSummaryQuery($manager))->fetch(101, $multiple),
+        )));
+    });
+
+    $runner->add('Reporting PDO All preserves Students without Enrollment while specific filters exclude them', function (): void {
+        [$manager] = enrollmentReportingFixture();
+        $query = new PdoStudentEnrollmentListQuery($manager);
+        assertSameValue(true, in_array(1, array_column($query->fetch(101), 'studentId'), true));
+
+        $option = (new PdoGradeSectionReportingQuery($manager))->findForAcademicPeriod(101)[0];
+        $filtered = $query->fetch(101, ReportingGradeSectionFilter::selected(101, [$option]));
+        assertSameValue(false, in_array(1, array_column($filtered, 'studentId'), true));
+
+        reportingAssertThrows(
+            static fn (): mixed => $query->fetch(101, ReportingGradeSectionFilter::all(100)),
+            \InvalidArgumentException::class,
+        );
     });
 
     $runner->add('E013 Phase 2 PDO directory combines historical annual data with current Family Representative contacts and Address', function (): void {
@@ -137,6 +192,7 @@ function registerEnrollmentReportingPersistenceTests(TestRunner $runner): void
         [$manager, $pdo] = enrollmentReportingFixture();
         $before = (int) $pdo->query('SELECT COUNT(*) FROM enrollments')->fetchColumn();
         (new PdoEnrollmentSummaryQuery($manager))->fetch(101);
+        (new PdoGradeSectionReportingQuery($manager))->findForAcademicPeriod(101);
         (new PdoStudentEnrollmentListQuery($manager))->fetch(101);
         (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101);
         (new PdoStudentBillingReportQuery($manager))->fetch(101);
@@ -162,8 +218,8 @@ function enrollmentReportingFixture(): array
     $pdo->exec('CREATE TABLE statuses (id INTEGER PRIMARY KEY, status_type_id INTEGER NOT NULL, code TEXT NOT NULL, sort_order INTEGER NOT NULL)');
     $pdo->exec('CREATE TABLE document_types (id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
     $pdo->exec('CREATE TABLE academic_periods (id INTEGER PRIMARY KEY, code TEXT, name TEXT, starts_on TEXT, ends_on TEXT, status_id INTEGER)');
-    $pdo->exec('CREATE TABLE grades (id INTEGER PRIMARY KEY, name TEXT, sort_order INTEGER)');
-    $pdo->exec('CREATE TABLE sections (id INTEGER PRIMARY KEY, grade_id INTEGER, name TEXT)');
+    $pdo->exec('CREATE TABLE grades (id INTEGER PRIMARY KEY, code TEXT, name TEXT, sort_order INTEGER)');
+    $pdo->exec('CREATE TABLE sections (id INTEGER PRIMARY KEY, grade_id INTEGER, code TEXT, name TEXT)');
     $pdo->exec('CREATE TABLE persons (id INTEGER PRIMARY KEY, document_type_id INTEGER, document_number TEXT, first_name TEXT, middle_name TEXT, first_surname TEXT, second_surname TEXT, mobile_phone TEXT, landline_phone TEXT, email TEXT)');
     $pdo->exec('CREATE TABLE students (id INTEGER PRIMARY KEY, person_id INTEGER, status_id INTEGER)');
     $pdo->exec('CREATE TABLE representatives (id INTEGER PRIMARY KEY, person_id INTEGER, work_phone TEXT, work_email TEXT, status_id INTEGER)');
@@ -177,8 +233,8 @@ function enrollmentReportingFixture(): array
     $pdo->exec("INSERT INTO statuses VALUES (1,1,'ACTIVE',1),(2,1,'INACTIVE',2),(11,2,'DRAFT',1),(12,2,'SUBMITTED',2),(13,2,'COMPLETED',3),(14,2,'CANCELLED',4)");
     $pdo->exec("INSERT INTO document_types VALUES (1, 'National ID')");
     $pdo->exec("INSERT INTO academic_periods VALUES (100,'HIST','Historical','2025-09-01','2026-06-30',2),(101,'CURR','Current','2026-09-01','2027-06-30',1)");
-    $pdo->exec("INSERT INTO grades VALUES (1,'Grade One',1),(2,'Grade Two',2)");
-    $pdo->exec("INSERT INTO sections VALUES (1,1,'A'),(2,2,'B')");
+    $pdo->exec("INSERT INTO grades VALUES (1,'EGB_1','Grade One',1),(2,'EGB_2','Grade Two',2)");
+    $pdo->exec("INSERT INTO sections VALUES (1,1,'A','A'),(2,2,'B','B')");
     for ($id = 1; $id <= 6; $id++) {
         $pdo->exec("INSERT INTO persons VALUES ({$id},1,'STU-{$id}','Name{$id}',NULL,'Surname{$id}',NULL,NULL,NULL,NULL)");
         $status = $id === 6 ? 2 : 1;
@@ -192,7 +248,7 @@ function enrollmentReportingFixture(): array
     $pdo->exec("INSERT INTO student_address_assignments VALUES (1,500,2,900,'2026-01-01 00:00:00',NULL)");
 
     $pdo->exec("INSERT INTO enrollments (id,student_id,family_id,academic_period_id,status_id,grade_id,section_id) VALUES (1001,2,999,101,11,1,1)");
-    $pdo->exec("INSERT INTO enrollments VALUES (1002,3,999,101,12,1,NULL,1,'BILL-3','Billing Three','Billing Address','billing@example.test','0993333333',1,'Condition',1,'Allergy',1,'Medication',1,'Care',1,'Insurance','Doctor','0994444444','Observation')");
+    $pdo->exec("INSERT INTO enrollments VALUES (1002,3,999,101,12,1,1,1,'BILL-3','Billing Three','Billing Address','billing@example.test','0993333333',1,'Condition',1,'Allergy',1,'Medication',1,'Care',1,'Insurance','Doctor','0994444444','Observation')");
     $pdo->exec("INSERT INTO enrollments (id,student_id,family_id,academic_period_id,status_id,grade_id,section_id) VALUES (1003,4,999,101,13,NULL,NULL)");
     $pdo->exec("INSERT INTO enrollments (id,student_id,family_id,academic_period_id,status_id,grade_id,section_id) VALUES (1004,5,999,101,14,2,2)");
     $pdo->exec("INSERT INTO enrollments (id,student_id,family_id,academic_period_id,status_id,grade_id,section_id) VALUES (1005,6,999,101,11,NULL,NULL)");

@@ -7,6 +7,7 @@ namespace Tests;
 use App\AcademicCore\Domain\AcademicPeriodStatus;
 use App\Enrollment\Application\Reporting\AcademicPeriodReportingQuery;
 use App\Enrollment\Application\Reporting\Dto\EnrollmentSummaryRow;
+use App\Enrollment\Application\Reporting\Dto\ReportingGradeSectionOption;
 use App\Enrollment\Application\Reporting\Dto\ReportingAcademicPeriod;
 use App\Enrollment\Application\Reporting\Dto\StudentBillingReportRow;
 use App\Enrollment\Application\Reporting\Dto\StudentEnrollmentReportRow;
@@ -14,6 +15,7 @@ use App\Enrollment\Application\Reporting\Dto\StudentMedicalReportRow;
 use App\Enrollment\Application\Reporting\Dto\StudentRepresentativeDirectoryRow;
 use App\Enrollment\Application\Reporting\EnrollmentReportingStatus;
 use App\Enrollment\Application\Reporting\EnrollmentSummaryQuery;
+use App\Enrollment\Application\Reporting\GradeSectionReportingQuery;
 use App\Enrollment\Application\Reporting\GetEnrollmentReportingPeriods;
 use App\Enrollment\Application\Reporting\GetEnrollmentSummaryReport;
 use App\Enrollment\Application\Reporting\GetStudentBillingReport;
@@ -21,6 +23,8 @@ use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
 use App\Enrollment\Application\Reporting\GetStudentMedicalReport;
 use App\Enrollment\Application\Reporting\GetStudentRepresentativeDirectory;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingPeriod;
+use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingContext;
 use App\Enrollment\Application\Reporting\StudentBillingReportQuery;
 use App\Enrollment\Application\Reporting\StudentEnrollmentListQuery;
 use App\Enrollment\Application\Reporting\StudentMedicalReportQuery;
@@ -135,6 +139,86 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         assertSameValue(500, http_response_code());
         e013Contains('No se pudo generar el reporte.', $html);
         assertSameValue(false, str_contains($html, 'ACTIVE AcademicPeriod'));
+    });
+
+    $runner->add('Reporting Delivery exposes actual Grade Section options with explicit All and preserves multi-selection', function (): void {
+        $fixture = e013ReportingFixture();
+        e013ReportingRequest('/reports/enrollments/students', [
+            'academic_period_id' => '8',
+            'grade_section' => ['EGB_2:B', 'EGB_1:A', 'EGB_2:B'],
+        ]);
+        $html = $fixture['controller']->students();
+
+        assertSameValue(200, http_response_code());
+        e013Contains('Grados y paralelos', $html);
+        e013Contains('Grade 1 — Section A', $html);
+        e013Contains('Grade 2 — Section B', $html);
+        e013Contains('value="EGB_1:A" checked', $html);
+        e013Contains('value="EGB_2:B" checked', $html);
+        e013Contains('Mostrar todos', $html);
+        e013Contains(
+            'academic_period_id=8&amp;grade_section%5B0%5D=EGB_2%3AB&amp;grade_section%5B1%5D=EGB_1%3AA',
+            $html,
+        );
+        assertSameValue(['EGB_2:B', 'EGB_1:A'], $fixture['students']->lastFilter?->keys());
+        assertSameValue(false, str_contains($html, 'Sin sección'));
+
+        e013ReportingRequest('/reports/enrollments/students', ['academic_period_id' => '8']);
+        $all = $fixture['controller']->students();
+        e013Contains('<span class="badge text-bg-primary">Todos</span>', $all);
+        assertSameValue(true, $fixture['students']->lastFilter?->isAll());
+    });
+
+    $runner->add('Reporting Delivery rejects malformed unknown and wrong-period Grade Section selections safely', function (): void {
+        $fixture = e013ReportingFixture();
+        foreach ([
+            'EGB_1:A',
+            [''],
+            ['EGB_1'],
+            ['UNKNOWN:A'],
+            ['EGB_1:B'],
+        ] as $selection) {
+            e013ReportingRequest('/reports/enrollments/students', [
+                'academic_period_id' => '8',
+                'grade_section' => $selection,
+            ]);
+            $html = $fixture['controller']->students();
+            assertSameValue(400, http_response_code());
+            e013Contains('Selecciona combinaciones válidas de grado y paralelo.', $html);
+            assertSameValue(false, str_contains($html, 'SQLSTATE'));
+        }
+
+        e013ReportingRequest('/reports/enrollments/students', [
+            'academic_period_id' => '7',
+            'grade_section' => ['EGB_1:A'],
+        ]);
+        assertSameValue(400, e013Status($fixture['controller'], 'students'));
+    });
+
+    $runner->add('Reporting Delivery applies the same normalized filter to HTML and CSV for all five reports', function (): void {
+        $fixture = e013ReportingFixture();
+        $query = [
+            'academic_period_id' => '8',
+            'grade_section' => ['EGB_1:A', 'EGB_2:B', 'EGB_1:A'],
+        ];
+        foreach ([
+            ['summary', 'summary'],
+            ['students', 'students'],
+            ['directory', 'directory'],
+            ['billing', 'billing'],
+            ['medical', 'medical'],
+        ] as [$method, $fixtureKey]) {
+            e013ReportingRequest('/reports/enrollments/' . $method, $query);
+            $fixture['controller']->{$method}();
+            assertSameValue(['EGB_1:A', 'EGB_2:B'], $fixture[$fixtureKey]->lastFilter?->keys());
+
+            $csvMethod = $method . 'Csv';
+            e013ReportingRequest('/reports/enrollments/' . $method . '/csv', $query);
+            $csv = $fixture['controller']->{$csvMethod}();
+            assertSameValue(200, http_response_code());
+            assertSameValue('efbbbf', bin2hex(substr($csv, 0, 3)));
+            assertSameValue(['EGB_1:A', 'EGB_2:B'], $fixture[$fixtureKey]->lastFilter?->keys());
+        }
     });
 
     $runner->add('E013 Phase 3 five HTML reports render approved datasets empty states CSV links and escaped output', function (): void {
@@ -255,7 +339,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
             "Content-Type: text/csv; charset=UTF-8",
             'Content-Disposition: attachment; filename=',
             'Cache-Control: no-store',
-            '$dataset = $load($selected->id);',
+            '$load($context->academicPeriod->id, $context->gradeSectionFilter);',
             '$content = $write($dataset);',
         ] as $expected) {
             e013Contains($expected, $source);
@@ -321,9 +405,14 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         public function __construct(public array $rows)
         {
         }
-        public function fetch(int $academicPeriodId): array
+        public ?ReportingGradeSectionFilter $lastFilter = null;
+        public function fetch(
+            int $academicPeriodId,
+            ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+        ): array
         {
             $this->lastAcademicPeriodId = $academicPeriodId;
+            $this->lastFilter = $gradeSectionFilter;
 
             return $this->rows;
         }
@@ -344,10 +433,15 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         public function __construct(public array $rows)
         {
         }
-        public function fetch(int $academicPeriodId): array
+        public ?ReportingGradeSectionFilter $lastFilter = null;
+        public function fetch(
+            int $academicPeriodId,
+            ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+        ): array
         {
             ++$this->calls;
             $this->lastAcademicPeriodId = $academicPeriodId;
+            $this->lastFilter = $gradeSectionFilter;
 
             return $this->rows;
         }
@@ -379,9 +473,14 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         public function __construct(public array $rows)
         {
         }
-        public function fetch(int $academicPeriodId): array
+        public ?ReportingGradeSectionFilter $lastFilter = null;
+        public function fetch(
+            int $academicPeriodId,
+            ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+        ): array
         {
             $this->lastAcademicPeriodId = $academicPeriodId;
+            $this->lastFilter = $gradeSectionFilter;
 
             return $this->rows;
         }
@@ -395,9 +494,14 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         public function __construct(public array $rows)
         {
         }
-        public function fetch(int $academicPeriodId): array
+        public ?ReportingGradeSectionFilter $lastFilter = null;
+        public function fetch(
+            int $academicPeriodId,
+            ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+        ): array
         {
             $this->lastAcademicPeriodId = $academicPeriodId;
+            $this->lastFilter = $gradeSectionFilter;
 
             return $this->rows;
         }
@@ -412,18 +516,36 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         public function __construct(public array $rows)
         {
         }
-        public function fetch(int $academicPeriodId): array
+        public ?ReportingGradeSectionFilter $lastFilter = null;
+        public function fetch(
+            int $academicPeriodId,
+            ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+        ): array
         {
             $this->lastAcademicPeriodId = $academicPeriodId;
+            $this->lastFilter = $gradeSectionFilter;
 
             return $this->rows;
         }
     };
 
     $summaryService = new GetEnrollmentSummaryReport($resolver, $summary);
+    $gradeSections = new class implements GradeSectionReportingQuery {
+        public function findForAcademicPeriod(int $academicPeriodId): array
+        {
+            if ($academicPeriodId === 7) {
+                return [reportingGradeSection(2, 'EGB_2', 'Grade 2', 2, 20, 'B', 'Section B')];
+            }
+
+            return [
+                reportingGradeSection(1, 'EGB_1', 'Grade 1', 1, 10, 'A', 'Section A'),
+                reportingGradeSection(2, 'EGB_2', 'Grade 2', 2, 20, 'B', 'Section B'),
+            ];
+        }
+    };
     $controller = new EnrollmentReportingController(
         new GetEnrollmentReportingPeriods($periodQuery),
-        $resolver,
+        new ResolveEnrollmentReportingContext($resolver, $gradeSections),
         $summaryService,
         new GetStudentEnrollmentReport($resolver, $students),
         new GetStudentRepresentativeDirectory($resolver, $directory),
