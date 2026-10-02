@@ -3227,7 +3227,25 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
     };
     $documentTypeId = $firstId('document_types');
     $sexId = $firstId('sexes');
-    $relationshipTypeId = $firstId('relationship_types');
+    $relationshipTypeId = static function (string $code, string $name) use ($connection): int {
+        $statement = $connection->prepare('SELECT id FROM relationship_types WHERE code = :code');
+        $statement->execute([':code' => $code]);
+        $id = (int) $statement->fetchColumn();
+        if ($id > 0) {
+            return $id;
+        }
+        $insert = $connection->prepare(
+            'INSERT INTO relationship_types (code, name, is_active) VALUES (:code, :name, TRUE)'
+        );
+        $insert->execute([':code' => $code, ':name' => $name]);
+        $id = (int) $connection->lastInsertId();
+        assertIntegration($id > 0, "E013 reporting fixture RelationshipType {$code} was not generated.");
+
+        return $id;
+    };
+    $fatherRelationshipTypeId = $relationshipTypeId('FATHER', 'Padre');
+    $motherRelationshipTypeId = $relationshipTypeId('MOTHER', 'Madre');
+    $otherRelationshipTypeId = $relationshipTypeId('OTHER', 'Otro');
     $gradeIds = array_map(
         'intval',
         $connection->query('SELECT id FROM grades ORDER BY sort_order ASC, id ASC LIMIT 2')
@@ -3307,6 +3325,46 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
         ':workEmail' => 'e013.work@example.test', ':statusId' => $generalActive,
     ]);
     $representativeId = (int) $connection->lastInsertId();
+    $insertRepresentative = static function (
+        string $firstName,
+        string $surname,
+        string $documentNumber,
+        ?string $email,
+        ?string $mobilePhone,
+        ?string $landlinePhone,
+    ) use ($connection, $insertPerson, $documentTypeId, $sexId, $generalActive): int {
+        $insertPerson->execute([
+            ':firstName' => $firstName, ':surname' => $surname,
+            ':documentTypeId' => $documentTypeId, ':documentNumber' => $documentNumber,
+            ':birthDate' => '1981-01-01', ':sexId' => $sexId,
+            ':email' => $email, ':mobilePhone' => $mobilePhone,
+            ':landlinePhone' => $landlinePhone, ':statusId' => $generalActive,
+        ]);
+        $personId = (int) $connection->lastInsertId();
+        $connection->prepare(
+            'INSERT INTO representatives (person_id, status_id) VALUES (:personId, :statusId)'
+        )->execute([':personId' => $personId, ':statusId' => $generalActive]);
+        $id = (int) $connection->lastInsertId();
+        assertIntegration($personId > 0 && $id > 0, 'E013 secondary Representative identities were not generated.');
+
+        return $id;
+    };
+    $motherRepresentativeId = $insertRepresentative(
+        'E013Mother',
+        'Representative',
+        'E013-REPRESENTATIVE-MOTHER',
+        'e013.mother@example.test',
+        '0991300001',
+        null,
+    );
+    $otherRepresentativeId = $insertRepresentative(
+        'E013Other',
+        'Representative',
+        'E013-REPRESENTATIVE-OTHER',
+        null,
+        null,
+        null,
+    );
     $connection->prepare(
         'INSERT INTO families (family_code, display_name, status_id) '
         . 'VALUES (:familyCode, :name, :statusId)'
@@ -3325,7 +3383,20 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
         . 'VALUES (:familyId, :representativeId, :relationshipTypeId, 1, :startedAt)'
     )->execute([
         ':familyId' => $familyId, ':representativeId' => $representativeId,
-        ':relationshipTypeId' => $relationshipTypeId, ':startedAt' => '2040-01-01 00:00:00',
+        ':relationshipTypeId' => $fatherRelationshipTypeId, ':startedAt' => '2040-01-01 00:00:00',
+    ]);
+    $insertSecondaryMembership = $connection->prepare(
+        'INSERT INTO family_representatives '
+        . '(family_id, representative_id, relationship_type_id, is_primary, started_at) '
+        . 'VALUES (:familyId, :representativeId, :relationshipTypeId, 0, :startedAt)'
+    );
+    $insertSecondaryMembership->execute([
+        ':familyId' => $familyId, ':representativeId' => $motherRepresentativeId,
+        ':relationshipTypeId' => $motherRelationshipTypeId, ':startedAt' => '2040-01-02 00:00:00',
+    ]);
+    $insertSecondaryMembership->execute([
+        ':familyId' => $familyId, ':representativeId' => $otherRepresentativeId,
+        ':relationshipTypeId' => $otherRelationshipTypeId, ':startedAt' => '2040-01-03 00:00:00',
     ]);
     $connection->prepare(
         'INSERT INTO family_addresses '
@@ -3397,7 +3468,7 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
     $saveEnrollment($studentIds[6], $activePeriodId, 'DRAFT', null, null, false, 'Inactive');
     $saveEnrollment($studentIds[2], $historicalPeriodId, 'COMPLETED', $gradeTwoId, null, true, 'Historical');
 
-    $trackedTables = ['academic_periods', 'students', 'enrollments', 'families', 'family_students',
+    $trackedTables = ['academic_periods', 'persons', 'representatives', 'students', 'enrollments', 'families', 'family_students',
         'family_representatives', 'family_addresses', 'student_address_assignments'];
     $before = [];
     foreach ($trackedTables as $table) {
@@ -3535,11 +3606,35 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
     assertIntegration(
         $directory->gradeId === $gradeOneId
         && $directory->sectionId === $sectionOneId
-        && $directory->representativeMobilePhone === '0991300000'
-        && $directory->representativeWorkEmail === 'e013.work@example.test'
+        && $directory->studentFirstName === 'E013Student2'
+        && $directory->studentFirstSurname === 'E013Surname02'
+        && $directory->representative1?->firstName === 'E013Current'
+        && $directory->representative1?->relationship === 'Padre'
+        && $directory->representative1?->mobilePhone === '0991300000'
+        && $directory->representative1?->personalEmail === 'e013.personal@example.test'
+        && $directory->representative2?->firstName === 'E013Mother'
+        && $directory->representative2?->relationship === 'Madre'
+        && $directory->representative2?->mobilePhone === '0991300001'
         && str_contains((string) $directory->studentAddress, 'E013 Current Street'),
-        'E013 Directory did not combine selected annual placement with current Representative contacts and Address.'
+        'E013 Directory did not project atomic Student, selected Representatives, relationship labels and current Address.'
     );
+    $connection->beginTransaction();
+    try {
+        $connection->prepare(
+            'UPDATE family_representatives SET is_primary = 0 '
+            . 'WHERE family_id = :familyId AND ended_at IS NULL'
+        )->execute([':familyId' => $familyId]);
+        $withoutPrimary = $byStudent(
+            (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch($activePeriodId),
+            $studentIds[2],
+        );
+        assertIntegration(
+            $withoutPrimary->representative1 === null && $withoutPrimary->representative2 === null,
+            'E013 Directory promoted a secondary Representative when the active Family had no Primary.'
+        );
+    } finally {
+        $connection->rollBack();
+    }
     $billing = $byStudent($billingRows, $studentIds[3]);
     $medical = $byStudent($medicalRows, $studentIds[3]);
     assertIntegration(
@@ -3557,7 +3652,8 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
     assertIntegration(
         $historicalDirectory->gradeId === $gradeTwoId
         && $historicalDirectory->status->value === 'COMPLETED'
-        && $historicalDirectory->representativeMobilePhone === '0991300000'
+        && $historicalDirectory->representative1?->mobilePhone === '0991300000'
+        && $historicalDirectory->representative2?->relationship === 'Madre'
         && str_contains((string) $historicalDirectory->studentAddress, 'E013 Current Street')
         && $byStudent($historicalBillingRows, $studentIds[2])->legalName === 'Historical Billing'
         && $byStudent($historicalMedicalRows, $studentIds[2])->observations === 'Historical observation',
@@ -9845,7 +9941,7 @@ try {
     echo "PASS MySQL E012 Administrative Delivery Submitted query state order period context and side-effect freedom\n";
     echo "PASS MySQL E013 reporting AcademicPeriod options default and explicit historical selection\n";
     echo "PASS MySQL E013 Enrollment Summary status placement and inactive Student counting\n";
-    echo "PASS MySQL E013 Student Directory Billing Medical selected-period and current-live projections\n";
+    echo "PASS MySQL E013 evolved Directory Representative selection address Billing Medical selected-period and current-live projections\n";
     echo "PASS MySQL E013 reporting deterministic one-row ACTIVE population read-only queries and plans\n";
     echo "PASS MySQL Academic Core Grade Section references and next ACTIVE Grade ordering\n";
     echo "PASS MySQL partial disposable database creation cleanup\n";

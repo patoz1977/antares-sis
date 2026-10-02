@@ -8,9 +8,11 @@ use App\AcademicCore\Domain\AcademicPeriodStatus;
 use App\AcademicCore\Domain\Exception\AcademicPeriodOperationalStateConflict;
 use App\AcademicCore\Domain\Exception\InvalidAcademicPeriodState;
 use App\Enrollment\Application\Reporting\AcademicPeriodReportingQuery;
+use App\Enrollment\Application\Reporting\Dto\DirectoryRepresentative;
 use App\Enrollment\Application\Reporting\Dto\ReportingGradeSectionOption;
 use App\Enrollment\Application\Reporting\Dto\ReportingAcademicPeriod;
 use App\Enrollment\Application\Reporting\Dto\StudentEnrollmentReportRow;
+use App\Enrollment\Application\Reporting\Dto\StudentRepresentativeDirectoryRow;
 use App\Enrollment\Application\Reporting\EnrollmentReportingStatus;
 use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingPeriodNotFound;
 use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingSelectionInvalid;
@@ -81,6 +83,50 @@ function registerEnrollmentReportingApplicationTests(TestRunner $runner): void
         $source = (string) file_get_contents(dirname(__DIR__) . '/app/Enrollment/Application/Reporting/EnrollmentReportingStatus.php');
         assertSameValue(false, str_contains($source, 'EnrollmentRepository'));
         assertSameValue(false, str_contains($source, 'save('));
+    });
+
+    $runner->add('Directory Application read model keeps Student and two Representative projections atomic', function (): void {
+        $representative = new DirectoryRepresentative(
+            'Ana',
+            null,
+            'Pérez',
+            null,
+            'Madre',
+            'Cédula',
+            '0102030405',
+            null,
+            null,
+            'ana@example.test',
+        );
+        $row = new StudentRepresentativeDirectoryRow(
+            1,
+            null,
+            null,
+            null,
+            null,
+            'Luis',
+            null,
+            'Pérez',
+            null,
+            null,
+            null,
+            $representative,
+            null,
+            null,
+            EnrollmentReportingStatus::NotStarted,
+        );
+
+        assertSameValue(['Luis', null, 'Pérez', null], [
+            $row->studentFirstName,
+            $row->studentMiddleName,
+            $row->studentFirstSurname,
+            $row->studentSecondSurname,
+        ]);
+        assertSameValue('Madre', $row->representative1?->relationship);
+        assertSameValue(null, $row->representative2);
+        foreach (['studentNames', 'studentSurnames', 'representativeWorkPhone', 'representativeWorkEmail'] as $legacy) {
+            assertSameValue(false, property_exists($row, $legacy));
+        }
     });
 
     $runner->add('E013 Phase 2 report service resolves the selected period before invoking its query port', function (): void {
