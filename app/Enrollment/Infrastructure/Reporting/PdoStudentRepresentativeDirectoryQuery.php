@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Enrollment\Infrastructure\Reporting;
 
+use App\Enrollment\Application\Reporting\Dto\DirectoryRepresentative;
 use App\Enrollment\Application\Reporting\Dto\StudentRepresentativeDirectoryRow;
 use App\Enrollment\Application\Reporting\StudentRepresentativeDirectoryQuery;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
@@ -39,16 +40,8 @@ final class PdoStudentRepresentativeDirectoryQuery extends PdoEnrollmentReportin
             . 'g.id AS grade_id, g.name AS grade_name, g.sort_order AS grade_sort_order, '
             . 'sec.id AS section_id, sec.name AS section_name, '
             . 'fs.id AS family_student_id, fs.family_id AS current_family_id, '
-            . 'fr.id AS family_representative_id, fr.representative_id AS representative_id, '
-            . 'r.person_id AS representative_person_id, representative_status_type.code AS representative_status_type, '
-            . 'representative_status.code AS representative_status_code, '
-            . 'rp.first_name AS representative_first_name, rp.middle_name AS representative_middle_name, '
-            . 'rp.first_surname AS representative_first_surname, rp.second_surname AS representative_second_surname, '
-            . 'rp.document_type_id AS representative_document_type_id, '
-            . 'representative_document_type.name AS representative_document_type_name, '
-            . 'rp.document_number AS representative_document_number, rp.mobile_phone AS representative_mobile_phone, '
-            . 'rp.landline_phone AS representative_landline_phone, rp.email AS representative_personal_email, '
-            . 'r.work_phone AS representative_work_phone, r.work_email AS representative_work_email, '
+            . 'f.id AS family_id, family_status_type.code AS family_status_type, '
+            . 'family_status.code AS family_status_code, '
             . 'saa.id AS student_address_assignment_id, saa.family_id AS address_assignment_family_id, '
             . 'saa.family_address_id AS family_address_id, fa.family_id AS address_family_id, '
             . 'fa.main_street, fa.street_number, fa.secondary_street, fa.sector, fa.reference, '
@@ -66,15 +59,9 @@ final class PdoStudentRepresentativeDirectoryQuery extends PdoEnrollmentReportin
             . 'LEFT JOIN grades g ON g.id = e.grade_id '
             . 'LEFT JOIN sections sec ON sec.id = e.section_id '
             . 'LEFT JOIN family_students fs ON fs.student_id = s.id AND fs.ended_at IS NULL '
-            . 'LEFT JOIN family_representatives fr ON fr.family_id = fs.family_id '
-            . 'AND fr.ended_at IS NULL AND fr.is_primary = 1 '
-            . 'LEFT JOIN representatives r ON r.id = fr.representative_id '
-            . 'LEFT JOIN statuses representative_status ON representative_status.id = r.status_id '
-            . 'LEFT JOIN status_types representative_status_type '
-            . 'ON representative_status_type.id = representative_status.status_type_id '
-            . 'LEFT JOIN persons rp ON rp.id = r.person_id '
-            . 'LEFT JOIN document_types representative_document_type '
-            . 'ON representative_document_type.id = rp.document_type_id '
+            . 'LEFT JOIN families f ON f.id = fs.family_id '
+            . 'LEFT JOIN statuses family_status ON family_status.id = f.status_id '
+            . 'LEFT JOIN status_types family_status_type ON family_status_type.id = family_status.status_type_id '
             . 'LEFT JOIN student_address_assignments saa ON saa.student_id = s.id AND saa.ended_at IS NULL '
             . 'LEFT JOIN family_addresses fa ON fa.id = saa.family_address_id '
             . 'LEFT JOIN statuses address_status ON address_status.id = fa.status_id '
@@ -87,68 +74,89 @@ final class PdoStudentRepresentativeDirectoryQuery extends PdoEnrollmentReportin
         );
 
         $seen = [];
-        $result = [];
+        $students = [];
+        $familyIds = [];
         foreach ($rows as $row) {
             $studentId = $this->positiveInt($row['student_id'] ?? null, 'Student identity');
             if (isset($seen[$studentId])) {
-                throw new RuntimeException(
-                    'Student directory returned duplicate current Family, primary Representative or Address rows.'
-                );
+                throw new RuntimeException('Student directory returned duplicate current Family or Address rows.');
             }
             $seen[$studentId] = true;
             $active = $this->isActiveStudent($row);
             $status = $this->reportingStatus($row);
             [$gradeId, $gradeName, $sectionId, $sectionName] = $this->placement($row);
-            [$studentSurnames, $studentNames] = $this->studentName($row);
+            $studentFirstName = $this->requiredString(
+                $row['student_first_name'] ?? null,
+                'Student first name',
+            );
+            $studentMiddleName = $this->nullableString(
+                $row['student_middle_name'] ?? null,
+                'Student middle name',
+            );
+            $studentFirstSurname = $this->requiredString(
+                $row['student_first_surname'] ?? null,
+                'Student first surname',
+            );
+            $studentSecondSurname = $this->nullableString(
+                $row['student_second_surname'] ?? null,
+                'Student second surname',
+            );
             [$studentIdentificationType, $studentIdentificationNumber] = $this->identification(
                 $row['student_document_type_id'] ?? null,
                 $row['student_document_type_name'] ?? null,
                 $row['student_document_number'] ?? null,
                 'Student',
             );
-
-            $currentFamilyId = $this->nullablePositiveInt(
-                $row['current_family_id'] ?? null,
-                'current Family identity',
-            );
-            $familyStudentId = $this->nullablePositiveInt(
-                $row['family_student_id'] ?? null,
-                'FamilyStudent identity',
-            );
-            if (($currentFamilyId === null) !== ($familyStudentId === null)) {
-                throw new RuntimeException('Student directory returned an incomplete current Family membership.');
-            }
-
-            [$representativeSurnames, $representativeNames, $representativeIdentificationType,
-                $representativeIdentificationNumber, $mobilePhone, $landlinePhone, $personalEmail,
-                $workPhone, $workEmail] = $this->representative($row, $currentFamilyId);
+            $currentFamilyId = $this->currentFamily($row);
             $address = $this->address($row, $currentFamilyId);
 
             if (!$active) {
                 continue;
             }
+            if ($currentFamilyId !== null) {
+                $familyIds[$currentFamilyId] = $currentFamilyId;
+            }
+            $students[] = [
+                'studentId' => $studentId,
+                'gradeId' => $gradeId,
+                'gradeName' => $gradeName,
+                'sectionId' => $sectionId,
+                'sectionName' => $sectionName,
+                'firstName' => $studentFirstName,
+                'middleName' => $studentMiddleName,
+                'firstSurname' => $studentFirstSurname,
+                'secondSurname' => $studentSecondSurname,
+                'identificationType' => $studentIdentificationType,
+                'identificationNumber' => $studentIdentificationNumber,
+                'familyId' => $currentFamilyId,
+                'address' => $address,
+                'status' => $status,
+            ];
+        }
 
+        $representativesByFamily = $this->representativesByFamily(array_values($familyIds));
+        $result = [];
+        foreach ($students as $student) {
+            $memberships = $student['familyId'] === null
+                ? []
+                : ($representativesByFamily[$student['familyId']] ?? []);
+            [$representative1, $representative2] = $this->selectRepresentatives($memberships);
             $result[] = new StudentRepresentativeDirectoryRow(
-                $studentId,
-                $gradeId,
-                $gradeName,
-                $sectionId,
-                $sectionName,
-                $studentSurnames,
-                $studentNames,
-                $studentIdentificationType,
-                $studentIdentificationNumber,
-                $representativeSurnames,
-                $representativeNames,
-                $representativeIdentificationType,
-                $representativeIdentificationNumber,
-                $mobilePhone,
-                $landlinePhone,
-                $personalEmail,
-                $workPhone,
-                $workEmail,
-                $address,
-                $status,
+                $student['studentId'],
+                $student['gradeId'],
+                $student['gradeName'],
+                $student['sectionId'],
+                $student['sectionName'],
+                $student['firstName'],
+                $student['middleName'],
+                $student['firstSurname'],
+                $student['secondSurname'],
+                $student['identificationType'],
+                $student['identificationNumber'],
+                $representative1,
+                $representative2,
+                $student['address'],
+                $student['status'],
             );
         }
 
@@ -173,65 +181,183 @@ final class PdoStudentRepresentativeDirectoryQuery extends PdoEnrollmentReportin
         ];
     }
 
-    /** @param array<string, mixed> $row
-     *  @return array{?string, ?string, ?string, ?string, ?string, ?string, ?string, ?string, ?string}
-     */
-    private function representative(array $row, ?int $currentFamilyId): array
+    /** @param array<string, mixed> $row */
+    private function currentFamily(array $row): ?int
     {
         $membershipId = $this->nullablePositiveInt(
-            $row['family_representative_id'] ?? null,
-            'FamilyRepresentative identity',
+            $row['family_student_id'] ?? null,
+            'FamilyStudent identity',
         );
-        if ($membershipId === null) {
-            foreach (['representative_id', 'representative_person_id', 'representative_first_name',
-                'representative_first_surname', 'representative_document_type_id',
-                'representative_document_number', 'representative_mobile_phone',
-                'representative_landline_phone', 'representative_personal_email',
-                'representative_work_phone', 'representative_work_email'] as $field) {
+        $familyId = $this->nullablePositiveInt($row['current_family_id'] ?? null, 'current Family identity');
+        if ($membershipId === null && $familyId === null) {
+            foreach (['family_id', 'family_status_type', 'family_status_code'] as $field) {
                 if (($row[$field] ?? null) !== null) {
-                    throw new RuntimeException('Student directory returned Representative data without membership.');
+                    throw new RuntimeException('Student directory returned Family data without current membership.');
                 }
             }
 
-            return [null, null, null, null, null, null, null, null, null];
+            return null;
         }
-        if ($currentFamilyId === null) {
-            throw new RuntimeException('Student directory returned a primary Representative without current Family.');
-        }
-        $this->positiveInt($row['representative_id'] ?? null, 'Representative identity');
-        $this->positiveInt($row['representative_person_id'] ?? null, 'Representative Person identity');
-        if (($row['representative_status_type'] ?? null) !== self::STUDENT_STATUS_TYPE
-            || !in_array($row['representative_status_code'] ?? null, ['ACTIVE', 'INACTIVE'], true)
+        if ($membershipId === null || $familyId === null
+            || $this->positiveInt($row['family_id'] ?? null, 'Family identity') !== $familyId
         ) {
-            throw new RuntimeException('Student directory returned an invalid Representative GENERAL_STATUS.');
+            throw new RuntimeException('Student directory returned an incomplete current Family membership.');
+        }
+        if (($row['family_status_type'] ?? null) !== self::STUDENT_STATUS_TYPE
+            || ($row['family_status_code'] ?? null) !== 'ACTIVE'
+        ) {
+            throw new RuntimeException('Student directory returned a non-active current Family.');
         }
 
-        $names = $this->joinName([
-            $this->requiredString($row['representative_first_name'] ?? null, 'Representative first name'),
-            $this->nullableString($row['representative_middle_name'] ?? null, 'Representative middle name'),
-        ]);
-        $surnames = $this->joinName([
-            $this->requiredString($row['representative_first_surname'] ?? null, 'Representative first surname'),
-            $this->nullableString($row['representative_second_surname'] ?? null, 'Representative second surname'),
-        ]);
-        [$identificationType, $identificationNumber] = $this->identification(
-            $row['representative_document_type_id'] ?? null,
-            $row['representative_document_type_name'] ?? null,
-            $row['representative_document_number'] ?? null,
-            'Representative',
+        return $familyId;
+    }
+
+    /** @param list<int> $familyIds
+     *  @return array<int, list<array{primary: bool, relationshipCode: string, projection: DirectoryRepresentative}>>
+     */
+    private function representativesByFamily(array $familyIds): array
+    {
+        if ($familyIds === []) {
+            return [];
+        }
+        $parameters = [];
+        $placeholders = [];
+        foreach ($familyIds as $index => $familyId) {
+            $placeholder = ':directoryFamily' . $index;
+            $placeholders[] = $placeholder;
+            $parameters[$placeholder] = $familyId;
+        }
+        $rows = $this->rows(
+            'SELECT fr.id AS membership_id, fr.family_id, fr.representative_id, fr.is_primary, '
+            . 'fr.relationship_type_id, relationship_type.code AS relationship_code, '
+            . 'relationship_type.name AS relationship_name, r.person_id AS representative_person_id, '
+            . 'representative_status_type.code AS representative_status_type, '
+            . 'representative_status.code AS representative_status_code, '
+            . 'p.first_name, p.middle_name, p.first_surname, p.second_surname, '
+            . 'p.document_type_id, document_type.name AS document_type_name, p.document_number, '
+            . 'p.mobile_phone, p.landline_phone, p.email AS personal_email '
+            . 'FROM family_representatives fr '
+            . 'LEFT JOIN relationship_types relationship_type '
+            . 'ON relationship_type.id = fr.relationship_type_id '
+            . 'LEFT JOIN representatives r ON r.id = fr.representative_id '
+            . 'LEFT JOIN statuses representative_status ON representative_status.id = r.status_id '
+            . 'LEFT JOIN status_types representative_status_type '
+            . 'ON representative_status_type.id = representative_status.status_type_id '
+            . 'LEFT JOIN persons p ON p.id = r.person_id '
+            . 'LEFT JOIN document_types document_type ON document_type.id = p.document_type_id '
+            . 'WHERE fr.ended_at IS NULL AND fr.family_id IN (' . implode(', ', $placeholders) . ') '
+            . 'ORDER BY fr.family_id, fr.id',
+            $parameters,
         );
 
-        return [
-            $surnames,
-            $names,
-            $identificationType,
-            $identificationNumber,
-            $this->nullableString($row['representative_mobile_phone'] ?? null, 'Representative mobile phone'),
-            $this->nullableString($row['representative_landline_phone'] ?? null, 'Representative landline phone'),
-            $this->nullableString($row['representative_personal_email'] ?? null, 'Representative personal email'),
-            $this->nullableString($row['representative_work_phone'] ?? null, 'Representative work phone'),
-            $this->nullableString($row['representative_work_email'] ?? null, 'Representative work email'),
-        ];
+        $result = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            $familyId = $this->positiveInt($row['family_id'] ?? null, 'Representative Family identity');
+            $membershipId = $this->positiveInt(
+                $row['membership_id'] ?? null,
+                'FamilyRepresentative identity',
+            );
+            $representativeId = $this->positiveInt(
+                $row['representative_id'] ?? null,
+                'Representative identity',
+            );
+            $key = $familyId . ':' . $representativeId;
+            if (isset($seen[$key])) {
+                throw new RuntimeException('Student directory returned duplicate active Representative membership.');
+            }
+            $seen[$key] = $membershipId;
+            $this->positiveInt($row['representative_person_id'] ?? null, 'Representative Person identity');
+            $this->positiveInt($row['relationship_type_id'] ?? null, 'RelationshipType identity');
+            if (($row['representative_status_type'] ?? null) !== self::STUDENT_STATUS_TYPE
+                || !in_array($row['representative_status_code'] ?? null, ['ACTIVE', 'INACTIVE'], true)
+            ) {
+                throw new RuntimeException('Student directory returned an invalid Representative GENERAL_STATUS.');
+            }
+            $isPrimary = $this->nullableBoolean($row['is_primary'] ?? null, 'Primary Representative flag');
+            if ($isPrimary === null) {
+                throw new RuntimeException('Student directory returned an undefined Primary Representative flag.');
+            }
+            $relationshipCode = $this->requiredString(
+                $row['relationship_code'] ?? null,
+                'RelationshipType code',
+            );
+            [$identificationType, $identificationNumber] = $this->identification(
+                $row['document_type_id'] ?? null,
+                $row['document_type_name'] ?? null,
+                $row['document_number'] ?? null,
+                'Representative',
+            );
+            $result[$familyId][] = [
+                'primary' => $isPrimary,
+                'relationshipCode' => $relationshipCode,
+                'projection' => new DirectoryRepresentative(
+                    $this->requiredString($row['first_name'] ?? null, 'Representative first name'),
+                    $this->nullableString($row['middle_name'] ?? null, 'Representative middle name'),
+                    $this->requiredString($row['first_surname'] ?? null, 'Representative first surname'),
+                    $this->nullableString($row['second_surname'] ?? null, 'Representative second surname'),
+                    $this->requiredString($row['relationship_name'] ?? null, 'RelationshipType name'),
+                    $identificationType,
+                    $identificationNumber,
+                    $this->nullableString($row['mobile_phone'] ?? null, 'Representative mobile phone'),
+                    $this->nullableString($row['landline_phone'] ?? null, 'Representative landline phone'),
+                    $this->nullableString($row['personal_email'] ?? null, 'Representative personal email'),
+                ),
+            ];
+        }
+
+        return $result;
+    }
+
+    /** @param list<array{primary: bool, relationshipCode: string, projection: DirectoryRepresentative}> $memberships
+     *  @return array{?DirectoryRepresentative, ?DirectoryRepresentative}
+     */
+    private function selectRepresentatives(array $memberships): array
+    {
+        $primary = array_values(array_filter(
+            $memberships,
+            static fn (array $membership): bool => $membership['primary'],
+        ));
+        if (count($primary) > 1) {
+            throw new RuntimeException('Student directory returned multiple active Primary Representatives.');
+        }
+        if ($primary === []) {
+            return [null, null];
+        }
+
+        $primaryMembership = $primary[0];
+        $secondary = array_values(array_filter(
+            $memberships,
+            static fn (array $membership): bool => !$membership['primary'],
+        ));
+        if ($secondary === []) {
+            return [$primaryMembership['projection'], null];
+        }
+        if (count($secondary) === 1) {
+            return [$primaryMembership['projection'], $secondary[0]['projection']];
+        }
+
+        $targetCodes = match ($primaryMembership['relationshipCode']) {
+            'FATHER' => ['MOTHER'],
+            'MOTHER' => ['FATHER'],
+            default => ['FATHER', 'MOTHER'],
+        };
+        foreach ($targetCodes as $targetCode) {
+            $candidates = array_values(array_filter(
+                $secondary,
+                static fn (array $membership): bool => $membership['relationshipCode'] === $targetCode,
+            ));
+            if (count($candidates) > 1) {
+                throw new RuntimeException(
+                    "Student directory returned multiple active secondary {$targetCode} Representatives."
+                );
+            }
+            if ($candidates !== []) {
+                return [$primaryMembership['projection'], $candidates[0]['projection']];
+            }
+        }
+
+        return [$primaryMembership['projection'], null];
     }
 
     /** @param array<string, mixed> $row */
