@@ -9,5 +9,8 @@ use App\Enrollment\Application\Reporting\Dto\EnrollmentSummaryRow;
 interface EnrollmentSummaryQuery
 {
     /** @return list<EnrollmentSummaryRow> */
-    public function fetch(int $academicPeriodId): array;
+    public function fetch(
+        int $academicPeriodId,
+        ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+    ): array;
 }

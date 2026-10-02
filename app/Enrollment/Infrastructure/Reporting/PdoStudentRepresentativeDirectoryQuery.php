@@ -6,15 +6,26 @@ namespace App\Enrollment\Infrastructure\Reporting;
 
 use App\Enrollment\Application\Reporting\Dto\StudentRepresentativeDirectoryRow;
 use App\Enrollment\Application\Reporting\StudentRepresentativeDirectoryQuery;
+use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
 use App\Family\Domain\ValueObject\Address;
 use RuntimeException;
 
 final class PdoStudentRepresentativeDirectoryQuery extends PdoEnrollmentReportingQuery implements
     StudentRepresentativeDirectoryQuery
 {
-    public function fetch(int $academicPeriodId): array
+    public function fetch(
+        int $academicPeriodId,
+        ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+    ): array
     {
         $this->positiveInt($academicPeriodId, 'AcademicPeriod identity');
+        $parameters = [':academicPeriodId' => $academicPeriodId];
+        $gradeSectionPredicate = $this->gradeSectionPredicate(
+            'e',
+            $academicPeriodId,
+            $gradeSectionFilter,
+            $parameters,
+        );
         $rows = $this->rows(
             'SELECT s.id AS student_id, student_status_type.code AS student_status_type, '
             . 'student_status.code AS student_status_code, '
@@ -68,10 +79,11 @@ final class PdoStudentRepresentativeDirectoryQuery extends PdoEnrollmentReportin
             . 'LEFT JOIN family_addresses fa ON fa.id = saa.family_address_id '
             . 'LEFT JOIN statuses address_status ON address_status.id = fa.status_id '
             . 'LEFT JOIN status_types address_status_type ON address_status_type.id = address_status.status_type_id '
+            . 'WHERE ' . $gradeSectionPredicate . ' '
             . 'ORDER BY CASE WHEN g.id IS NULL THEN 1 ELSE 0 END, g.sort_order, g.id, '
             . 'CASE WHEN sec.id IS NULL THEN 1 ELSE 0 END, sec.name, sec.id, '
             . 'sp.first_surname, sp.second_surname, sp.first_name, sp.middle_name, s.id',
-            [':academicPeriodId' => $academicPeriodId],
+            $parameters,
         );
 
         $seen = [];

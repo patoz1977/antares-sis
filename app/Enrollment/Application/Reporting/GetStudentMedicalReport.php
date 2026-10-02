@@ -15,10 +15,15 @@ final readonly class GetStudentMedicalReport
     }
 
     /** @return list<StudentMedicalReportRow> */
-    public function handle(int $academicPeriodId): array
+    public function handle(
+        int $academicPeriodId,
+        ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+    ): array
     {
         $period = $this->resolvePeriod->handle($academicPeriodId);
+        $gradeSectionFilter ??= ReportingGradeSectionFilter::all($period->id);
+        $gradeSectionFilter->assertAcademicPeriod($period->id);
 
-        return $this->query->fetch($period->id);
+        return $this->query->fetch($period->id, $gradeSectionFilter);
     }
 }

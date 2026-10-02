@@ -9,5 +9,8 @@ use App\Enrollment\Application\Reporting\Dto\StudentMedicalReportRow;
 interface StudentMedicalReportQuery
 {
     /** @return list<StudentMedicalReportRow> */
-    public function fetch(int $academicPeriodId): array;
+    public function fetch(
+        int $academicPeriodId,
+        ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+    ): array;
 }
