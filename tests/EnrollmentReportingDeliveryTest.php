@@ -6,6 +6,7 @@ namespace Tests;
 
 use App\AcademicCore\Domain\AcademicPeriodStatus;
 use App\Enrollment\Application\Reporting\AcademicPeriodReportingQuery;
+use App\Enrollment\Application\Reporting\Dto\DirectoryRepresentative;
 use App\Enrollment\Application\Reporting\Dto\EnrollmentSummaryRow;
 use App\Enrollment\Application\Reporting\Dto\ReportingGradeSectionOption;
 use App\Enrollment\Application\Reporting\Dto\ReportingAcademicPeriod;
@@ -226,7 +227,10 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         foreach ([
             ['summary', ['Resumen de matrículas', 'Total:', 'Borrador', '=SUM, Grado Ñandú', 'Sección A']],
             ['students', ['Lista de estudiantes', 'No iniciada', '&lt;script&gt;alert(1)&lt;/script&gt;']],
-            ['directory', ['Directorio de estudiantes y representantes', '@something Representative', 'Dirección, con coma', 'Móvil:']],
+            ['directory', [
+                'Directorio de estudiantes y representantes', 'Representante 1', 'Representante 2',
+                '@something Representative', 'Relación con la familia:', 'Dirección, con coma', 'Móvil:',
+            ]],
             ['billing', ['Reporte de facturación', 'Tipo de identificación', 'Dirección de facturación', 'Nombre legal']],
             ['medical', ['Reporte médico', 'Condición médica', 'Sí', 'No', 'Observaciones']],
         ] as [$method, $expected]) {
@@ -263,9 +267,17 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
             [$writer->summary($fixture['summaryService']->handle(8)), ['AcademicPeriod', 'Grade', 'Section', 'EnrollmentStatus', 'Count'], 2, 'Ñandú', "\"'=SUM, Grado Ñandú\""],
             [$writer->students($fixture['students']->rows), ['Grade', 'Section', 'Student', 'Status'], 2, 'Ñandú', "\"'=SUM, Grado Ñandú\""],
             [$writer->directory($fixture['directory']->rows), [
-                'Grade', 'Section', 'Student', 'StudentIdentificationType', 'StudentIdentificationNumber',
-                'PrimaryRepresentative', 'RepresentativeIdentificationType', 'RepresentativeIdentificationNumber',
-                'MobilePhone', 'LandlinePhone', 'PersonalEmail', 'WorkPhone', 'WorkEmail', 'Address', 'Status',
+                'Grade', 'Section', 'EnrollmentStatus', 'StudentFirstName', 'StudentMiddleName',
+                'StudentFirstSurname', 'StudentSecondSurname', 'StudentIdentificationType',
+                'StudentIdentificationNumber', 'Representative1FirstName', 'Representative1MiddleName',
+                'Representative1FirstSurname', 'Representative1SecondSurname', 'Representative1Relationship',
+                'Representative1IdentificationType', 'Representative1IdentificationNumber',
+                'Representative1MobilePhone', 'Representative1LandlinePhone', 'Representative1PersonalEmail',
+                'Representative2FirstName', 'Representative2MiddleName', 'Representative2FirstSurname',
+                'Representative2SecondSurname', 'Representative2Relationship',
+                'Representative2IdentificationType', 'Representative2IdentificationNumber',
+                'Representative2MobilePhone', 'Representative2LandlinePhone',
+                'Representative2PersonalEmail', 'Address',
             ], 2, 'Dirección', "\"Dirección, con coma\nand nueva línea\""],
             [$writer->billing($fixture['billing']->rows), [
                 'Grade', 'Section', 'Student', 'Status', 'IdentificationType', 'IdentificationNumber',
@@ -297,9 +309,34 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         foreach (["'=SUM", "'+593", "'-1", "'@something", "'\tTabbed", "'\rCarriage"] as $protected) {
             e013Contains($protected, $directory);
         }
-        e013Contains('Normal text', $directory);
-        assertSameValue(false, str_contains($directory, "'Normal text"));
+        e013Contains('normal@example.test', $directory);
+        assertSameValue(false, str_contains($directory, "'normal@example.test"));
         e013Contains("Dirección, con coma\nand nueva línea", $directory);
+        assertSameValue(false, str_contains($directory, 'WorkPhone'));
+        assertSameValue(false, str_contains($directory, 'WorkEmail'));
+
+        $blankRepresentativeCsv = $writer->directory([new StudentRepresentativeDirectoryRow(
+            11,
+            null,
+            null,
+            null,
+            null,
+            'Student',
+            null,
+            'Without Representatives',
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            EnrollmentReportingStatus::NotStarted,
+        )]);
+        $blankRecords = e013CsvRecords($blankRepresentativeCsv);
+        assertSameValue(2, count($blankRecords));
+        assertSameValue(count($blankRecords[0]), count($blankRecords[1]));
+        assertSameValue('', $blankRecords[1][9]);
+        assertSameValue('', $blankRecords[1][19]);
 
         assertSameValue(1, count(e013CsvRecords($writer->students([]))));
         assertSameValue(1, count(e013CsvRecords($writer->directory([]))));
@@ -453,18 +490,35 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         2,
         'Section A',
         '<script>alert(1)</script>',
+        null,
         'Student',
+        null,
         '=SUM(TYPE)',
         '-123',
-        '@something',
-        'Representative',
-        'ID',
-        "\tTabbed",
-        '+593000000',
-        "\rCarriage",
-        'normal@example.test',
-        'Normal text',
-        'work@example.test',
+        new DirectoryRepresentative(
+            '@something',
+            null,
+            'Representative',
+            null,
+            'Madre',
+            'ID',
+            "\tTabbed",
+            '+593000000',
+            "\rCarriage",
+            'normal@example.test',
+        ),
+        new DirectoryRepresentative(
+            'Second',
+            null,
+            'Representative',
+            null,
+            'Padre',
+            null,
+            null,
+            null,
+            null,
+            null,
+        ),
         "Dirección, con coma\nand nueva línea",
         EnrollmentReportingStatus::Draft,
     )];

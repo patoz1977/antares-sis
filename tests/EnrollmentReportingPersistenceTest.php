@@ -97,14 +97,22 @@ function registerEnrollmentReportingPersistenceTests(TestRunner $runner): void
         );
     });
 
-    $runner->add('E013 Phase 2 PDO directory combines historical annual data with current Family Representative contacts and Address', function (): void {
+    $runner->add('Directory projection combines atomic Student current Representatives relationship and Address data', function (): void {
         [$manager] = enrollmentReportingFixture();
         $current = (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101);
         $row = array_values(array_filter($current, static fn ($candidate): bool => $candidate->studentId === 2))[0];
         assertSameValue(['Grade One', 'A', 'DRAFT'], [$row->gradeName, $row->sectionName, $row->status->value]);
-        assertSameValue(['Representative', 'Current', '0990000000', 'work@example.test'], [
-            $row->representativeSurnames, $row->representativeNames, $row->representativeMobilePhone,
-            $row->representativeWorkEmail,
+        assertSameValue(['Name2', 'Middle2', 'Surname2', 'Second2', 'National ID', 'STU-2'], [
+            $row->studentFirstName, $row->studentMiddleName, $row->studentFirstSurname,
+            $row->studentSecondSurname, $row->studentIdentificationType, $row->studentIdentificationNumber,
+        ]);
+        assertSameValue(['Representative', 'Current', 'Padre', '0990000000'], [
+            $row->representative1?->firstSurname, $row->representative1?->firstName,
+            $row->representative1?->relationship, $row->representative1?->mobilePhone,
+        ]);
+        assertSameValue(['Secondary', 'Mother', 'Madre'], [
+            $row->representative2?->firstSurname, $row->representative2?->firstName,
+            $row->representative2?->relationship,
         ]);
         assertSameValue('Current Street 10, Cross Street, Current Sector, Current reference', $row->studentAddress);
 
@@ -113,7 +121,7 @@ function registerEnrollmentReportingPersistenceTests(TestRunner $runner): void
         assertSameValue(['Grade Two', null, 'COMPLETED'], [
             $historicalRow->gradeName, $historicalRow->sectionName, $historicalRow->status->value,
         ]);
-        assertSameValue('0990000000', $historicalRow->representativeMobilePhone);
+        assertSameValue('0990000000', $historicalRow->representative1?->mobilePhone);
         assertSameValue('Current Street 10, Cross Street, Current Sector, Current reference', $historicalRow->studentAddress);
     });
 
@@ -121,10 +129,13 @@ function registerEnrollmentReportingPersistenceTests(TestRunner $runner): void
         [$manager, $pdo] = enrollmentReportingFixture();
         $rows = (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101);
         $withoutFamily = array_values(array_filter($rows, static fn ($row): bool => $row->studentId === 1))[0];
-        assertSameValue([null, null, null], [
-            $withoutFamily->representativeNames, $withoutFamily->studentAddress, $withoutFamily->gradeId,
+        assertSameValue([null, null, null, null], [
+            $withoutFamily->representative1, $withoutFamily->representative2,
+            $withoutFamily->studentAddress, $withoutFamily->gradeId,
         ]);
-        $pdo->exec("INSERT INTO family_representatives VALUES (2, 500, 700, '2026-01-02 00:00:00', NULL, 1, 1)");
+        $pdo->exec("INSERT INTO persons VALUES (72,1,'REP-72','Other',NULL,'Primary',NULL,NULL,NULL,NULL)");
+        $pdo->exec("INSERT INTO representatives VALUES (702,72,NULL,NULL,1)");
+        $pdo->exec("INSERT INTO family_representatives VALUES (3,500,702,3,1,'2026-01-03 00:00:00',NULL)");
         reportingAssertThrows(
             static fn (): mixed => (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101),
             RuntimeException::class,
@@ -135,6 +146,152 @@ function registerEnrollmentReportingPersistenceTests(TestRunner $runner): void
         [$manager, $pdo] = enrollmentReportingFixture();
         $pdo->exec("INSERT INTO family_addresses VALUES (901, 500, 'Other Street', NULL, NULL, NULL, NULL, 1)");
         $pdo->exec("INSERT INTO student_address_assignments VALUES (2, 500, 2, 901, '2026-01-02 00:00:00', NULL)");
+        reportingAssertThrows(
+            static fn (): mixed => (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101),
+            RuntimeException::class,
+        );
+    });
+
+    $runner->add('Directory leaves both Representative slots empty when an active Family has no Primary', function (): void {
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE family_representatives SET is_primary = 0 WHERE family_id = 500');
+
+        $row = directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2);
+        assertSameValue([null, null], [$row->representative1, $row->representative2]);
+    });
+
+    $runner->add('Directory preserves optional Student identification and Representative contact absence', function (): void {
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE persons SET document_type_id = NULL, document_number = NULL WHERE id = 2');
+
+        $row = directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2);
+        assertSameValue([null, null], [
+            $row->studentIdentificationType,
+            $row->studentIdentificationNumber,
+        ]);
+        assertSameValue([null, null, null, null, null], [
+            $row->representative2?->identificationType,
+            $row->representative2?->identificationNumber,
+            $row->representative2?->mobilePhone,
+            $row->representative2?->landlinePhone,
+            $row->representative2?->personalEmail,
+        ]);
+    });
+
+    $runner->add('Directory treats active membership separately from valid Representative GENERAL_STATUS', function (): void {
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE representatives SET status_id = 2 WHERE id = 700');
+
+        $row = directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2);
+        assertSameValue('Current', $row->representative1?->firstName);
+
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE representatives SET status_id = 11 WHERE id = 700');
+        reportingAssertThrows(
+            static fn (): mixed => (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101),
+            RuntimeException::class,
+        );
+    });
+
+    $runner->add('Directory Representative 2 applies the exact approved secondary selection matrix', function (): void {
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec("UPDATE family_representatives SET ended_at = '2026-02-01 00:00:00' WHERE id = 2");
+        $row = directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2);
+        assertSameValue(['Current', null], [$row->representative1?->firstName, $row->representative2]);
+
+        [$manager] = enrollmentReportingFixture();
+        $manager->connection()->exec('UPDATE family_representatives SET relationship_type_id = 3 WHERE id = 2');
+        $row = directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2);
+        assertSameValue('Mother', $row->representative2?->firstName);
+        assertSameValue('Otro', $row->representative2?->relationship);
+
+        [$manager, $pdo] = enrollmentReportingFixture();
+        addDirectoryRepresentative($pdo, 702, 'OTHER');
+        $row = directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2);
+        assertSameValue('Mother', $row->representative2?->firstName);
+
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE family_representatives SET relationship_type_id = 2 WHERE id = 1');
+        $pdo->exec('UPDATE family_representatives SET relationship_type_id = 3 WHERE id = 2');
+        addDirectoryRepresentative($pdo, 702, 'FATHER');
+        $row = directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2);
+        assertSameValue('Rep702', $row->representative2?->firstName);
+
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE family_representatives SET relationship_type_id = 3 WHERE id = 1');
+        addDirectoryRepresentative($pdo, 702, 'FATHER');
+        $row = directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2);
+        assertSameValue('Rep702', $row->representative2?->firstName);
+
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE family_representatives SET relationship_type_id = 3 WHERE id = 1');
+        addDirectoryRepresentative($pdo, 702, 'OTHER');
+        $row = directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2);
+        assertSameValue('Mother', $row->representative2?->firstName);
+
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE family_representatives SET relationship_type_id = 3 WHERE id IN (1, 2)');
+        addDirectoryRepresentative($pdo, 702, 'OTHER');
+        $row = directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2);
+        assertSameValue(null, $row->representative2);
+
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE family_representatives SET relationship_type_id = 3 WHERE id = 2');
+        addDirectoryRepresentative($pdo, 702, 'OTHER');
+        $row = directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2);
+        assertSameValue(null, $row->representative2);
+    });
+
+    $runner->add('Directory fails closed on ambiguous applicable secondary RelationshipType', function (): void {
+        [$manager, $pdo] = enrollmentReportingFixture();
+        addDirectoryRepresentative($pdo, 702, 'MOTHER');
+        reportingAssertThrows(
+            static fn (): mixed => (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101),
+            RuntimeException::class,
+        );
+    });
+
+    $runner->add('Directory validates current Family Address coherence and valid absence', function (): void {
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec("UPDATE student_address_assignments SET ended_at = '2026-02-01 00:00:00'");
+        assertSameValue(
+            null,
+            directoryStudentRow((new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101), 2)->studentAddress,
+        );
+
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE family_addresses SET status_id = 2 WHERE id = 900');
+        reportingAssertThrows(
+            static fn (): mixed => (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101),
+            RuntimeException::class,
+        );
+
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE student_address_assignments SET family_id = 501 WHERE id = 1');
+        reportingAssertThrows(
+            static fn (): mixed => (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101),
+            RuntimeException::class,
+        );
+    });
+
+    $runner->add('Directory fails closed on current Family incoherence without multiplying Student rows', function (): void {
+        [$manager, $pdo] = enrollmentReportingFixture();
+        addDirectoryRepresentative($pdo, 702, 'OTHER');
+        addDirectoryRepresentative($pdo, 703, 'OTHER');
+        $rows = (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101);
+        assertSameValue(5, count($rows));
+        assertSameValue(1, count(array_filter($rows, static fn ($row): bool => $row->studentId === 2)));
+
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE families SET status_id = 2 WHERE id = 500');
+        reportingAssertThrows(
+            static fn (): mixed => (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101),
+            RuntimeException::class,
+        );
+
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('INSERT INTO families VALUES (501,1)');
+        $pdo->exec("INSERT INTO family_students VALUES (2,501,2,'2026-01-03 00:00:00',NULL)");
         reportingAssertThrows(
             static fn (): mixed => (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101),
             RuntimeException::class,
@@ -217,21 +374,24 @@ function enrollmentReportingFixture(): array
     $pdo->exec('CREATE TABLE status_types (id INTEGER PRIMARY KEY, code TEXT NOT NULL)');
     $pdo->exec('CREATE TABLE statuses (id INTEGER PRIMARY KEY, status_type_id INTEGER NOT NULL, code TEXT NOT NULL, sort_order INTEGER NOT NULL)');
     $pdo->exec('CREATE TABLE document_types (id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
+    $pdo->exec('CREATE TABLE relationship_types (id INTEGER PRIMARY KEY, code TEXT NOT NULL, name TEXT NOT NULL)');
     $pdo->exec('CREATE TABLE academic_periods (id INTEGER PRIMARY KEY, code TEXT, name TEXT, starts_on TEXT, ends_on TEXT, status_id INTEGER)');
     $pdo->exec('CREATE TABLE grades (id INTEGER PRIMARY KEY, code TEXT, name TEXT, sort_order INTEGER)');
     $pdo->exec('CREATE TABLE sections (id INTEGER PRIMARY KEY, grade_id INTEGER, code TEXT, name TEXT)');
     $pdo->exec('CREATE TABLE persons (id INTEGER PRIMARY KEY, document_type_id INTEGER, document_number TEXT, first_name TEXT, middle_name TEXT, first_surname TEXT, second_surname TEXT, mobile_phone TEXT, landline_phone TEXT, email TEXT)');
     $pdo->exec('CREATE TABLE students (id INTEGER PRIMARY KEY, person_id INTEGER, status_id INTEGER)');
     $pdo->exec('CREATE TABLE representatives (id INTEGER PRIMARY KEY, person_id INTEGER, work_phone TEXT, work_email TEXT, status_id INTEGER)');
+    $pdo->exec('CREATE TABLE families (id INTEGER PRIMARY KEY, status_id INTEGER)');
     $pdo->exec('CREATE TABLE enrollments (id INTEGER PRIMARY KEY, student_id INTEGER, family_id INTEGER, academic_period_id INTEGER, status_id INTEGER, grade_id INTEGER, section_id INTEGER, billing_identification_type_id INTEGER, billing_identification_number TEXT, billing_legal_name TEXT, billing_address TEXT, billing_email TEXT, billing_phone TEXT, has_medical_condition INTEGER, medical_condition_detail TEXT, has_allergies INTEGER, allergy_detail TEXT, takes_permanent_medication INTEGER, medication_name TEXT, requires_special_care INTEGER, special_care_detail TEXT, has_medical_insurance INTEGER, insurance_provider TEXT, pediatrician_name TEXT, pediatrician_phone TEXT, medical_observations TEXT)');
     $pdo->exec('CREATE TABLE family_students (id INTEGER PRIMARY KEY, family_id INTEGER, student_id INTEGER, started_at TEXT, ended_at TEXT)');
-    $pdo->exec('CREATE TABLE family_representatives (id INTEGER PRIMARY KEY, family_id INTEGER, representative_id INTEGER, started_at TEXT, ended_at TEXT, is_primary INTEGER, status_id INTEGER)');
+    $pdo->exec('CREATE TABLE family_representatives (id INTEGER PRIMARY KEY, family_id INTEGER, representative_id INTEGER, relationship_type_id INTEGER, is_primary INTEGER, started_at TEXT, ended_at TEXT)');
     $pdo->exec('CREATE TABLE family_addresses (id INTEGER PRIMARY KEY, family_id INTEGER, main_street TEXT, street_number TEXT, secondary_street TEXT, sector TEXT, reference TEXT, status_id INTEGER)');
     $pdo->exec('CREATE TABLE student_address_assignments (id INTEGER PRIMARY KEY, family_id INTEGER, student_id INTEGER, family_address_id INTEGER, started_at TEXT, ended_at TEXT)');
 
     $pdo->exec("INSERT INTO status_types VALUES (1, 'GENERAL_STATUS'), (2, 'ENROLLMENT_STATUS')");
     $pdo->exec("INSERT INTO statuses VALUES (1,1,'ACTIVE',1),(2,1,'INACTIVE',2),(11,2,'DRAFT',1),(12,2,'SUBMITTED',2),(13,2,'COMPLETED',3),(14,2,'CANCELLED',4)");
     $pdo->exec("INSERT INTO document_types VALUES (1, 'National ID')");
+    $pdo->exec("INSERT INTO relationship_types VALUES (1,'FATHER','Padre'),(2,'MOTHER','Madre'),(3,'OTHER','Otro')");
     $pdo->exec("INSERT INTO academic_periods VALUES (100,'HIST','Historical','2025-09-01','2026-06-30',2),(101,'CURR','Current','2026-09-01','2027-06-30',1)");
     $pdo->exec("INSERT INTO grades VALUES (1,'EGB_1','Grade One',1),(2,'EGB_2','Grade Two',2)");
     $pdo->exec("INSERT INTO sections VALUES (1,1,'A','A'),(2,2,'B','B')");
@@ -240,10 +400,15 @@ function enrollmentReportingFixture(): array
         $status = $id === 6 ? 2 : 1;
         $pdo->exec("INSERT INTO students VALUES ({$id},{$id},{$status})");
     }
+    $pdo->exec("UPDATE persons SET middle_name = 'Middle2', second_surname = 'Second2' WHERE id = 2");
     $pdo->exec("INSERT INTO persons VALUES (70,1,'REP-70','Current',NULL,'Representative',NULL,'0990000000','022000000','personal@example.test')");
+    $pdo->exec("INSERT INTO persons VALUES (71,NULL,NULL,'Mother',NULL,'Secondary',NULL,NULL,NULL,NULL)");
     $pdo->exec("INSERT INTO representatives VALUES (700,70,'022111111','work@example.test',1)");
+    $pdo->exec("INSERT INTO representatives VALUES (701,71,NULL,NULL,1)");
+    $pdo->exec("INSERT INTO families VALUES (500,1)");
     $pdo->exec("INSERT INTO family_students VALUES (1,500,2,'2026-01-01 00:00:00',NULL)");
-    $pdo->exec("INSERT INTO family_representatives VALUES (1,500,700,'2026-01-01 00:00:00',NULL,1,1)");
+    $pdo->exec("INSERT INTO family_representatives VALUES (1,500,700,1,1,'2026-01-01 00:00:00',NULL)");
+    $pdo->exec("INSERT INTO family_representatives VALUES (2,500,701,2,0,'2026-01-02 00:00:00',NULL)");
     $pdo->exec("INSERT INTO family_addresses VALUES (900,500,'Current Street','10','Cross Street','Current Sector','Current reference',1)");
     $pdo->exec("INSERT INTO student_address_assignments VALUES (1,500,2,900,'2026-01-01 00:00:00',NULL)");
 
@@ -255,6 +420,39 @@ function enrollmentReportingFixture(): array
     $pdo->exec("INSERT INTO enrollments VALUES (900,2,123,100,13,2,NULL,1,'HIST-2','Historical Billing','Old Address','old@example.test','0995555555',0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,NULL,NULL,'Historical observation')");
 
     return [$manager, $pdo];
+}
+
+/** @param list<\App\Enrollment\Application\Reporting\Dto\StudentRepresentativeDirectoryRow> $rows */
+function directoryStudentRow(array $rows, int $studentId): \App\Enrollment\Application\Reporting\Dto\StudentRepresentativeDirectoryRow
+{
+    $matches = array_values(array_filter(
+        $rows,
+        static fn ($row): bool => $row->studentId === $studentId,
+    ));
+    if (count($matches) !== 1) {
+        throw new RuntimeException('Expected exactly one Directory row for Student fixture.');
+    }
+
+    return $matches[0];
+}
+
+function addDirectoryRepresentative(
+    PDO $pdo,
+    int $representativeId,
+    string $relationshipCode,
+    bool $isPrimary = false,
+): void {
+    $relationshipTypeId = match ($relationshipCode) {
+        'FATHER' => 1,
+        'MOTHER' => 2,
+        'OTHER' => 3,
+        default => throw new RuntimeException('Unsupported RelationshipType fixture.'),
+    };
+    $personId = $representativeId + 1000;
+    $pdo->exec("INSERT INTO persons VALUES ({$personId},NULL,NULL,'Rep{$representativeId}',NULL,'Secondary{$representativeId}',NULL,NULL,NULL,NULL)");
+    $pdo->exec("INSERT INTO representatives VALUES ({$representativeId},{$personId},NULL,NULL,1)");
+    $primary = $isPrimary ? 1 : 0;
+    $pdo->exec("INSERT INTO family_representatives VALUES ({$representativeId},500,{$representativeId},{$relationshipTypeId},{$primary},'2026-03-01 00:00:00',NULL)");
 }
 
 function reportingAssertThrows(callable $operation, string $expectedClass): void

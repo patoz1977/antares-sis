@@ -107,6 +107,11 @@ function registerAdministrativeUiBaselineTests(TestRunner $runner): void
         ] as $expected) {
             deliveryAssertContains($expected, $navigation);
         }
+        $directory = administrativeUiSource('resources/views/reports/enrollments/directory.php');
+        foreach (['Representante 1', 'Representante 2', 'Relación con la familia', 'Dirección actual'] as $expected) {
+            deliveryAssertContains($expected, $directory);
+        }
+        assertSameValue(false, str_contains($directory, 'Laboral'));
         assertSameValue(false, str_contains($navigation, '<style>'));
         assertSameValue(false, str_contains($navigation, '<script'));
     });
