@@ -388,13 +388,13 @@ function registerPersonApplicationTests(TestRunner $runner): void
                 $files[] = $file->getPathname();
             }
         }
-        assertSameValue(10, count($files));
+        assertSameValue(17, count($files));
 
         $source = implode("\n", array_map(static fn (string $file): string => (string) file_get_contents($file), $files));
         foreach (['PDO', '\\Infrastructure\\', '\\Http\\', '\\Controllers\\', '\\Views\\'] as $forbidden) {
             assertSameValue(false, str_contains($source, $forbidden));
         }
-        assertSameValue(1, preg_match_all('/\binterface\s+[A-Za-z_]/', $source));
+        assertSameValue(2, preg_match_all('/\binterface\s+[A-Za-z_]/', $source));
         assertSameValue(true, interface_exists(LockingPersonRepository::class));
     });
 }

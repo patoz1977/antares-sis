@@ -707,7 +707,7 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
             'Controller',
             'Session',
             '\\Views\\',
-            'App\\Person\\',
+            'App\\Person\\Domain\\',
             'TransactionManager',
             'UnitOfWork',
             'RepresentativeStudent',

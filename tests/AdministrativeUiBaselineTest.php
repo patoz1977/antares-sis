@@ -8,23 +8,22 @@ use Tests\Support\TestRunner;
 
 function registerAdministrativeUiBaselineTests(TestRunner $runner): void
 {
-    $runner->add('E014 Phase 3 administrative entry screens keep exact lookup and mutation contracts', function (): void {
+    $runner->add('Administrative entry screens expose Phase 4 discovery and preserve mutation contracts', function (): void {
         $persons = administrativeUiSource('resources/views/persons/index.php');
         $personForm = administrativeUiSource('resources/views/persons/form.php');
         $families = administrativeUiSource('resources/views/families/index.php');
 
-        foreach (['Personas', 'Crear persona', 'Consultar persona por ID', 'action="/persons/show"', 'name="id"'] as $expected) {
+        foreach (['Personas', 'Crear persona', 'Buscar persona', 'action="/persons/search"', 'name="criterion"', 'name="_csrf_token"'] as $expected) {
             deliveryAssertContains($expected, $persons);
         }
         foreach (['/persons/create', '/persons/update', 'name="_csrf_token"', 'name="document_type_id"', 'name="status"'] as $expected) {
             deliveryAssertContains($expected, $personForm);
         }
-        foreach (['Familias', 'Crear representante y familia', 'Consultar familia por ID', 'action="/families/show"', 'name="id"'] as $expected) {
+        foreach (['Familias', 'Crear representante y familia', 'Buscar familia', 'action="/families/search"', 'name="criterion"', 'name="_csrf_token"'] as $expected) {
             deliveryAssertContains($expected, $families);
         }
-        foreach (['search', 'filter', 'pagination', 'autocomplete'] as $forbidden) {
-            assertSameValue(false, str_contains(strtolower($persons . $families), $forbidden));
-        }
+        assertSameValue(false, str_contains(strtolower($persons . $families), 'pagination'));
+        assertSameValue(false, str_contains($persons . $families, 'name="id"'));
     });
 
     $runner->add('E014 Phase 3 Family Resources and credentials retain protected POST forms', function (): void {

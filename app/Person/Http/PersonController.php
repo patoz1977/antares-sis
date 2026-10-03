@@ -46,6 +46,11 @@ final class PersonController extends Controller
             'title' => 'Personas',
             'successMessage' => $this->flashMessage(self::FLASH_SUCCESS_KEY),
             'errorMessage' => $this->flashMessage(self::FLASH_ERROR_KEY),
+            'csrfToken' => $this->csrf->token(),
+            'criterion' => 'first_surname',
+            'searchValue' => '',
+            'searchErrors' => [],
+            'searchResult' => null,
         ]);
     }
 

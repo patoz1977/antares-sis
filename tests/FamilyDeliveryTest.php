@@ -80,7 +80,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         ] as $route) {
             assertSameValue(true, str_contains($routes, $route));
         }
-        assertSameValue(27, substr_count($routes, '], $familyMiddleware);'));
+        assertSameValue(28, substr_count($routes, '], $familyMiddleware);'));
         assertSameValue(false, str_contains($routes, '/families/delete'));
         assertSameValue(false, method_exists(FamilyController::class, 'delete'));
 
@@ -100,7 +100,8 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         [$controller, $environment] = familyDeliveryController();
         $index = $controller->index();
         deliveryAssertContains('Crear representante y familia', $index);
-        deliveryAssertContains('action="/families/show"', $index);
+        deliveryAssertContains('action="/families/search"', $index);
+        deliveryAssertContains('name="_csrf_token" value="delivery-csrf"', $index);
 
         deliveryRequest('GET', '/families/show?id=' . $environment->familyId, ['id' => (string) $environment->familyId]);
         $detail = $controller->show();
@@ -447,7 +448,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         assertSameValue(false, str_contains($views, 'RepresentativeStudent'));
         assertSameValue(false, str_contains($views, 'name="username"'));
         assertSameValue(false, str_contains($views, 'name="password"'));
-        assertSameValue(19, substr_count($views, 'name="_csrf_token"'));
+        assertSameValue(20, substr_count($views, 'name="_csrf_token"'));
     });
 }
 

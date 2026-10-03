@@ -117,7 +117,8 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         $form = $controller->showCreate();
 
         deliveryAssertContains('Crear persona', $index);
-        deliveryAssertContains('action="/persons/show"', $index);
+        deliveryAssertContains('action="/persons/search"', $index);
+        deliveryAssertContains('name="_csrf_token" value="delivery-csrf"', $index);
         deliveryAssertContains('name="_csrf_token" value="delivery-csrf"', $form);
         deliveryAssertContains('action="/persons/create"', $form);
         deliveryAssertContains('Los campos marcados con * son obligatorios.', $form);
@@ -428,7 +429,7 @@ function registerPersonDeliveryTests(TestRunner $runner): void
         }
         assertSameValue(true, str_contains($routes, 'AuthenticationMiddleware::class'));
         assertSameValue(true, str_contains($routes, 'PersonAdministrationMiddleware::class'));
-        assertSameValue(6, substr_count($routes, '], $personMiddleware);'));
+        assertSameValue(7, substr_count($routes, '], $personMiddleware);'));
         assertSameValue(false, str_contains($routes, '/persons/delete'));
         assertSameValue(false, method_exists(PersonController::class, 'delete'));
     });
