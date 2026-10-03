@@ -9,7 +9,8 @@ use App\Family\Application\Discovery\Dto\FamilyMatchedMember;
 use App\Family\Application\Discovery\FamilyDiscoveryCriteria;
 use App\Family\Application\Discovery\FamilyDiscoveryField;
 use App\Family\Application\Discovery\FamilyDiscoveryQuery;
-use App\Person\Infrastructure\Persistence\PdoPersonDiscoveryQuery;
+use App\Person\Application\Discovery\PersonDiscoveryCriteria;
+use App\Person\Application\Discovery\PersonDiscoveryField;
 use Core\Database\ConnectionManager;
 use PDO;
 use RuntimeException;
@@ -77,12 +78,12 @@ final readonly class PdoFamilyDiscoveryQuery implements FamilyDiscoveryQuery
             ];
         }
 
-        [$representativePredicate, $representativeParameters] = PdoPersonDiscoveryQuery::predicate(
+        [$representativePredicate, $representativeParameters] = self::personPredicate(
             $criteria->personCriteria,
             'rp',
             'familyRepresentative',
         );
-        [$studentPredicate, $studentParameters] = PdoPersonDiscoveryQuery::predicate(
+        [$studentPredicate, $studentParameters] = self::personPredicate(
             $criteria->personCriteria,
             'sp',
             'familyStudent',
@@ -123,12 +124,12 @@ final readonly class PdoFamilyDiscoveryQuery implements FamilyDiscoveryQuery
         }
         $representativeFamilyList = implode(', ', $representativeFamilyPlaceholders);
         $studentFamilyList = implode(', ', $studentFamilyPlaceholders);
-        [$representativePredicate, $representativeParameters] = PdoPersonDiscoveryQuery::predicate(
+        [$representativePredicate, $representativeParameters] = self::personPredicate(
             $criteria->personCriteria,
             'p',
             'memberRepresentative',
         );
-        [$studentPredicate, $studentParameters] = PdoPersonDiscoveryQuery::predicate(
+        [$studentPredicate, $studentParameters] = self::personPredicate(
             $criteria->personCriteria,
             'p',
             'memberStudent',
@@ -174,6 +175,45 @@ final readonly class PdoFamilyDiscoveryQuery implements FamilyDiscoveryQuery
         }
 
         return $result;
+    }
+
+    /** @return array{string, array<string, string>} */
+    private static function personPredicate(
+        PersonDiscoveryCriteria $criteria,
+        string $alias,
+        string $parameterPrefix,
+    ): array {
+        $column = match ($criteria->field) {
+            PersonDiscoveryField::FirstName => 'first_name',
+            PersonDiscoveryField::MiddleName => 'middle_name',
+            PersonDiscoveryField::FirstSurname => 'first_surname',
+            PersonDiscoveryField::SecondSurname => 'second_surname',
+            PersonDiscoveryField::IdentificationNumber => 'document_number',
+            PersonDiscoveryField::PersonalEmail => 'email',
+        };
+        $parameter = ':' . $parameterPrefix . 'Exact';
+        if ($criteria->field->isName()) {
+            $escaped = self::escapeLike($criteria->value);
+
+            return [
+                "({$alias}.{$column} LIKE :{$parameterPrefix}Start ESCAPE '!' "
+                . "OR {$alias}.{$column} LIKE :{$parameterPrefix}Word ESCAPE '!')",
+                [
+                    ':' . $parameterPrefix . 'Start' => $escaped . '%',
+                    ':' . $parameterPrefix . 'Word' => '% ' . $escaped . '%',
+                ],
+            ];
+        }
+        if ($criteria->field === PersonDiscoveryField::IdentificationNumber) {
+            return ["UPPER(TRIM({$alias}.{$column})) = {$parameter}", [$parameter => mb_strtoupper($criteria->value, 'UTF-8')]];
+        }
+
+        return ["TRIM({$alias}.{$column}) = {$parameter}", [$parameter => $criteria->value]];
+    }
+
+    private static function escapeLike(string $value): string
+    {
+        return str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $value);
     }
 
     private function positiveInt(mixed $value, string $field): int

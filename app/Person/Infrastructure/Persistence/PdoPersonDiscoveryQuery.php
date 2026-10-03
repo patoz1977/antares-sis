@@ -48,7 +48,7 @@ final readonly class PdoPersonDiscoveryQuery implements PersonDiscoveryQuery
     }
 
     /** @return array{string, array<string, string>} */
-    public static function predicate(PersonDiscoveryCriteria $criteria, string $alias, string $parameterPrefix): array
+    private static function predicate(PersonDiscoveryCriteria $criteria, string $alias, string $parameterPrefix): array
     {
         $column = match ($criteria->field) {
             PersonDiscoveryField::FirstName => 'first_name',

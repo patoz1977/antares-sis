@@ -20,6 +20,7 @@ use App\Person\Http\PersonDiscoveryController;
 use App\Person\Infrastructure\Persistence\PdoPersonDiscoveryQuery;
 use PDO;
 use ReflectionClass;
+use ReflectionMethod;
 use Tests\Support\TestRunner;
 
 function registerAdministrativeDiscoveryTests(TestRunner $runner): void
@@ -168,6 +169,17 @@ function registerAdministrativeDiscoveryTests(TestRunner $runner): void
                 assertSameValue(false, str_contains($source, $forbidden), $path . ': ' . $forbidden);
             }
         }
+    });
+
+    $runner->add('Phase 4 Family PDO adapter does not depend on Person infrastructure internals', function (): void {
+        $source = (string) file_get_contents(
+            dirname(__DIR__) . '/app/Family/Infrastructure/Persistence/PdoFamilyDiscoveryQuery.php',
+        );
+
+        foreach (['App\\Person\\Infrastructure', 'PdoPersonDiscoveryQuery'] as $forbidden) {
+            assertSameValue(false, str_contains($source, $forbidden), $forbidden);
+        }
+        assertSameValue(true, (new ReflectionMethod(PdoPersonDiscoveryQuery::class, 'predicate'))->isPrivate());
     });
 
     $runner->add('Phase 4 Delivery uses POST CSRF no-store safe escaping and existing detail navigation', function (): void {
