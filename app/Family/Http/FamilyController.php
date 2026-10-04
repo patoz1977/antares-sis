@@ -71,6 +71,11 @@ final class FamilyController extends Controller
             'title' => 'Familias',
             'successMessage' => $this->flashMessage(self::FLASH_SUCCESS_KEY),
             'errorMessage' => $this->flashMessage(self::FLASH_ERROR_KEY),
+            'csrfToken' => $this->csrf->token(),
+            'criterion' => 'display_name',
+            'searchValue' => '',
+            'searchErrors' => [],
+            'searchResult' => null,
         ]);
     }
 

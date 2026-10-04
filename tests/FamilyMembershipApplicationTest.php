@@ -720,6 +720,26 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
             assertSameValue(false, str_contains($source, $forbidden));
         }
 
+        $discoverySource = familyDiscoveryApplicationSource();
+        foreach ([
+            'App\\Person\\Domain\\',
+            'App\\Person\\Infrastructure\\',
+            'App\\Person\\Http\\',
+            'Repository',
+            'TransactionManager',
+            'UnitOfWork',
+        ] as $forbidden) {
+            assertSameValue(false, str_contains($discoverySource, $forbidden));
+        }
+        foreach ([
+            'App\\Person\\Application\\Discovery\\Exception\\InvalidPersonDiscoveryCriteria',
+            'App\\Person\\Application\\Discovery\\PersonDiscoveryCriteria',
+            'App\\Person\\Application\\Discovery\\PersonDiscoveryField',
+        ] as $approvedDependency) {
+            $discoverySource = str_replace($approvedDependency, '', $discoverySource);
+        }
+        assertSameValue(false, str_contains($discoverySource, 'App\\Person\\'));
+
         foreach ([
             CreateFamily::class,
             AddRepresentativeToFamily::class,
@@ -1020,7 +1040,31 @@ function familyApplicationSource(): string
                 $file->getPathname(),
                 DIRECTORY_SEPARATOR . 'RepresentativeResources' . DIRECTORY_SEPARATOR,
             )
+            && !str_contains(
+                $file->getPathname(),
+                DIRECTORY_SEPARATOR . 'Discovery' . DIRECTORY_SEPARATOR,
+            )
         ) {
+            $files[] = $file->getPathname();
+        }
+    }
+
+    sort($files, SORT_STRING);
+
+    return implode("\n", array_map(
+        static fn (string $file): string => (string) file_get_contents($file),
+        $files,
+    ));
+}
+
+function familyDiscoveryApplicationSource(): string
+{
+    $files = [];
+    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(
+        dirname(__DIR__) . '/app/Family/Application/Discovery'
+    ));
+    foreach ($iterator as $file) {
+        if ($file->isFile() && $file->getExtension() === 'php') {
             $files[] = $file->getPathname();
         }
     }

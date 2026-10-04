@@ -18,10 +18,12 @@ use App\Enrollment\Http\RepresentativeEnrollmentController;
 use App\Enrollment\Http\RepresentativeEnrollmentSubmissionController;
 use App\Family\Http\FamilyAdministrationMiddleware;
 use App\Family\Http\FamilyController;
+use App\Family\Http\FamilyDiscoveryController;
 use App\Family\Http\FamilyResourceController;
 use App\Family\Http\RepresentativeFamilyResourceController;
 use App\Person\Http\PersonAdministrationMiddleware;
 use App\Person\Http\PersonController;
+use App\Person\Http\PersonDiscoveryController;
 use App\InstitutionalDocuments\Http\InstitutionalAcknowledgementController;
 use App\InstitutionalDocuments\Http\InstitutionalDocumentsAdministrationMiddleware;
 use App\InstitutionalDocuments\Http\RepresentativeAcknowledgementController;
@@ -49,7 +51,9 @@ $representativeEnrollmentSubmissionController = $app->container()->make(
     RepresentativeEnrollmentSubmissionController::class,
 );
 $personController = $app->container()->make(PersonController::class);
+$personDiscoveryController = $app->container()->make(PersonDiscoveryController::class);
 $familyController = $app->container()->make(FamilyController::class);
+$familyDiscoveryController = $app->container()->make(FamilyDiscoveryController::class);
 $familyResourceController = $app->container()->make(FamilyResourceController::class);
 $representativeFamilyResourceController = $app->container()->make(
     RepresentativeFamilyResourceController::class,
@@ -487,12 +491,14 @@ $router->post(
     AuthenticationMiddleware::class,
 );
 $router->get('/persons', [$personController, 'index'], $personMiddleware);
+$router->post('/persons/search', [$personDiscoveryController, 'search'], $personMiddleware);
 $router->get('/persons/create', [$personController, 'showCreate'], $personMiddleware);
 $router->post('/persons/create', [$personController, 'create'], $personMiddleware);
 $router->get('/persons/show', [$personController, 'show'], $personMiddleware);
 $router->get('/persons/edit', [$personController, 'showEdit'], $personMiddleware);
 $router->post('/persons/update', [$personController, 'update'], $personMiddleware);
 $router->get('/families', [$familyController, 'index'], $familyMiddleware);
+$router->post('/families/search', [$familyDiscoveryController, 'search'], $familyMiddleware);
 $router->get('/families/create', [$familyController, 'showCreateRepresentativeFamily'], $familyMiddleware);
 $router->post('/families/create', [$familyController, 'createRepresentativeFamily'], $familyMiddleware);
 $router->get('/families/show', [$familyController, 'show'], $familyMiddleware);
