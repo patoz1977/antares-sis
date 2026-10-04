@@ -189,9 +189,9 @@ function registerBulkImportDeliveryTests(TestRunner $runner): void
         ] as $route) {
             assertSameValue(1, substr_count($routes, $route), $route);
         }
-        assertSameValue(48, substr_count($routes, '$router->get('));
+        assertSameValue(50, substr_count($routes, '$router->get('));
         assertSameValue(75, substr_count($routes, '$router->post('));
-        assertSameValue(26, substr_count($routes, "    \$enrollmentAdministrationMiddleware,\n);"));
+        assertSameValue(28, substr_count($routes, "    \$enrollmentAdministrationMiddleware,\n);"));
 
         foreach ([
             [null, null, 302],

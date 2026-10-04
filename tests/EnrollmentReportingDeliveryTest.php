@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\AcademicCore\Application\GetActiveAcademicPeriod;
 use App\AcademicCore\Domain\AcademicPeriodStatus;
 use App\Enrollment\Application\Reporting\AcademicPeriodReportingQuery;
 use App\Enrollment\Application\Reporting\Dto\DirectoryRepresentative;
 use App\Enrollment\Application\Reporting\Dto\EnrollmentSummaryRow;
+use App\Enrollment\Application\Reporting\Dto\PhysicalDepartureAuthorizedPickup;
+use App\Enrollment\Application\Reporting\Dto\PhysicalDepartureReportRow;
 use App\Enrollment\Application\Reporting\Dto\ReportingGradeSectionOption;
 use App\Enrollment\Application\Reporting\Dto\ReportingAcademicPeriod;
 use App\Enrollment\Application\Reporting\Dto\StudentBillingReportRow;
@@ -19,13 +22,16 @@ use App\Enrollment\Application\Reporting\EnrollmentSummaryQuery;
 use App\Enrollment\Application\Reporting\GradeSectionReportingQuery;
 use App\Enrollment\Application\Reporting\GetEnrollmentReportingPeriods;
 use App\Enrollment\Application\Reporting\GetEnrollmentSummaryReport;
+use App\Enrollment\Application\Reporting\GetPhysicalDepartureReport;
 use App\Enrollment\Application\Reporting\GetStudentBillingReport;
 use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
 use App\Enrollment\Application\Reporting\GetStudentMedicalReport;
 use App\Enrollment\Application\Reporting\GetStudentRepresentativeDirectory;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingPeriod;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\PhysicalDepartureReportQuery;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingContext;
+use App\Enrollment\Application\Reporting\ResolveInspectionReportingContext;
 use App\Enrollment\Application\Reporting\StudentBillingReportQuery;
 use App\Enrollment\Application\Reporting\StudentEnrollmentListQuery;
 use App\Enrollment\Application\Reporting\StudentMedicalReportQuery;
@@ -55,7 +61,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
             assertSameValue(1, substr_count($routes, "\$router->get(\n    '" . $path . "',"), $path);
             assertSameValue(false, str_contains($routes, "\$router->post(\n    '" . $path . "',"), $path);
         }
-        assertSameValue(11, substr_count($routes, "[\$enrollmentReportingController, '"));
+        assertSameValue(11, count($paths));
         assertSameValue(false, str_contains($routes, '/admin/reports'));
 
         $normalizedCrLf = str_replace("\n", "\r\n", $routes);
@@ -83,6 +89,17 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         assertSameValue(true, str_contains($middleware, "header('Location: /login')"));
         assertSameValue(true, str_contains($middleware, "loginIdentifier !== 'admin'"));
         assertSameValue(true, str_contains($middleware, "status(403)"));
+    });
+
+    $runner->add('Phase 5 adds exactly two protected inspection GET routes and no POST route', function (): void {
+        $routes = str_replace("\r\n", "\n", (string) file_get_contents(dirname(__DIR__) . '/routes/web.php'));
+        foreach (['/reports/enrollments/inspection', '/reports/enrollments/inspection/csv'] as $path) {
+            assertSameValue(1, substr_count($routes, "\$router->get(\n    '" . $path . "',"), $path);
+            assertSameValue(false, str_contains($routes, "\$router->post(\n    '" . $path . "',"), $path);
+            $start = strpos($routes, "\$router->get(\n    '" . $path . "',");
+            assertSameValue(true, is_int($start));
+            assertSameValue(true, str_contains(substr($routes, (int) $start, 260), '$enrollmentAdministrationMiddleware'));
+        }
     });
 
     $runner->add('E013 Phase 3 hub shows ACTIVE INACTIVE default and period-preserving report links', function (): void {
@@ -220,6 +237,66 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
             assertSameValue('efbbbf', bin2hex(substr($csv, 0, 3)));
             assertSameValue(['EGB_1:A', 'EGB_2:B'], $fixture[$fixtureKey]->lastFilter?->keys());
         }
+    });
+
+    $runner->add('Phase 5 inspection HTML uses ACTIVE context one Student row complete pickups escaping and no historical selector', function (): void {
+        $fixture = e013ReportingFixture();
+        e013ReportingRequest('/reports/enrollments/inspection', [
+            'grade_section' => ['EGB_1:A', 'EGB_1:A'],
+        ]);
+        $html = $fixture['controller']->inspection();
+
+        assertSameValue(200, http_response_code());
+        foreach ([
+            'Salida y retiro de estudiantes', 'Información operativa actual para Inspección',
+            'Período académico activo:', 'P8 — Period 8', 'No puede salir solo',
+            '&lt;Pickup One&gt;', 'Pickup Two', '0991111111',
+        ] as $expected) {
+            e013Contains($expected, $html);
+        }
+        assertSameValue(1, substr_count($html, '&lt;Student&gt;'));
+        assertSameValue(false, str_contains($html, '<select'));
+        assertSameValue(false, str_contains($html, 'name="academic_period_id"'));
+        e013Contains('/reports/enrollments/inspection/csv?grade_section%5B0%5D=EGB_1%3AA', $html);
+        assertSameValue(['EGB_1:A'], $fixture['physicalDeparture']->lastFilter?->keys());
+
+        e013ReportingRequest('/reports/enrollments/inspection', ['academic_period_id' => '7']);
+        assertSameValue(400, e013Status($fixture['controller'], 'inspection'));
+        $none = e013ReportingFixture(activeId: null);
+        e013ReportingRequest('/reports/enrollments/inspection');
+        assertSameValue(404, e013Status($none['controller'], 'inspection'));
+    });
+
+    $runner->add('Phase 5 inspection CSV shares filter flattens pickups and preserves safe atomic output', function (): void {
+        $fixture = e013ReportingFixture();
+        e013ReportingRequest('/reports/enrollments/inspection/csv', [
+            'grade_section' => ['EGB_1:A', 'EGB_1:A'],
+        ]);
+        $csv = $fixture['controller']->inspectionCsv();
+        $records = e013CsvRecords($csv);
+
+        assertSameValue(200, http_response_code());
+        assertSameValue('efbbbf', bin2hex(substr($csv, 0, 3)));
+        assertSameValue([
+            'Grade', 'Section', 'StudentFirstName', 'StudentMiddleName', 'StudentFirstSurname',
+            'StudentSecondSurname', 'StudentIdentificationType', 'StudentIdentificationNumber',
+            'DepartureState', 'PickupName', 'PickupRelationship', 'PickupIdentificationType',
+            'PickupIdentificationNumber', 'PickupMobilePhone',
+        ], $records[0]);
+        assertSameValue(3, count($records));
+        assertSameValue('<Student>', $records[1][2]);
+        assertSameValue('<Pickup One>', $records[1][9]);
+        assertSameValue("'=SUM(ID)", $records[1][7]);
+        assertSameValue("'+123", $records[1][12]);
+        assertSameValue(['EGB_1:A'], $fixture['physicalDeparture']->lastFilter?->keys());
+
+        $withoutPickup = new PhysicalDepartureReportRow(
+            12, null, null, 'No', null, 'Pickup', null, null, null, false, [],
+        );
+        $blank = e013CsvRecords((new EnrollmentReportCsvWriter())->physicalDeparture([$withoutPickup]));
+        assertSameValue(2, count($blank));
+        assertSameValue('', $blank[1][9]);
+        assertSameValue('Sin persona autorizada registrada', $blank[1][8]);
     });
 
     $runner->add('E013 Phase 3 five HTML reports render approved datasets empty states CSV links and escaped output', function (): void {
@@ -424,10 +501,11 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
             return $this->periods;
         }
     };
-    $resolver = new ResolveEnrollmentReportingPeriod(new InMemoryAcademicPeriodRepository([
+    $periodRepository = new InMemoryAcademicPeriodRepository([
         academicPeriodFixture(7, $multipleActive ? AcademicPeriodStatus::Active : AcademicPeriodStatus::Inactive),
         academicPeriodFixture(8, $activeId === 8 ? AcademicPeriodStatus::Active : AcademicPeriodStatus::Inactive),
-    ]));
+    ]);
+    $resolver = new ResolveEnrollmentReportingPeriod($periodRepository);
 
     $summaryRows = $empty ? [] : [new EnrollmentSummaryRow(
         EnrollmentReportingStatus::Draft,
@@ -582,6 +660,31 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
             return $this->rows;
         }
     };
+    $physicalDepartureRows = $empty ? [] : [new PhysicalDepartureReportRow(
+        10,
+        '=SUM, Grado Ñandú',
+        'Section A',
+        '<Student>',
+        null,
+        'Surname',
+        null,
+        'ID',
+        '=SUM(ID)',
+        false,
+        [
+            new PhysicalDepartureAuthorizedPickup('<Pickup One>', 'Madre', 'ID', '+123', '0991111111'),
+            new PhysicalDepartureAuthorizedPickup('Pickup Two', 'Padre', null, null, '0992222222'),
+        ],
+    )];
+    $physicalDeparture = new class($physicalDepartureRows) implements PhysicalDepartureReportQuery {
+        public ?ReportingGradeSectionFilter $lastFilter = null;
+        public function __construct(public array $rows) {}
+        public function fetch(int $academicPeriodId, ?ReportingGradeSectionFilter $gradeSectionFilter = null): array
+        {
+            $this->lastFilter = $gradeSectionFilter;
+            return $this->rows;
+        }
+    };
 
     $summaryService = new GetEnrollmentSummaryReport($resolver, $summary);
     $gradeSections = new class implements GradeSectionReportingQuery {
@@ -597,18 +700,24 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
             ];
         }
     };
+    $reportingContext = new ResolveEnrollmentReportingContext($resolver, $gradeSections);
     $controller = new EnrollmentReportingController(
         new GetEnrollmentReportingPeriods($periodQuery),
-        new ResolveEnrollmentReportingContext($resolver, $gradeSections),
+        $reportingContext,
         $summaryService,
         new GetStudentEnrollmentReport($resolver, $students),
         new GetStudentRepresentativeDirectory($resolver, $directory),
         new GetStudentBillingReport($resolver, $billing),
         new GetStudentMedicalReport($resolver, $medical),
+        new ResolveInspectionReportingContext(new GetActiveAcademicPeriod($periodRepository), $reportingContext),
+        new GetPhysicalDepartureReport($physicalDeparture),
         new EnrollmentReportCsvWriter(),
     );
 
-    return compact('controller', 'summaryService', 'summary', 'students', 'directory', 'billing', 'medical');
+    return compact(
+        'controller', 'summaryService', 'summary', 'students', 'directory', 'billing', 'medical',
+        'physicalDeparture',
+    );
 }
 
 /** @param array<string, mixed> $query */

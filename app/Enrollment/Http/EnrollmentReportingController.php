@@ -11,12 +11,14 @@ use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingPeriodNotF
 use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingSelectionInvalid;
 use App\Enrollment\Application\Reporting\GetEnrollmentReportingPeriods;
 use App\Enrollment\Application\Reporting\GetEnrollmentSummaryReport;
+use App\Enrollment\Application\Reporting\GetPhysicalDepartureReport;
 use App\Enrollment\Application\Reporting\GetStudentBillingReport;
 use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
 use App\Enrollment\Application\Reporting\GetStudentMedicalReport;
 use App\Enrollment\Application\Reporting\GetStudentRepresentativeDirectory;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingContext;
+use App\Enrollment\Application\Reporting\ResolveInspectionReportingContext;
 use App\Shared\Http\SafeErrorPage;
 use Core\Http\Request;
 use InvalidArgumentException;
@@ -32,6 +34,8 @@ final class EnrollmentReportingController extends Controller
         private readonly GetStudentRepresentativeDirectory $getDirectory,
         private readonly GetStudentBillingReport $getBilling,
         private readonly GetStudentMedicalReport $getMedical,
+        private readonly ResolveInspectionReportingContext $resolveInspectionContext,
+        private readonly GetPhysicalDepartureReport $getPhysicalDeparture,
         private readonly EnrollmentReportCsvWriter $csv,
     ) {
     }
@@ -108,6 +112,21 @@ final class EnrollmentReportingController extends Controller
         );
     }
 
+    public function inspection(): string
+    {
+        try {
+            $context = $this->inspectionContext();
+            $dataset = $this->getPhysicalDeparture->handle($context);
+            $this->noStore();
+
+            return $this->view('reports.enrollments.inspection', $this->inspectionViewData($context) + [
+                'dataset' => $dataset,
+            ]);
+        } catch (Throwable $exception) {
+            return $this->safeError($exception);
+        }
+    }
+
     public function summaryCsv(): string
     {
         return $this->csvReport(
@@ -158,6 +177,22 @@ final class EnrollmentReportingController extends Controller
         );
     }
 
+    public function inspectionCsv(): string
+    {
+        try {
+            $context = $this->inspectionContext();
+            $dataset = $this->getPhysicalDeparture->handle($context);
+            $content = $this->csv->physicalDeparture($dataset);
+
+            return $this->downloadCsv(
+                $content,
+                'physical-departure-active-period-' . $context->academicPeriod->id . '.csv',
+            );
+        } catch (Throwable $exception) {
+            return $this->safeError($exception);
+        }
+    }
+
     /** @param callable(int, ReportingGradeSectionFilter): mixed $load */
     private function htmlReport(string $title, string $path, string $view, callable $load): string
     {
@@ -189,12 +224,7 @@ final class EnrollmentReportingController extends Controller
             $content = $write($dataset);
             $filename = $filenamePrefix . $context->academicPeriod->id . '.csv';
 
-            header('Content-Type: text/csv; charset=UTF-8');
-            header('Content-Disposition: attachment; filename="' . $filename . '"');
-            $this->noStore();
-            http_response_code(200);
-
-            return $content;
+            return $this->downloadCsv($content, $filename);
         } catch (Throwable $exception) {
             return $this->safeError($exception);
         }
@@ -233,6 +263,45 @@ final class EnrollmentReportingController extends Controller
         }
 
         return [$periods, $this->resolveContext->handle($periodId, $requestedGradeSections)];
+    }
+
+    private function inspectionContext(): EnrollmentReportingContext
+    {
+        $query = (new Request())->query();
+        $keys = array_keys($query);
+        sort($keys, SORT_STRING);
+        foreach ($keys as $key) {
+            if (!in_array($key, ['academic_period_id', 'grade_section'], true)) {
+                throw new InvalidArgumentException('Invalid inspection report selector.');
+            }
+        }
+
+        return $this->resolveInspectionContext->handle(
+            $query['academic_period_id'] ?? null,
+            $query['grade_section'] ?? null,
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function inspectionViewData(EnrollmentReportingContext $context): array
+    {
+        $selectedGradeSections = $context->gradeSectionFilter->keys();
+        $parameters = $selectedGradeSections === [] ? [] : ['grade_section' => $selectedGradeSections];
+
+        return [
+            'title' => 'Salida y retiro de estudiantes',
+            'reportPath' => '/reports/enrollments/inspection',
+            'periods' => [],
+            'selectedPeriod' => $context->academicPeriod,
+            'selectedPeriodId' => $context->academicPeriod->id,
+            'selectionRequired' => false,
+            'periodQuery' => $parameters === [] ? '' : '?' . http_build_query($parameters, '', '&', PHP_QUERY_RFC3986),
+            'allGradeSectionsQuery' => '',
+            'gradeSectionOptions' => $context->gradeSectionOptions,
+            'selectedGradeSections' => $selectedGradeSections,
+            'gradeSectionFilterActive' => $selectedGradeSections !== [],
+            'inspectionActivePeriodOnly' => true,
+        ];
     }
 
     /** @return array<string, mixed> */
@@ -305,5 +374,15 @@ final class EnrollmentReportingController extends Controller
     private function noStore(): void
     {
         header('Cache-Control: no-store');
+    }
+
+    private function downloadCsv(string $content, string $filename): string
+    {
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        $this->noStore();
+        http_response_code(200);
+
+        return $content;
     }
 }

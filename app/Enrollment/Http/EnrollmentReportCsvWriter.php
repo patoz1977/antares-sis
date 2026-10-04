@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Enrollment\Http;
 
 use App\Enrollment\Application\Reporting\Dto\EnrollmentSummaryReport;
+use App\Enrollment\Application\Reporting\Dto\PhysicalDepartureReportRow;
 use App\Enrollment\Application\Reporting\Dto\StudentBillingReportRow;
 use App\Enrollment\Application\Reporting\Dto\StudentEnrollmentReportRow;
 use App\Enrollment\Application\Reporting\Dto\StudentMedicalReportRow;
@@ -168,6 +169,40 @@ final class EnrollmentReportCsvWriter
                 $rows,
             ),
         );
+    }
+
+    /** @param list<PhysicalDepartureReportRow> $rows */
+    public function physicalDeparture(array $rows): string
+    {
+        $csvRows = [];
+        foreach ($rows as $row) {
+            $pickups = $row->authorizedPickups === [] ? [null] : $row->authorizedPickups;
+            foreach ($pickups as $pickup) {
+                $csvRows[] = [
+                    $this->text($row->gradeName),
+                    $this->text($row->sectionName),
+                    $this->text($row->studentFirstName),
+                    $this->text($row->studentMiddleName),
+                    $this->text($row->studentFirstSurname),
+                    $this->text($row->studentSecondSurname),
+                    $this->text($row->studentIdentificationType),
+                    $this->text($row->studentIdentificationNumber),
+                    $this->text($row->departureState->value),
+                    $this->text($pickup?->name),
+                    $this->text($pickup?->relationship),
+                    $this->text($pickup?->identificationType),
+                    $this->text($pickup?->identificationNumber),
+                    $this->text($pickup?->mobilePhone),
+                ];
+            }
+        }
+
+        return $this->write([
+            'Grade', 'Section', 'StudentFirstName', 'StudentMiddleName',
+            'StudentFirstSurname', 'StudentSecondSurname', 'StudentIdentificationType',
+            'StudentIdentificationNumber', 'DepartureState', 'PickupName', 'PickupRelationship',
+            'PickupIdentificationType', 'PickupIdentificationNumber', 'PickupMobilePhone',
+        ], $csvRows);
     }
 
     /** @param list<string> $header @param list<list<int|string>> $rows */

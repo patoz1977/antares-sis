@@ -85,7 +85,7 @@ function registerAcademicInitializationDeliveryTests(TestRunner $runner): void
             assertSameValue(1, substr_count($routes, $route), $route);
         }
         assertSameValue(false, str_contains($routes, "\$router->get(\n    '/admin/academic-initialization/apply'"));
-        assertSameValue(26, substr_count($routes, "    \$enrollmentAdministrationMiddleware,\n);"));
+        assertSameValue(28, substr_count($routes, "    \$enrollmentAdministrationMiddleware,\n);"));
 
         foreach ([[null, null, 302], ['representative-22', 1, 403], ['admin', 1, 200]] as [$identifier, $userId, $status]) {
             $session = new FakeSessionManager();
