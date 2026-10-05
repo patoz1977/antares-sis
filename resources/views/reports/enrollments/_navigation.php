@@ -18,10 +18,12 @@ $reports = [
     '/reports/enrollments/directory' => 'Directorio',
     '/reports/enrollments/billing' => 'Facturación',
     '/reports/enrollments/medical' => 'Información médica',
+    '/reports/enrollments/inspection' => 'Salida y retiro',
 ];
 $reportPageTitle = is_string($reportPageTitle ?? null) ? $reportPageTitle : 'Reportes de matrículas';
 $reportPageDescription = is_string($reportPageDescription ?? null) ? $reportPageDescription : '';
 $reportCsvPath = is_string($reportCsvPath ?? null) ? $reportCsvPath : null;
+$inspectionActivePeriodOnly = ($inspectionActivePeriodOnly ?? false) === true;
 ?>
 <header class="app-page-header d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-start">
     <div>
@@ -38,12 +40,16 @@ $reportCsvPath = is_string($reportCsvPath ?? null) ? $reportCsvPath : null;
 
 <nav class="report-nav mb-4" aria-label="Reportes de matrículas">
 <?php foreach ($reports as $url => $label): ?>
-    <a class="btn btn-sm btn-outline-primary" href="<?= $escape($url . $periodQuery) ?>"><?= $escape($label) ?></a>
+<?php $navigationQuery = $url === '/reports/enrollments/inspection' && !$inspectionActivePeriodOnly ? '' : $periodQuery; ?>
+    <a class="btn btn-sm btn-outline-primary" href="<?= $escape($url . $navigationQuery) ?>"><?= $escape($label) ?></a>
 <?php endforeach; ?>
 </nav>
 
 <section class="app-form-section" aria-labelledby="report-period-heading">
     <h2 class="h4" id="report-period-heading">Período académico</h2>
+<?php if ($inspectionActivePeriodOnly): ?>
+    <p class="mb-0">Período académico activo: <strong><?= $escape($selectedPeriod->code . ' — ' . $selectedPeriod->name) ?></strong></p>
+<?php else: ?>
     <form class="row g-3 align-items-end" method="get" action="<?= $escape($reportPath) ?>">
         <div class="col-lg-9">
             <label class="form-label" for="academic_period_id">Período académico</label>
@@ -56,12 +62,13 @@ $reportCsvPath = is_string($reportCsvPath ?? null) ? $reportCsvPath : null;
         </div>
         <div class="col-lg-3"><button class="btn btn-outline-primary w-100" type="submit">Ver reporte</button></div>
     </form>
+<?php endif; ?>
 </section>
 
 <?php if ($selectionRequired): ?>
 <p class="report-notice" role="status">Selecciona un período académico para generar este reporte.</p>
 <?php else: ?>
-<p>Período seleccionado: <strong><?= $escape($selectedPeriod->code . ' — ' . $selectedPeriod->name) ?></strong> (<?= $escape($selectedPeriod->status->value === 'ACTIVE' ? 'Activo' : 'Inactivo') ?>)</p>
+<?php if (!$inspectionActivePeriodOnly): ?><p>Período seleccionado: <strong><?= $escape($selectedPeriod->code . ' — ' . $selectedPeriod->name) ?></strong> (<?= $escape($selectedPeriod->status->value === 'ACTIVE' ? 'Activo' : 'Inactivo') ?>)</p><?php endif; ?>
 
 <section class="app-form-section" aria-labelledby="report-grade-section-heading">
     <div class="d-flex flex-column flex-md-row justify-content-between gap-2 align-items-md-start">
@@ -80,7 +87,7 @@ $reportCsvPath = is_string($reportCsvPath ?? null) ? $reportCsvPath : null;
     <p class="report-notice mt-3 mb-0" role="status">Este período no tiene combinaciones completas de grado y paralelo disponibles para filtrar.</p>
     <?php else: ?>
     <form class="mt-3" method="get" action="<?= $escape($reportPath) ?>">
-        <input type="hidden" name="academic_period_id" value="<?= $escape($selectedPeriodId) ?>">
+        <?php if (!$inspectionActivePeriodOnly): ?><input type="hidden" name="academic_period_id" value="<?= $escape($selectedPeriodId) ?>"><?php endif; ?>
         <fieldset>
             <legend class="visually-hidden">Combinaciones de grado y paralelo</legend>
             <div class="row g-2">

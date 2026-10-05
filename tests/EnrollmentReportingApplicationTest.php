@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\AcademicCore\Application\GetActiveAcademicPeriod;
 use App\AcademicCore\Domain\AcademicPeriodStatus;
 use App\AcademicCore\Domain\Exception\AcademicPeriodOperationalStateConflict;
 use App\AcademicCore\Domain\Exception\InvalidAcademicPeriodState;
 use App\Enrollment\Application\Reporting\AcademicPeriodReportingQuery;
 use App\Enrollment\Application\Reporting\Dto\DirectoryRepresentative;
+use App\Enrollment\Application\Reporting\Dto\PhysicalDepartureAuthorizedPickup;
+use App\Enrollment\Application\Reporting\Dto\PhysicalDepartureReportRow;
 use App\Enrollment\Application\Reporting\Dto\ReportingGradeSectionOption;
 use App\Enrollment\Application\Reporting\Dto\ReportingAcademicPeriod;
 use App\Enrollment\Application\Reporting\Dto\StudentEnrollmentReportRow;
@@ -18,10 +21,13 @@ use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingPeriodNotF
 use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingSelectionInvalid;
 use App\Enrollment\Application\Reporting\GradeSectionReportingQuery;
 use App\Enrollment\Application\Reporting\GetEnrollmentReportingPeriods;
+use App\Enrollment\Application\Reporting\GetPhysicalDepartureReport;
 use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingPeriod;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\PhysicalDepartureReportQuery;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingContext;
+use App\Enrollment\Application\Reporting\ResolveInspectionReportingContext;
 use App\Enrollment\Application\Reporting\StudentEnrollmentListQuery;
 use Tests\Support\TestRunner;
 
@@ -243,6 +249,98 @@ function registerEnrollmentReportingApplicationTests(TestRunner $runner): void
             \InvalidArgumentException::class,
         );
         assertSameValue(0, $query->calls);
+    });
+
+    $runner->add('Phase 5 inspection context resolves only the server-side ACTIVE period and reuses filter validation', function (): void {
+        $repository = new InMemoryAcademicPeriodRepository([
+            academicPeriodFixture(7, AcademicPeriodStatus::Inactive),
+            academicPeriodFixture(8, AcademicPeriodStatus::Active),
+        ]);
+        $options = [
+            reportingGradeSection(1, 'EGB_1', '1.º de EGB', 1, 10, 'A', 'A'),
+            reportingGradeSection(2, 'EGB_2', '2.º de EGB', 2, 11, 'B', 'B'),
+        ];
+        $coordinator = new ResolveInspectionReportingContext(
+            new GetActiveAcademicPeriod($repository),
+            new ResolveEnrollmentReportingContext(
+                new ResolveEnrollmentReportingPeriod($repository),
+                new class($options) implements GradeSectionReportingQuery {
+                    public function __construct(private array $options) {}
+                    public function findForAcademicPeriod(int $academicPeriodId): array { return $this->options; }
+                },
+            ),
+        );
+
+        $all = $coordinator->handle(null, null);
+        assertSameValue([8, true], [$all->academicPeriod->id, $all->gradeSectionFilter->isAll()]);
+        $selected = $coordinator->handle('8', ['EGB_2:B', 'EGB_1:A', 'EGB_2:B']);
+        assertSameValue(['EGB_2:B', 'EGB_1:A'], $selected->gradeSectionFilter->keys());
+        foreach ([['7', null], ['invalid', null], [null, ['UNKNOWN:A']], [null, 'EGB_1:A']] as [$period, $filter]) {
+            academicPeriodAssertThrows(
+                static fn (): mixed => $coordinator->handle($period, $filter),
+                $period !== null ? \InvalidArgumentException::class : EnrollmentReportingSelectionInvalid::class,
+            );
+        }
+
+        foreach ([
+            new InMemoryAcademicPeriodRepository([academicPeriodFixture(7, AcademicPeriodStatus::Inactive)]),
+            new InMemoryAcademicPeriodRepository([
+                academicPeriodFixture(7, AcademicPeriodStatus::Active),
+                academicPeriodFixture(8, AcademicPeriodStatus::Active),
+            ]),
+        ] as $index => $invalidRepository) {
+            $invalid = new ResolveInspectionReportingContext(
+                new GetActiveAcademicPeriod($invalidRepository),
+                new ResolveEnrollmentReportingContext(new ResolveEnrollmentReportingPeriod($invalidRepository), new class implements GradeSectionReportingQuery {
+                    public function findForAcademicPeriod(int $academicPeriodId): array { return []; }
+                }),
+            );
+            academicPeriodAssertThrows(
+                static fn (): mixed => $invalid->handle(null, null),
+                $index === 0 ? EnrollmentReportingPeriodNotFound::class : AcademicPeriodOperationalStateConflict::class,
+            );
+        }
+    });
+
+    $runner->add('Phase 5 departure read model is immutable and derives exactly four approved states', function (): void {
+        $pickup = new PhysicalDepartureAuthorizedPickup('Pickup', 'Madre', null, null, '0990000000');
+        $rows = [
+            new PhysicalDepartureReportRow(1, null, null, 'A', null, 'One', null, null, null, null, [$pickup]),
+            new PhysicalDepartureReportRow(2, null, null, 'B', null, 'Two', null, null, null, true, []),
+            new PhysicalDepartureReportRow(3, null, null, 'C', null, 'Three', null, null, null, false, [$pickup]),
+            new PhysicalDepartureReportRow(4, null, null, 'D', null, 'Four', null, null, null, false, []),
+        ];
+        assertSameValue([
+            'Sin matrícula', 'Sí puede salir solo', 'No puede salir solo',
+            'Sin persona autorizada registrada',
+        ], array_map(static fn (PhysicalDepartureReportRow $row): string => $row->departureState->value, $rows));
+        assertSameValue(true, (new \ReflectionClass(PhysicalDepartureReportRow::class))->isReadOnly());
+        assertSameValue(true, (new \ReflectionClass(PhysicalDepartureAuthorizedPickup::class))->isReadOnly());
+
+        $query = new class($rows) implements PhysicalDepartureReportQuery {
+            public int $calls = 0;
+            public function __construct(private array $rows) {}
+            public function fetch(int $academicPeriodId, ?ReportingGradeSectionFilter $gradeSectionFilter = null): array
+            {
+                ++$this->calls;
+                return $this->rows;
+            }
+        };
+        $context = (new ResolveInspectionReportingContext(
+            new GetActiveAcademicPeriod(new InMemoryAcademicPeriodRepository([
+                academicPeriodFixture(8, AcademicPeriodStatus::Active),
+            ])),
+            new ResolveEnrollmentReportingContext(
+                new ResolveEnrollmentReportingPeriod(new InMemoryAcademicPeriodRepository([
+                    academicPeriodFixture(8, AcademicPeriodStatus::Active),
+                ])),
+                new class implements GradeSectionReportingQuery {
+                    public function findForAcademicPeriod(int $academicPeriodId): array { return []; }
+                },
+            ),
+        ))->handle(null, null);
+        assertSameValue(4, count((new GetPhysicalDepartureReport($query))->handle($context)));
+        assertSameValue(1, $query->calls);
     });
 
     $runner->add('E013 Phase 2 production wiring registers only reporting ports adapters and Application services', function (): void {

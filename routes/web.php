@@ -176,6 +176,11 @@ $router->get(
     $enrollmentAdministrationMiddleware,
 );
 $router->get(
+    '/reports/enrollments/inspection',
+    [$enrollmentReportingController, 'inspection'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->get(
     '/reports/enrollments/summary/csv',
     [$enrollmentReportingController, 'summaryCsv'],
     $enrollmentAdministrationMiddleware,
@@ -198,6 +203,11 @@ $router->get(
 $router->get(
     '/reports/enrollments/medical/csv',
     [$enrollmentReportingController, 'medicalCsv'],
+    $enrollmentAdministrationMiddleware,
+);
+$router->get(
+    '/reports/enrollments/inspection/csv',
+    [$enrollmentReportingController, 'inspectionCsv'],
     $enrollmentAdministrationMiddleware,
 );
 $router->get(

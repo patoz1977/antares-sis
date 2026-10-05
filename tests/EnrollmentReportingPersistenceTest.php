@@ -9,6 +9,7 @@ use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
 use App\Enrollment\Infrastructure\Reporting\PdoAcademicPeriodReportingQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoEnrollmentSummaryQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoGradeSectionReportingQuery;
+use App\Enrollment\Infrastructure\Reporting\PdoPhysicalDepartureReportQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentBillingReportQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentEnrollmentListQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentMedicalReportQuery;
@@ -354,6 +355,7 @@ function registerEnrollmentReportingPersistenceTests(TestRunner $runner): void
         (new PdoStudentRepresentativeDirectoryQuery($manager))->fetch(101);
         (new PdoStudentBillingReportQuery($manager))->fetch(101);
         (new PdoStudentMedicalReportQuery($manager))->fetch(101);
+        (new PdoPhysicalDepartureReportQuery($manager))->fetch(101);
         assertSameValue($before, (int) $pdo->query('SELECT COUNT(*) FROM enrollments')->fetchColumn());
 
         foreach (glob(dirname(__DIR__) . '/app/Enrollment/Infrastructure/Reporting/*.php') ?: [] as $file) {
@@ -362,6 +364,78 @@ function registerEnrollmentReportingPersistenceTests(TestRunner $runner): void
             if (!str_ends_with($file, 'PdoEnrollmentReportingQuery.php')) {
                 assertSameValue(true, str_contains($source, '->rows('));
             }
+        }
+    });
+
+    $runner->add('Phase 5 PDO departure report keeps one ACTIVE Student row and loads current pickups in batch', function (): void {
+        [$manager] = enrollmentReportingFixture();
+        $rows = (new PdoPhysicalDepartureReportQuery($manager))->fetch(101);
+        $source = (string) file_get_contents(
+            dirname(__DIR__) . '/app/Enrollment/Infrastructure/Reporting/PdoPhysicalDepartureReportQuery.php',
+        );
+
+        assertSameValue(2, substr_count($source, '$this->rows('));
+        assertSameValue([2, 3, 5, 1, 4], array_column($rows, 'studentId'));
+        assertSameValue([
+            'No puede salir solo',
+            'Sin persona autorizada registrada',
+            'Sin persona autorizada registrada',
+            'Sin matrícula',
+            'Sí puede salir solo',
+        ], array_map(static fn ($row): string => $row->departureState->value, $rows));
+        $student2 = departureStudentRow($rows, 2);
+        assertSameValue(['Pickup Alpha', 'Pickup Beta'], array_column($student2->authorizedPickups, 'name'));
+        assertSameValue(['National ID', 'PICK-1', '0991111111'], [
+            $student2->authorizedPickups[0]->identificationType,
+            $student2->authorizedPickups[0]->identificationNumber,
+            $student2->authorizedPickups[0]->mobilePhone,
+        ]);
+        assertSameValue(0, count(departureStudentRow($rows, 1)->authorizedPickups));
+        assertSameValue(false, in_array(6, array_column($rows, 'studentId'), true));
+    });
+
+    $runner->add('Phase 5 PDO departure filter preserves All and excludes missing or incomplete placement specifically', function (): void {
+        [$manager] = enrollmentReportingFixture();
+        $query = new PdoPhysicalDepartureReportQuery($manager);
+        $options = (new PdoGradeSectionReportingQuery($manager))->findForAcademicPeriod(101);
+
+        assertSameValue([2, 3, 5, 1, 4], array_column($query->fetch(101), 'studentId'));
+        assertSameValue([2, 3], array_column(
+            $query->fetch(101, ReportingGradeSectionFilter::selected(101, [$options[0]])),
+            'studentId',
+        ));
+        assertSameValue([2, 3, 5], array_column(
+            $query->fetch(101, ReportingGradeSectionFilter::selected(101, $options)),
+            'studentId',
+        ));
+    });
+
+    $runner->add('Phase 5 PDO departure report excludes ended and coherent inactive pickups', function (): void {
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec("UPDATE authorized_pickup_assignments SET ended_at = '2026-02-01' WHERE id = 2");
+        $pdo->exec('UPDATE family_authorized_pickups SET status_id = 2 WHERE id = 100');
+
+        $row = departureStudentRow((new PdoPhysicalDepartureReportQuery($manager))->fetch(101), 2);
+        assertSameValue([], $row->authorizedPickups);
+        assertSameValue('Sin persona autorizada registrada', $row->departureState->value);
+    });
+
+    $runner->add('Phase 5 PDO departure report fails closed on current Family and pickup incoherence', function (): void {
+        foreach ([
+            "INSERT INTO family_students VALUES (9,501,2,'2026-03-01',NULL)",
+            'UPDATE authorized_pickup_assignments SET family_id = 501 WHERE id = 1',
+            'UPDATE family_authorized_pickups SET family_id = 501 WHERE id = 100',
+            "UPDATE family_authorized_pickups SET document_type_id = NULL WHERE id = 100",
+        ] as $corruption) {
+            [$manager, $pdo] = enrollmentReportingFixture();
+            if (str_starts_with($corruption, 'INSERT INTO family_students')) {
+                $pdo->exec('INSERT INTO families VALUES (501,1)');
+            }
+            $pdo->exec($corruption);
+            reportingAssertThrows(
+                static fn (): mixed => (new PdoPhysicalDepartureReportQuery($manager))->fetch(101),
+                RuntimeException::class,
+            );
         }
     });
 }
@@ -382,11 +456,13 @@ function enrollmentReportingFixture(): array
     $pdo->exec('CREATE TABLE students (id INTEGER PRIMARY KEY, person_id INTEGER, status_id INTEGER)');
     $pdo->exec('CREATE TABLE representatives (id INTEGER PRIMARY KEY, person_id INTEGER, work_phone TEXT, work_email TEXT, status_id INTEGER)');
     $pdo->exec('CREATE TABLE families (id INTEGER PRIMARY KEY, status_id INTEGER)');
-    $pdo->exec('CREATE TABLE enrollments (id INTEGER PRIMARY KEY, student_id INTEGER, family_id INTEGER, academic_period_id INTEGER, status_id INTEGER, grade_id INTEGER, section_id INTEGER, billing_identification_type_id INTEGER, billing_identification_number TEXT, billing_legal_name TEXT, billing_address TEXT, billing_email TEXT, billing_phone TEXT, has_medical_condition INTEGER, medical_condition_detail TEXT, has_allergies INTEGER, allergy_detail TEXT, takes_permanent_medication INTEGER, medication_name TEXT, requires_special_care INTEGER, special_care_detail TEXT, has_medical_insurance INTEGER, insurance_provider TEXT, pediatrician_name TEXT, pediatrician_phone TEXT, medical_observations TEXT)');
+    $pdo->exec('CREATE TABLE enrollments (id INTEGER PRIMARY KEY, student_id INTEGER, family_id INTEGER, academic_period_id INTEGER, status_id INTEGER, grade_id INTEGER, section_id INTEGER, billing_identification_type_id INTEGER, billing_identification_number TEXT, billing_legal_name TEXT, billing_address TEXT, billing_email TEXT, billing_phone TEXT, has_medical_condition INTEGER, medical_condition_detail TEXT, has_allergies INTEGER, allergy_detail TEXT, takes_permanent_medication INTEGER, medication_name TEXT, requires_special_care INTEGER, special_care_detail TEXT, has_medical_insurance INTEGER, insurance_provider TEXT, pediatrician_name TEXT, pediatrician_phone TEXT, medical_observations TEXT, is_authorized_to_leave_alone INTEGER NOT NULL DEFAULT 0)');
     $pdo->exec('CREATE TABLE family_students (id INTEGER PRIMARY KEY, family_id INTEGER, student_id INTEGER, started_at TEXT, ended_at TEXT)');
     $pdo->exec('CREATE TABLE family_representatives (id INTEGER PRIMARY KEY, family_id INTEGER, representative_id INTEGER, relationship_type_id INTEGER, is_primary INTEGER, started_at TEXT, ended_at TEXT)');
     $pdo->exec('CREATE TABLE family_addresses (id INTEGER PRIMARY KEY, family_id INTEGER, main_street TEXT, street_number TEXT, secondary_street TEXT, sector TEXT, reference TEXT, status_id INTEGER)');
     $pdo->exec('CREATE TABLE student_address_assignments (id INTEGER PRIMARY KEY, family_id INTEGER, student_id INTEGER, family_address_id INTEGER, started_at TEXT, ended_at TEXT)');
+    $pdo->exec('CREATE TABLE family_authorized_pickups (id INTEGER PRIMARY KEY, family_id INTEGER, names TEXT, relationship_type_id INTEGER, mobile_phone TEXT, phone TEXT, document_type_id INTEGER, document_number TEXT, observations TEXT, status_id INTEGER)');
+    $pdo->exec('CREATE TABLE authorized_pickup_assignments (id INTEGER PRIMARY KEY, family_id INTEGER, family_authorized_pickup_id INTEGER, student_id INTEGER, started_at TEXT, ended_at TEXT)');
 
     $pdo->exec("INSERT INTO status_types VALUES (1, 'GENERAL_STATUS'), (2, 'ENROLLMENT_STATUS')");
     $pdo->exec("INSERT INTO statuses VALUES (1,1,'ACTIVE',1),(2,1,'INACTIVE',2),(11,2,'DRAFT',1),(12,2,'SUBMITTED',2),(13,2,'COMPLETED',3),(14,2,'CANCELLED',4)");
@@ -411,15 +487,29 @@ function enrollmentReportingFixture(): array
     $pdo->exec("INSERT INTO family_representatives VALUES (2,500,701,2,0,'2026-01-02 00:00:00',NULL)");
     $pdo->exec("INSERT INTO family_addresses VALUES (900,500,'Current Street','10','Cross Street','Current Sector','Current reference',1)");
     $pdo->exec("INSERT INTO student_address_assignments VALUES (1,500,2,900,'2026-01-01 00:00:00',NULL)");
+    $pdo->exec("INSERT INTO family_authorized_pickups VALUES (100,500,'Pickup Alpha',1,'0991111111',NULL,1,'PICK-1',NULL,1),(101,500,'Pickup Beta',2,'0992222222',NULL,NULL,NULL,NULL,1),(102,500,'Pickup Ended',3,'0993333333',NULL,NULL,NULL,NULL,1),(103,500,'Pickup Inactive',3,'0994444444',NULL,NULL,NULL,NULL,2)");
+    $pdo->exec("INSERT INTO authorized_pickup_assignments VALUES (1,500,100,2,'2026-01-01',NULL),(2,500,101,2,'2026-01-01',NULL),(3,500,102,2,'2026-01-01','2026-02-01'),(4,500,103,2,'2026-01-01',NULL)");
 
     $pdo->exec("INSERT INTO enrollments (id,student_id,family_id,academic_period_id,status_id,grade_id,section_id) VALUES (1001,2,999,101,11,1,1)");
-    $pdo->exec("INSERT INTO enrollments VALUES (1002,3,999,101,12,1,1,1,'BILL-3','Billing Three','Billing Address','billing@example.test','0993333333',1,'Condition',1,'Allergy',1,'Medication',1,'Care',1,'Insurance','Doctor','0994444444','Observation')");
+    $pdo->exec("INSERT INTO enrollments VALUES (1002,3,999,101,12,1,1,1,'BILL-3','Billing Three','Billing Address','billing@example.test','0993333333',1,'Condition',1,'Allergy',1,'Medication',1,'Care',1,'Insurance','Doctor','0994444444','Observation',0)");
     $pdo->exec("INSERT INTO enrollments (id,student_id,family_id,academic_period_id,status_id,grade_id,section_id) VALUES (1003,4,999,101,13,NULL,NULL)");
+    $pdo->exec('UPDATE enrollments SET is_authorized_to_leave_alone = 1 WHERE id = 1003');
     $pdo->exec("INSERT INTO enrollments (id,student_id,family_id,academic_period_id,status_id,grade_id,section_id) VALUES (1004,5,999,101,14,2,2)");
     $pdo->exec("INSERT INTO enrollments (id,student_id,family_id,academic_period_id,status_id,grade_id,section_id) VALUES (1005,6,999,101,11,NULL,NULL)");
-    $pdo->exec("INSERT INTO enrollments VALUES (900,2,123,100,13,2,NULL,1,'HIST-2','Historical Billing','Old Address','old@example.test','0995555555',0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,NULL,NULL,'Historical observation')");
+    $pdo->exec("INSERT INTO enrollments VALUES (900,2,123,100,13,2,NULL,1,'HIST-2','Historical Billing','Old Address','old@example.test','0995555555',0,NULL,0,NULL,0,NULL,0,NULL,0,NULL,NULL,NULL,'Historical observation',0)");
 
     return [$manager, $pdo];
+}
+
+/** @param list<\App\Enrollment\Application\Reporting\Dto\PhysicalDepartureReportRow> $rows */
+function departureStudentRow(array $rows, int $studentId): \App\Enrollment\Application\Reporting\Dto\PhysicalDepartureReportRow
+{
+    $matches = array_values(array_filter($rows, static fn ($row): bool => $row->studentId === $studentId));
+    if (count($matches) !== 1) {
+        throw new RuntimeException('Expected exactly one physical departure row for Student fixture.');
+    }
+
+    return $matches[0];
 }
 
 /** @param list<\App\Enrollment\Application\Reporting\Dto\StudentRepresentativeDirectoryRow> $rows */
