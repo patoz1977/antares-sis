@@ -15,6 +15,7 @@ use App\AcademicCore\Infrastructure\Persistence\PdoAcademicPeriodRepository;
 use App\IdentityAccess\Application\AuthenticateUser;
 use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
+use App\IdentityAccess\Application\CanAccessAllReports;
 use App\IdentityAccess\Application\Contract\Clock;
 use App\IdentityAccess\Application\Contract\SecurityEventLogger;
 use App\IdentityAccess\Application\Contract\SessionManager;
@@ -40,6 +41,8 @@ use App\IdentityAccess\Domain\UserStatus;
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
 use App\IdentityAccess\Domain\ValueObject\PasswordHash;
 use App\IdentityAccess\Domain\ValueObject\PersonId as UserPersonId;
+use App\IdentityAccess\Domain\ValueObject\UserId;
+use App\IdentityAccess\Infrastructure\Persistence\PdoUserCapabilityLookup;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
 use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
@@ -399,7 +402,7 @@ function expectedBaselineTables(): array
         'parishes', 'persons', 'provinces',
         'relationship_types', 'representative_address_assignments', 'representatives', 'sections',
         'representative_acknowledgement_completions', 'representative_acknowledgements', 'sexes',
-        'statuses', 'status_types', 'student_address_assignments', 'students', 'users',
+        'statuses', 'status_types', 'student_address_assignments', 'students', 'user_capabilities', 'users',
     ];
     sort($tables);
 
@@ -539,7 +542,6 @@ function runMariaDbMigrationsThrough010(PDO $connection): void
     foreach ([
         new \Database\Seeders\StatusTypeSeeder(),
         new \Database\Seeders\StatusSeeder(),
-        new AdminSeeder(),
     ] as $seeder) {
         $seeder->run($connection);
     }
@@ -547,6 +549,222 @@ function runMariaDbMigrationsThrough010(PDO $connection): void
         (int) $connection->query('SELECT COUNT(*) FROM migrations')->fetchColumn() === 10,
         'Legacy FamilyCode fixture did not stop at the exact migration-010 baseline.'
     );
+}
+
+function assertMariaDbUserCapabilitySchema(PDO $connection): void
+{
+    $columns = $connection->query(
+        "SELECT column_name, column_type, is_nullable, column_default, character_set_name, collation_name, extra "
+        . "FROM information_schema.columns WHERE table_schema = DATABASE() "
+        . "AND table_name = 'user_capabilities' ORDER BY ordinal_position"
+    )->fetchAll(PDO::FETCH_ASSOC);
+    assertIntegration(count($columns) === 4, 'User capability schema must contain exactly four columns.');
+    assertIntegration(
+        $columns[0]['column_name'] === 'id'
+        && $columns[0]['column_type'] === 'bigint(20) unsigned'
+        && $columns[0]['is_nullable'] === 'NO'
+        && str_contains((string) $columns[0]['extra'], 'auto_increment')
+        && $columns[1]['column_name'] === 'user_id'
+        && $columns[1]['column_type'] === 'bigint(20) unsigned'
+        && $columns[1]['is_nullable'] === 'NO'
+        && $columns[2]['column_name'] === 'capability_code'
+        && $columns[2]['column_type'] === 'varchar(64)'
+        && $columns[2]['is_nullable'] === 'NO'
+        && $columns[2]['character_set_name'] === 'ascii'
+        && $columns[2]['collation_name'] === 'ascii_bin'
+        && $columns[3]['column_name'] === 'granted_at'
+        && $columns[3]['column_type'] === 'timestamp'
+        && $columns[3]['is_nullable'] === 'NO'
+        && strtoupper((string) $columns[3]['column_default']) === 'CURRENT_TIMESTAMP',
+        'MariaDB user_capabilities columns differ from migration 012 contract.'
+    );
+
+    $indexes = $connection->query(
+        "SELECT index_name, non_unique, GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns_list "
+        . "FROM information_schema.statistics WHERE table_schema = DATABASE() "
+        . "AND table_name = 'user_capabilities' GROUP BY index_name, non_unique ORDER BY index_name"
+    )->fetchAll(PDO::FETCH_ASSOC);
+    assertIntegration(
+        count($indexes) === 2
+        && $indexes[0]['index_name'] === 'PRIMARY'
+        && $indexes[0]['columns_list'] === 'id'
+        && $indexes[1]['index_name'] === 'uq_user_capabilities_user_code'
+        && (int) $indexes[1]['non_unique'] === 0
+        && $indexes[1]['columns_list'] === 'user_id,capability_code',
+        'MariaDB user_capabilities indexes differ from the exact PK/UNIQUE contract.'
+    );
+
+    $foreignKey = $connection->query(
+        "SELECT referenced_table_name, update_rule, delete_rule FROM information_schema.referential_constraints "
+        . "WHERE constraint_schema = DATABASE() AND table_name = 'user_capabilities' "
+        . "AND constraint_name = 'fk_user_capabilities_user'"
+    )->fetch(PDO::FETCH_ASSOC);
+    assertIntegration(
+        $foreignKey !== false
+        && $foreignKey['referenced_table_name'] === 'users'
+        && $foreignKey['update_rule'] === 'RESTRICT'
+        && $foreignKey['delete_rule'] === 'RESTRICT',
+        'MariaDB user_capabilities FK is missing or not restrictive.'
+    );
+}
+
+function runMariaDbUserCapabilityLegacyUpgradeScenario(PDO $connection): void
+{
+    require_once dirname(__DIR__) . '/database/migrations/011_add_family_code_to_families.php';
+    require_once dirname(__DIR__) . '/database/migrations/012_create_user_capabilities.php';
+
+    $familyCodeMigration = new CreateAddFamilyCodeToFamilies();
+    $familyCodeMigration->up($connection);
+    $connection->prepare('INSERT INTO migrations (migration, batch) VALUES (:migration, 2)')
+        ->execute([':migration' => $familyCodeMigration->version()]);
+
+    $generalStatusId = (int) $connection->query(
+        "SELECT s.id FROM statuses s JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE'"
+    )->fetchColumn();
+    $disabledStatusId = (int) $connection->query(
+        "SELECT s.id FROM statuses s JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'USER_STATUS' AND s.code = 'DISABLED'"
+    )->fetchColumn();
+    $connection->exec("INSERT INTO sexes (code, name, is_active) VALUES ('P2', 'Phase 2 fixture', TRUE)");
+    $sexId = (int) $connection->lastInsertId();
+    $connection->prepare(
+        'INSERT INTO persons (first_name, first_surname, birth_date, sex_id, status_id) '
+        . 'VALUES (:firstName, :firstSurname, :birthDate, :sexId, :statusId)'
+    )->execute([
+        ':firstName' => 'Legacy', ':firstSurname' => 'Administrator', ':birthDate' => '1980-01-01',
+        ':sexId' => $sexId, ':statusId' => $generalStatusId,
+    ]);
+    $personId = (int) $connection->lastInsertId();
+    $connection->prepare(
+        'INSERT INTO users (person_id, login_identifier, normalized_login_identifier, password_hash, status_id, '
+        . 'last_access_at, failed_login_attempts, locked_at, created_at, updated_at) '
+        . 'VALUES (:personId, :login, :login, :password, :statusId, :lastAccessAt, 4, :lockedAt, :createdAt, :updatedAt)'
+    )->execute([
+        ':personId' => $personId, ':login' => 'admin', ':password' => 'legacy-preserved-hash',
+        ':statusId' => $disabledStatusId, ':lastAccessAt' => '2026-10-02 11:00:00',
+        ':lockedAt' => '2026-10-01 10:00:00', ':createdAt' => '2026-01-01 00:00:00',
+        ':updatedAt' => '2026-10-02 11:00:00',
+    ]);
+    $userId = (int) $connection->lastInsertId();
+    $before = $connection->query('SELECT * FROM users WHERE id = ' . $userId)->fetch(PDO::FETCH_ASSOC);
+
+    $migration = new CreateUserCapabilities();
+    $migration->up($connection);
+    assertMariaDbUserCapabilitySchema($connection);
+    $after = $connection->query('SELECT * FROM users WHERE id = ' . $userId)->fetch(PDO::FETCH_ASSOC);
+    assertIntegration($before === $after, 'Migration 012 changed legacy Admin identity or authentication state.');
+    assertIntegration(
+        (int) $connection->query(
+            "SELECT COUNT(*) FROM user_capabilities WHERE user_id = $userId AND capability_code = 'REPORTS_VIEW_ALL'"
+        )->fetchColumn() === 1,
+        'Migration 012 did not backfill exactly one REPORTS_VIEW_ALL assignment for legacy Admin.'
+    );
+
+    assertMariaDbStatementRejected(
+        $connection,
+        'INSERT INTO user_capabilities (user_id, capability_code) VALUES (:userId, :capability)',
+        [':userId' => $userId, ':capability' => 'REPORTS_VIEW_ALL'],
+        'MariaDB accepted a duplicate User capability assignment.'
+    );
+    assertMariaDbStatementRejected(
+        $connection,
+        'INSERT INTO user_capabilities (user_id, capability_code) VALUES (:userId, :capability)',
+        [':userId' => 999999, ':capability' => 'REPORTS_VIEW_ALL'],
+        'MariaDB accepted an orphan User capability assignment.'
+    );
+    $exact = $connection->prepare(
+        'SELECT COUNT(*) FROM user_capabilities WHERE user_id = :userId AND capability_code = :capability'
+    );
+    $exact->execute([':userId' => $userId, ':capability' => 'reports_view_all']);
+    assertIntegration((int) $exact->fetchColumn() === 0, 'MariaDB capability comparison is not case-sensitive.');
+
+    $manager = mariaDbManagerForExistingConnection($connection);
+    $policy = new CanAccessAllReports(
+        new PdoUserRepository($manager),
+        new PdoUserCapabilityLookup($manager),
+    );
+    assertIntegration(!$policy->handle($userId), 'Disabled legacy Admin was authorized by the Application policy.');
+    $connection->prepare('UPDATE users SET status_id = :statusId WHERE id = :id')
+        ->execute([':statusId' => (int) $connection->query(
+            "SELECT s.id FROM statuses s JOIN status_types st ON st.id = s.status_type_id "
+            . "WHERE st.code = 'USER_STATUS' AND s.code = 'ACTIVE'"
+        )->fetchColumn(), ':id' => $userId]);
+    assertIntegration($policy->handle($userId), 'Active legacy Admin capability was not resolved by Application/PDO.');
+
+    $migration->down($connection);
+    assertIntegration(
+        (int) $connection->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'user_capabilities'")->fetchColumn() === 0
+        && (int) $connection->query('SELECT COUNT(*) FROM users WHERE id = ' . $userId)->fetchColumn() === 1,
+        'Migration 012 rollback did not remove only the capability table.'
+    );
+    $migration->up($connection);
+    assertMariaDbUserCapabilitySchema($connection);
+}
+
+function mariaDbManagerForExistingConnection(PDO $connection): ConnectionManager
+{
+    $reflection = new ReflectionClass(ConnectionManager::class);
+    $manager = $reflection->newInstanceWithoutConstructor();
+    $property = new ReflectionProperty(ConnectionManager::class, 'connection');
+    $property->setValue($manager, $connection);
+
+    return $manager;
+}
+
+function runMariaDbUserCapabilityFreshAdminSeederScenario(ConnectionManager $manager): void
+{
+    $previousPerson = getenv('E0041_ADMIN_PERSON_ID');
+    $previousPassword = getenv('E0041_ADMIN_INITIAL_PASSWORD');
+    putenv('E0041_ADMIN_PERSON_ID');
+    putenv('E0041_ADMIN_INITIAL_PASSWORD');
+
+    (new MigrationRunner($manager))->run();
+    $connection = $manager->connection();
+    assertMariaDbUserCapabilitySchema($connection);
+
+    $generalStatusId = (int) $connection->query(
+        "SELECT s.id FROM statuses s JOIN status_types st ON st.id = s.status_type_id "
+        . "WHERE st.code = 'GENERAL_STATUS' AND s.code = 'ACTIVE'"
+    )->fetchColumn();
+    $connection->exec("INSERT INTO sexes (code, name, is_active) VALUES ('P2F', 'Phase 2 fresh fixture', TRUE)");
+    $sexId = (int) $connection->lastInsertId();
+    $connection->prepare(
+        'INSERT INTO persons (first_name, first_surname, birth_date, sex_id, status_id) '
+        . 'VALUES (:firstName, :firstSurname, :birthDate, :sexId, :statusId)'
+    )->execute([
+        ':firstName' => 'Fresh', ':firstSurname' => 'Administrator', ':birthDate' => '1981-01-01',
+        ':sexId' => $sexId, ':statusId' => $generalStatusId,
+    ]);
+    $personId = (int) $connection->lastInsertId();
+    putenv('E0041_ADMIN_PERSON_ID=' . $personId);
+    putenv('E0041_ADMIN_INITIAL_PASSWORD=DisposablePhase2Password');
+
+    try {
+        $seeder = new AdminSeeder();
+        $seeder->run($connection);
+        $adminBefore = $connection->query(
+            "SELECT * FROM users WHERE normalized_login_identifier = 'admin'"
+        )->fetch(PDO::FETCH_ASSOC);
+        $seeder->run($connection);
+        $adminAfter = $connection->query(
+            "SELECT * FROM users WHERE normalized_login_identifier = 'admin'"
+        )->fetch(PDO::FETCH_ASSOC);
+        assertIntegration(
+            $adminBefore !== false
+            && $adminBefore === $adminAfter
+            && (int) $adminBefore['person_id'] === $personId
+            && (int) $connection->query(
+                "SELECT COUNT(*) FROM user_capabilities WHERE capability_code = 'REPORTS_VIEW_ALL'"
+            )->fetchColumn() === 1,
+            'Fresh AdminSeeder did not create and preserve exactly one Admin capability assignment.'
+        );
+    } finally {
+        $previousPerson === false ? putenv('E0041_ADMIN_PERSON_ID') : putenv('E0041_ADMIN_PERSON_ID=' . $previousPerson);
+        $previousPassword === false
+            ? putenv('E0041_ADMIN_INITIAL_PASSWORD')
+            : putenv('E0041_ADMIN_INITIAL_PASSWORD=' . $previousPassword);
+    }
 }
 
 function runMariaDbFamilyCodeLegacyUpgradeScenario(PDO $connection): void
@@ -5297,6 +5515,8 @@ $suffix = bin2hex(random_bytes(5));
 $identityDatabase = $databasePrefix . '_identity_' . $suffix;
 $familyCodeUpgradeDatabase = $databasePrefix . '_code_upgrade_' . $suffix;
 $familyCodeRangeDatabase = $databasePrefix . '_code_range_' . $suffix;
+$userCapabilityUpgradeDatabase = $databasePrefix . '_cap_upgrade_' . $suffix;
+$userCapabilityFreshDatabase = $databasePrefix . '_cap_fresh_' . $suffix;
 $cleanupProbePrefix = $databasePrefix . '_cleanup_' . $suffix;
 $cleanupProbeDatabase = $cleanupProbePrefix . '_first';
 
@@ -5339,7 +5559,7 @@ try {
         'Partial-creation cleanup left a disposable database behind.'
     );
 
-    foreach ([$identityDatabase, $familyCodeUpgradeDatabase, $familyCodeRangeDatabase] as $database) {
+    foreach ([$identityDatabase, $familyCodeUpgradeDatabase, $familyCodeRangeDatabase, $userCapabilityUpgradeDatabase, $userCapabilityFreshDatabase] as $database) {
         assertIntegration(
             preg_match('/^[a-z][a-z0-9_]+$/', $database) === 1 && strlen($database) <= 64,
             'Unsafe disposable database name.'
@@ -5404,6 +5624,10 @@ try {
     $familyCodeRangeManager = $managerForDatabase($familyCodeRangeDatabase);
     runMariaDbMigrationsThrough010($familyCodeRangeManager->connection());
     runMariaDbFamilyCodeRangeGuardScenario($familyCodeRangeManager->connection());
+    $userCapabilityUpgradeManager = $managerForDatabase($userCapabilityUpgradeDatabase);
+    runMariaDbMigrationsThrough010($userCapabilityUpgradeManager->connection());
+    runMariaDbUserCapabilityLegacyUpgradeScenario($userCapabilityUpgradeManager->connection());
+    runMariaDbUserCapabilityFreshAdminSeederScenario($managerForDatabase($userCapabilityFreshDatabase));
 
     runMariaDbSubmissionSnapshotRemovalMigrationScenario($identity);
 
@@ -5434,10 +5658,11 @@ try {
         . 'WHERE constraint_schema = DATABASE()'
     )->fetchColumn();
     assertIntegration(
-        $physicalForeignKeyCount === 53,
-        sprintf('Expected 53 physical foreign keys; MariaDB reported %d.', $physicalForeignKeyCount)
+        $physicalForeignKeyCount === 54,
+        sprintf('Expected 54 physical foreign keys; MariaDB reported %d.', $physicalForeignKeyCount)
     );
     assertMariaDbFamilyCodeSchema($identity);
+    assertMariaDbUserCapabilitySchema($identity);
 
     $familyResourceTables = [
         'authorized_pickup_assignments',
@@ -5612,7 +5837,7 @@ try {
         );
     }
 
-    assertIntegration((int) $identity->query('SELECT COUNT(*) FROM migrations')->fetchColumn() === 11, 'Not all baseline migrations were recorded.');
+    assertIntegration((int) $identity->query('SELECT COUNT(*) FROM migrations')->fetchColumn() === 12, 'Not all baseline migrations were recorded.');
     assertIntegration(
         (int) $identity->query(
             "SELECT COUNT(*) FROM migrations WHERE migration = '010_remove_submission_snapshots'"
@@ -5624,6 +5849,12 @@ try {
             "SELECT COUNT(*) FROM migrations WHERE migration = '011_add_family_code_to_families'"
         )->fetchColumn() === 1,
         'MariaDB migration 011 was not recorded exactly once.'
+    );
+    assertIntegration(
+        (int) $identity->query(
+            "SELECT COUNT(*) FROM migrations WHERE migration = '012_create_user_capabilities'"
+        )->fetchColumn() === 1,
+        'MariaDB migration 012 was not recorded exactly once.'
     );
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM status_types')->fetchColumn() === 3, 'Status type baseline is incomplete.');
     assertIntegration((int) $identity->query('SELECT COUNT(*) FROM statuses')->fetchColumn() === 8, 'Status baseline is incomplete.');
@@ -6473,6 +6704,14 @@ try {
     assertIntegration(
         $preserved !== false && (int) $preserved['status_id'] === $disabledUserStatusId,
         'AdminSeeder changed an existing User status.'
+    );
+    (new AdminSeeder())->run($identity);
+    assertIntegration(
+        (int) $identity->query(
+            "SELECT COUNT(*) FROM user_capabilities uc JOIN users u ON u.id = uc.user_id "
+            . "WHERE u.normalized_login_identifier = 'admin' AND uc.capability_code = 'REPORTS_VIEW_ALL'"
+        )->fetchColumn() === 1,
+        'AdminSeeder did not reconcile one idempotent REPORTS_VIEW_ALL assignment.'
     );
 
     $personRepository = new PdoPersonRepository($managerA);
@@ -9884,14 +10123,15 @@ try {
     echo 'MariaDB version: ' . $mariaDbVersion . "\n";
     echo 'Physical inventory: ' . count($actualTables) . ' tables including migrations metadata; '
         . $physicalForeignKeyCount . " foreign keys\n";
-    echo "PASS MySQL clean migration creates the exact 31-table domain baseline plus migrations metadata\n";
+    echo "PASS MySQL clean migration creates the exact 32-table functional baseline plus migrations metadata\n";
     echo "PASS MySQL migration 010 removes legacy snapshot tables and supports rollback plus reapply\n";
     echo "PASS MySQL migration 011 FamilyCode fresh schema legacy backfill range guard and physical uniqueness\n";
+    echo "PASS MySQL migration 012 UserCapability fresh schema legacy Admin backfill exact lookup rollback and preservation\n";
     echo "PASS MySQL Institutional Acknowledgements AUTO_INCREMENT UTC constraints ownership and rollback\n";
     echo "PASS MySQL Institutional Acknowledgements repository roundtrip AUTO_INCREMENT UTC transactions and history\n";
     echo "PASS MySQL Institutional Acknowledgements administrator AcademicPeriod provider context hardening and Application persistence\n";
     echo "PASS MySQL approved status seed baseline\n";
-    echo "PASS MySQL AdminSeeder preserves existing credentials and status\n";
+    echo "PASS MySQL AdminSeeder preserves existing credentials and status and reconciles capability idempotently\n";
     echo "PASS MySQL UTC repository locked_at persistence\n";
     echo "PASS MySQL concurrent User row locking with specific MariaDB error classification\n";
     echo "PASS MySQL Active AcademicPeriod lifecycle atomic transition fail-closed rollback and serialization\n";

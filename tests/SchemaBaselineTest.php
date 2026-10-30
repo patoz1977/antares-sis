@@ -15,7 +15,7 @@ use Tests\Support\TestRunner;
 
 function registerSchemaBaselineTests(TestRunner $runner): void
 {
-    $runner->add('migration baseline declares the exact 31-table domain inventory', function (): void {
+    $runner->add('migration baseline declares the exact 32-table domain inventory', function (): void {
         $expected = [
             'academic_periods', 'acknowledgement_requirements', 'authorized_pickup_assignments', 'cantons',
             'document_types', 'education_levels', 'emergency_contact_assignments', 'enrollments',
@@ -23,7 +23,7 @@ function registerSchemaBaselineTests(TestRunner $runner): void
             'family_representatives', 'family_students', 'grades', 'marital_statuses', 'parishes', 'persons', 'provinces',
             'relationship_types', 'representative_address_assignments', 'representatives', 'sections',
             'representative_acknowledgement_completions', 'representative_acknowledgements', 'sexes',
-            'statuses', 'status_types', 'student_address_assignments', 'students', 'users',
+            'statuses', 'status_types', 'student_address_assignments', 'students', 'user_capabilities', 'users',
         ];
 
         $actual = [];
@@ -53,7 +53,35 @@ function registerSchemaBaselineTests(TestRunner $runner): void
             '004_create_academic_core', '005_create_identity_and_roles', '006_create_family_management',
             '007_create_institutional_documents', '008_create_enrollment', '009_create_submission_snapshots',
             '010_remove_submission_snapshots', '011_add_family_code_to_families',
+            '012_create_user_capabilities',
         ], $versions, 'Migration runner did not load the expected ordered sequence.');
+    });
+
+    $runner->add('migration 012 implements the exact User capability contract', function (): void {
+        $source = (string) file_get_contents(
+            dirname(__DIR__) . '/database/migrations/012_create_user_capabilities.php'
+        );
+
+        foreach ([
+            'CREATE TABLE `user_capabilities`',
+            '`id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT',
+            '`user_id` BIGINT UNSIGNED NOT NULL',
+            '`capability_code` VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL',
+            '`granted_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+            'PRIMARY KEY (`id`)',
+            'UNIQUE KEY `uq_user_capabilities_user_code` (`user_id`, `capability_code`)',
+            'CONSTRAINT `fk_user_capabilities_user` FOREIGN KEY (`user_id`)',
+            'REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT',
+            "'REPORTS_VIEW_ALL'",
+            "BINARY `login_identifier` = BINARY :loginIdentifier",
+            "BINARY `normalized_login_identifier` = BINARY :normalizedLoginIdentifier",
+            "\$this->dropTables(\$connection, ['user_capabilities'])",
+        ] as $required) {
+            assertBaselineSame(true, str_contains($source, $required), 'Migration 012 contract is incomplete.');
+        }
+
+        assertBaselineSame(false, str_contains($source, 'ON DELETE CASCADE'), 'Capability assignments must not cascade.');
+        assertBaselineSame(false, str_contains($source, 'KEY `idx_'), 'Migration 012 must not add a speculative index.');
     });
 
     $runner->add('migration 010 removes snapshots and restores migration 009 schema exactly', function (): void {
@@ -232,14 +260,14 @@ function registerSchemaBaselineTests(TestRunner $runner): void
         }
     });
 
-    $runner->add('all 31 table columns match DATABASE_DESIGN', function (): void {
+    $runner->add('all 32 table columns match DATABASE_DESIGN', function (): void {
         $design = file_get_contents(dirname(__DIR__) . '/.ai/12.DATABASE_DESIGN.md');
         if (!is_string($design)) {
             throw new RuntimeException('Unable to read DATABASE_DESIGN.');
         }
 
         preg_match_all('/^## 4\.\d+ `([^`]+)`\R(.*?)(?=^## 4\.|^# 5\.)/ms', $design, $sections, PREG_SET_ORDER);
-        assertBaselineSame(31, count($sections), 'DATABASE_DESIGN must describe exactly 31 physical tables.');
+        assertBaselineSame(32, count($sections), 'DATABASE_DESIGN must describe exactly 32 functional tables.');
 
         $migrationSource = implode("\n", baselineMigrationSources());
         foreach ($sections as $section) {
@@ -331,10 +359,10 @@ function registerSchemaBaselineTests(TestRunner $runner): void
             );
         }
 
-        assertBaselineSame(53, substr_count($migrationSource, 'REFERENCES `'), 'Unexpected foreign-key count.');
+        assertBaselineSame(54, substr_count($migrationSource, 'REFERENCES `'), 'Unexpected foreign-key count.');
         assertBaselineSame(0, substr_count($migrationSource, 'ON DELETE CASCADE'), 'The active baseline must not cascade deletion.');
-        assertBaselineSame(53, substr_count($migrationSource, 'ON DELETE RESTRICT'), 'Every active FK must restrict deletion.');
-        assertBaselineSame(53, substr_count($migrationSource, 'ON UPDATE RESTRICT'), 'Every active FK must restrict key updates.');
+        assertBaselineSame(54, substr_count($migrationSource, 'ON DELETE RESTRICT'), 'Every active FK must restrict deletion.');
+        assertBaselineSame(54, substr_count($migrationSource, 'ON UPDATE RESTRICT'), 'Every active FK must restrict key updates.');
     });
 
     $runner->add('baseline excludes discarded schema and Person-owned family resources', function (): void {
@@ -394,7 +422,7 @@ function baselineMigrationSources(): array
 
     $files = [];
     foreach ($entries as $entry) {
-        if (preg_match('/^(?:00[2-8]|011)_.+\.php$/', $entry) === 1) {
+        if (preg_match('/^(?:00[2-8]|01[12])_.+\.php$/', $entry) === 1) {
             $files[] = $directory . '/' . $entry;
         }
     }

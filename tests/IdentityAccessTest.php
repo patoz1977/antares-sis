@@ -563,6 +563,10 @@ function sqliteIdentityDatabase(): PDO
         . 'login_identifier TEXT NOT NULL, normalized_login_identifier TEXT NOT NULL, password_hash TEXT NOT NULL, '
         . 'failed_login_attempts INTEGER NOT NULL DEFAULT 0, locked_at TEXT NULL, '
         . 'last_access_at TEXT NULL, updated_at TEXT NULL, UNIQUE(normalized_login_identifier));'
+        . 'CREATE TABLE user_capabilities ('
+        . 'id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, capability_code TEXT COLLATE BINARY NOT NULL, '
+        . 'granted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, capability_code), '
+        . 'FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE RESTRICT);'
     );
     $hash = password_hash('correct-password', PASSWORD_DEFAULT);
     $pdo->exec('INSERT INTO persons (id) VALUES (1)');
