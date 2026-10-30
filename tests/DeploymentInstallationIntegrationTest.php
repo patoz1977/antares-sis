@@ -259,6 +259,35 @@ function deploymentValidateAdministrator(PDO $connection, string $password): voi
     );
 }
 
+function deploymentValidateAdministratorCapability(PDO $connection): void
+{
+    deploymentAssert(
+        (int) $connection->query('SELECT COUNT(*) FROM user_capabilities')->fetchColumn() === 1,
+        'The clean install must contain exactly one User capability assignment.',
+    );
+
+    $assignment = $connection->query(
+        'SELECT u.login_identifier, u.normalized_login_identifier, uc.capability_code '
+        . 'FROM user_capabilities uc INNER JOIN users u ON u.id = uc.user_id'
+    )->fetch(PDO::FETCH_ASSOC);
+    deploymentAssert(
+        $assignment !== false
+        && $assignment['login_identifier'] === 'admin'
+        && $assignment['normalized_login_identifier'] === 'admin'
+        && $assignment['capability_code'] === 'REPORTS_VIEW_ALL',
+        'The clean install must assign exactly REPORTS_VIEW_ALL to Admin.',
+    );
+
+    $wrongCase = $connection->prepare(
+        'SELECT COUNT(*) FROM user_capabilities WHERE capability_code = :capabilityCode'
+    );
+    $wrongCase->execute([':capabilityCode' => 'reports_view_all']);
+    deploymentAssert(
+        (int) $wrongCase->fetchColumn() === 0,
+        'The clean install capability comparison must remain exact and case-sensitive.',
+    );
+}
+
 function deploymentValidateEmptyData(PDO $connection): void
 {
     foreach ([
@@ -769,27 +798,29 @@ try {
     );
 
     $expectedMigrations = deploymentExpectedMigrations();
-    deploymentAssert(count($expectedMigrations) === 11, 'The repository no longer exposes the expected 11-migration baseline.');
+    deploymentAssert(count($expectedMigrations) === 12, 'The repository no longer exposes the expected 12-migration baseline.');
     deploymentValidateMigrationLedger($migrationConnection, $expectedMigrations);
     deploymentValidateMigrationLedger($installConnection, $expectedMigrations);
     deploymentValidateSystemStatuses($migrationConnection, $installConnection);
     deploymentValidateCatalogBootstrap($installConnection);
     deploymentValidateAdministrator($installConnection, $environment['DEPLOY001_ADMIN_PASSWORD']);
+    deploymentValidateAdministratorCapability($installConnection);
     deploymentValidateEmptyData($installConnection);
     deploymentRunHttpRehearsal($environment, $installDatabase);
     deploymentValidateAdministrator($installConnection, $environment['DEPLOY001_ADMIN_PASSWORD']);
+    deploymentValidateAdministratorCapability($installConnection);
     deploymentValidateEmptyData($installConnection);
 
     $tableCount = count($installSchema['tables']);
     $foreignKeyCount = count($installSchema['foreign_keys']);
     echo 'MariaDB version: ' . $version . "\n";
     echo sprintf("Physical inventory: %d tables including migrations metadata; %d foreign keys\n", $tableCount, $foreignKeyCount);
-    echo "PASS migrations 001-011 fresh baseline\n";
+    echo "PASS migrations 001-012 fresh baseline\n";
     echo "PASS install.sql fresh autonomous import\n";
     echo "PASS migrations/install.sql physical schema parity\n";
     echo "PASS migration ledger and approved system statuses\n";
     echo "PASS institutional catalog bootstrap and approved empty catalogs\n";
-    echo "PASS initial admin Person/User and PHP password hash\n";
+    echo "PASS initial admin Person/User PHP password hash and exact REPORTS_VIEW_ALL assignment\n";
     echo "PASS real admin authentication and administrative Dashboard access\n";
     echo "PASS White Label runtime name color logo and favicon\n";
     echo "PASS Bulk Import and Enrollment catalog readiness\n";

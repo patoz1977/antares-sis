@@ -8,9 +8,14 @@ use PDO;
 
 final class AdminSeeder
 {
+    private const REPORTS_VIEW_ALL = 'REPORTS_VIEW_ALL';
+
     public function run(PDO $connection): void
     {
-        if ($this->administratorExists($connection)) {
+        $administratorId = $this->administratorId($connection);
+        if ($administratorId !== null) {
+            $this->ensureReportsCapability($connection, $administratorId);
+
             return;
         }
 
@@ -77,6 +82,12 @@ final class AdminSeeder
                 ':passwordHash' => $passwordHash,
             ]);
 
+            $administratorId = (int) $connection->lastInsertId();
+            if ($administratorId <= 0) {
+                throw new \RuntimeException('Administrator insert did not produce a valid identity.');
+            }
+            $this->ensureReportsCapability($connection, $administratorId);
+
             $connection->commit();
         } catch (\Throwable $exception) {
             if ($connection->inTransaction()) {
@@ -95,14 +106,53 @@ final class AdminSeeder
         return $statement->fetch(PDO::FETCH_ASSOC) !== false;
     }
 
-    private function administratorExists(PDO $connection): bool
+    private function administratorId(PDO $connection): ?int
     {
         $statement = $connection->prepare(
-            'SELECT id FROM users WHERE normalized_login_identifier = :loginIdentifier LIMIT 1'
+            'SELECT id, login_identifier, normalized_login_identifier FROM users '
+            . 'WHERE login_identifier = :loginIdentifier '
+            . 'OR normalized_login_identifier = :normalizedLoginIdentifier '
+            . 'ORDER BY id LIMIT 2'
         );
-        $statement->execute([':loginIdentifier' => 'admin']);
+        $statement->execute([
+            ':loginIdentifier' => 'admin',
+            ':normalizedLoginIdentifier' => 'admin',
+        ]);
+        $candidates = $statement->fetchAll(PDO::FETCH_ASSOC);
 
-        return $statement->fetch(PDO::FETCH_ASSOC) !== false;
+        if ($candidates === []) {
+            return null;
+        }
+
+        if (count($candidates) !== 1
+            || $candidates[0]['login_identifier'] !== 'admin'
+            || $candidates[0]['normalized_login_identifier'] !== 'admin') {
+            throw new \RuntimeException('Administrator identity is incoherent.');
+        }
+
+        $id = (int) $candidates[0]['id'];
+        if ($id <= 0) {
+            throw new \RuntimeException('Administrator identity is invalid.');
+        }
+
+        return $id;
+    }
+
+    private function ensureReportsCapability(PDO $connection, int $administratorId): void
+    {
+        $statement = $connection->prepare(
+            'INSERT INTO user_capabilities (user_id, capability_code) '
+            . 'SELECT :userId, :capabilityCode WHERE NOT EXISTS ('
+            . 'SELECT 1 FROM user_capabilities '
+            . 'WHERE user_id = :existingUserId AND capability_code = :existingCapabilityCode'
+            . ')'
+        );
+        $statement->execute([
+            ':userId' => $administratorId,
+            ':capabilityCode' => self::REPORTS_VIEW_ALL,
+            ':existingUserId' => $administratorId,
+            ':existingCapabilityCode' => self::REPORTS_VIEW_ALL,
+        ]);
     }
 
     private function findStatusId(PDO $connection, string $statusTypeCode, string $statusCode): ?int
