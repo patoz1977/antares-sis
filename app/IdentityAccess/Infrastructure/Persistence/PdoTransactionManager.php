@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\IdentityAccess\Infrastructure\Persistence;
 
-use App\IdentityAccess\Application\Contract\TransactionManager;
+use App\IdentityAccess\Application\Contract\TransactionManager as IdentityAccessTransactionManager;
+use App\Shared\Application\TransactionManager as SharedTransactionManager;
 use Core\Database\ConnectionManager;
 use PDO;
 use Throwable;
 
-final class PdoTransactionManager implements TransactionManager
+final class PdoTransactionManager implements IdentityAccessTransactionManager, SharedTransactionManager
 {
     private PDO $connection;
 

@@ -25,6 +25,7 @@ $statusCode = $person->status->value;
         <p class="text-body-secondary mb-0">Información personal y de contacto registrada.</p>
     </div>
     <div class="app-action-group">
+        <a class="btn btn-outline-primary" href="/institutional-reporting-access/manage?person_id=<?= $escape($person->id) ?>">Acceso institucional a reportes</a>
         <a class="btn btn-primary" href="/persons/edit?id=<?= $escape($person->id) ?>">Editar persona</a>
         <a class="btn btn-outline-secondary" href="/persons">Volver</a>
     </div>

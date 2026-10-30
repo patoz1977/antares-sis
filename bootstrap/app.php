@@ -114,6 +114,8 @@ use App\Enrollment\Infrastructure\Reporting\PdoStudentMedicalReportQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoStudentRepresentativeDirectoryQuery;
 use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\CanAccessAllReports;
+use App\IdentityAccess\Application\InstitutionalReportingCapabilityGrant;
+use App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser;
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
 use App\IdentityAccess\Application\Contract\Clock;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
@@ -130,10 +132,12 @@ use App\IdentityAccess\Application\Orchestration\UpdatePersonWithRepresentativeU
 use App\IdentityAccess\Application\RepresentativeFamilyContextSession;
 use App\IdentityAccess\Application\ResolveFamilyContext;
 use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
+use App\IdentityAccess\Application\Security\InstitutionalReportingPasswordPolicy;
 use App\IdentityAccess\Application\SelectAuthorizedFamily;
 use App\IdentityAccess\Application\UserCapabilityLookup;
 use App\IdentityAccess\Domain\UserRepository as IdentityUserRepository;
 use App\IdentityAccess\Http\AuthenticationController;
+use App\IdentityAccess\Http\InstitutionalReportingAccessController;
 use App\IdentityAccess\Http\ReportingAccessMiddleware;
 use App\IdentityAccess\Http\RepresentativePortalController;
 use App\IdentityAccess\Http\RepresentativeDataController;
@@ -141,11 +145,14 @@ use App\IdentityAccess\Http\RepresentativeUserController;
 use App\IdentityAccess\Infrastructure\Logging\ErrorLogSecurityEventLogger;
 use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserCapabilityLookup;
+use App\IdentityAccess\Infrastructure\Persistence\PdoInstitutionalReportingCapabilityGrant;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\IdentityAccess\Infrastructure\Session\PhpSessionManager;
 use App\IdentityAccess\Infrastructure\Session\SessionCsrfTokenManager;
 use App\IdentityAccess\Infrastructure\Time\SystemClock;
+use App\Shared\Application\DedicatedInstitutionalReportingProfile;
+use App\Shared\Application\TransactionManager as SharedTransactionManager;
 use App\Shared\Http\SharedShellDataFactory;
 use App\Shared\Http\WhiteLabelBranding;
 use App\Family\Application\AddStudentToFamily;
@@ -346,10 +353,24 @@ $container->singleton(Clock::class, SystemClock::class);
 $container->singleton(PasswordHasher::class, NativePasswordHasher::class);
 $container->singleton(SecurityEventLogger::class, ErrorLogSecurityEventLogger::class);
 $container->singleton(TransactionManager::class, PdoTransactionManager::class);
+$container->singleton(SharedTransactionManager::class, PdoTransactionManager::class);
 $container->singleton(IdentityUserRepository::class, PdoUserRepository::class);
 $container->singleton(UserCapabilityLookup::class, PdoUserCapabilityLookup::class);
+$container->singleton(
+    InstitutionalReportingCapabilityGrant::class,
+    PdoInstitutionalReportingCapabilityGrant::class,
+);
 $container->singleton(CanAccessAllReports::class, CanAccessAllReports::class);
+$container->singleton(IsDedicatedInstitutionalReportingUser::class, IsDedicatedInstitutionalReportingUser::class);
+$container->singleton(
+    DedicatedInstitutionalReportingProfile::class,
+    IsDedicatedInstitutionalReportingUser::class,
+);
 $container->singleton(RepresentativePasswordPolicy::class, RepresentativePasswordPolicy::class);
+$container->singleton(
+    InstitutionalReportingPasswordPolicy::class,
+    InstitutionalReportingPasswordPolicy::class,
+);
 $maximumFailedAttempts = filter_var(
     $config['auth_max_failed_attempts'],
     FILTER_VALIDATE_INT,
@@ -569,6 +590,10 @@ $container->singleton(
 );
 $container->singleton(FamilyAdministrationMiddleware::class, FamilyAdministrationMiddleware::class);
 $container->singleton(RepresentativeUserController::class, RepresentativeUserController::class);
+$container->singleton(
+    InstitutionalReportingAccessController::class,
+    InstitutionalReportingAccessController::class,
+);
 $container->singleton(
     AcknowledgementRequirementRepository::class,
     PdoAcknowledgementRequirementRepository::class,
