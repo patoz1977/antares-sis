@@ -85,7 +85,9 @@ final class PdoRepresentativeRepository implements LockingRepresentativeReposito
         $statement->execute([':personId' => $personId->value()]);
         $id = $statement->fetchColumn();
 
-        return $id === false ? null : $this->findById(new RepresentativeId((int) $id));
+        return $id === false
+            ? null
+            : $this->findByIdWithLock(new RepresentativeId((int) $id), true);
     }
 
     public function save(Representative $representative): Representative

@@ -25,7 +25,7 @@ final readonly class ReactivateInstitutionalReportingUser
         $changed = $this->transactions->transactional(function () use ($personId): bool {
             $this->eligibility->lockEligible($personId);
             $user = $this->users->findByPersonIdForUpdate(new PersonId($personId));
-            if ($user === null || !$this->dedicatedProfile->handle($user)) {
+            if ($user === null || !$this->dedicatedProfile->handleForUpdate($user)) {
                 throw new InstitutionalReportingAccessConflict('Dedicated reporting User was not found.');
             }
             if (!$user->reactivate()) {

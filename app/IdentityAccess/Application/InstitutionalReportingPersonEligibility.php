@@ -6,19 +6,19 @@ namespace App\IdentityAccess\Application;
 
 use App\IdentityAccess\Application\Exception\InstitutionalReportingAccessConflict;
 use App\Person\Domain\Person;
-use App\Person\Domain\PersonRepository;
+use App\Person\Application\LockingPersonRepository;
 use App\Person\Domain\ValueObject\PersonId;
-use App\Representative\Domain\RepresentativeRepository;
+use App\Representative\Application\LockingRepresentativeRepository;
 use App\Representative\Domain\ValueObject\PersonId as RepresentativePersonId;
-use App\Student\Domain\StudentRepository;
+use App\Student\Application\LockingStudentRepository;
 use App\Student\Domain\ValueObject\PersonId as StudentPersonId;
 
 final readonly class InstitutionalReportingPersonEligibility
 {
     public function __construct(
-        private PersonRepository $persons,
-        private RepresentativeRepository $representatives,
-        private StudentRepository $students,
+        private LockingPersonRepository $persons,
+        private LockingRepresentativeRepository $representatives,
+        private LockingStudentRepository $students,
     ) {
     }
 
@@ -29,8 +29,10 @@ final readonly class InstitutionalReportingPersonEligibility
             throw new InstitutionalReportingAccessConflict('Institutional reporting Person was not found.');
         }
 
-        if ($this->representatives->findByPersonId(new RepresentativePersonId($personId)) !== null
-            || $this->students->findByPersonId(new StudentPersonId($personId)) !== null
+        if ($this->representatives->findByPersonIdForUpdate(
+            new RepresentativePersonId($personId)
+        ) !== null
+            || $this->students->findByPersonIdForUpdate(new StudentPersonId($personId)) !== null
         ) {
             throw new InstitutionalReportingAccessConflict('Person is not eligible for institutional reporting access.');
         }

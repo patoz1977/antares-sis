@@ -11,6 +11,7 @@ use App\IdentityAccess\Application\Dto\ProvisionInstitutionalReportingUserInput;
 use App\IdentityAccess\Application\Dto\InstitutionalReportingUserOutput;
 use App\IdentityAccess\Application\Exception\InstitutionalReportingAccessConflict;
 use App\IdentityAccess\Application\Exception\InstitutionalReportingLoginIdentifierAlreadyUsed;
+use App\IdentityAccess\Application\Exception\InstitutionalReportingReservedLoginIdentifier;
 use App\IdentityAccess\Application\Security\InstitutionalReportingPasswordPolicy;
 use App\IdentityAccess\Domain\User;
 use App\IdentityAccess\Domain\UserStatus;
@@ -21,6 +22,8 @@ use App\IdentityAccess\Domain\ValueObject\UserId;
 
 final readonly class ProvisionInstitutionalReportingUser
 {
+    private const RESERVED_ADMIN_LOGIN = 'admin';
+
     public function __construct(
         private TransactionManager $transactions,
         private InstitutionalReportingPersonEligibility $eligibility,
@@ -42,6 +45,11 @@ final readonly class ProvisionInstitutionalReportingUser
             }
 
             $login = new LoginIdentifier($input->loginIdentifier);
+            if ($login->value() === self::RESERVED_ADMIN_LOGIN) {
+                throw new InstitutionalReportingReservedLoginIdentifier(
+                    'Legacy Admin LoginIdentifier is reserved.'
+                );
+            }
             if ($this->users->findByLoginIdentifierForUpdate($login) !== null) {
                 throw new InstitutionalReportingLoginIdentifierAlreadyUsed(
                     'Institutional reporting LoginIdentifier is already used.'

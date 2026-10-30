@@ -10,6 +10,7 @@ use App\IdentityAccess\Application\Dto\InstitutionalReportingAccessState;
 use App\IdentityAccess\Application\Dto\ProvisionInstitutionalReportingUserInput;
 use App\IdentityAccess\Application\Exception\InstitutionalReportingAccessConflict;
 use App\IdentityAccess\Application\Exception\InstitutionalReportingLoginIdentifierAlreadyUsed;
+use App\IdentityAccess\Application\Exception\InstitutionalReportingReservedLoginIdentifier;
 use App\IdentityAccess\Application\Exception\InvalidInstitutionalReportingPassword;
 use App\IdentityAccess\Application\GetInstitutionalReportingAccessState;
 use App\IdentityAccess\Application\GrantInstitutionalReportingAccessToExistingUser;
@@ -85,7 +86,7 @@ final class InstitutionalReportingAccessController extends Controller
             } else {
                 throw new InstitutionalReportingAccessConflict('Person is not eligible for provisioning.');
             }
-        } catch (InstitutionalReportingLoginIdentifierAlreadyUsed) {
+        } catch (InstitutionalReportingLoginIdentifierAlreadyUsed|InstitutionalReportingReservedLoginIdentifier) {
             return $this->formFailure(
                 $personId,
                 ['Ese identificador de acceso ya está en uso.'],

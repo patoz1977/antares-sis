@@ -32,7 +32,7 @@ final readonly class GrantInstitutionalReportingAccessToExistingUser
             if ($this->dedicatedProfile->isExactLegacyAdmin($user) || $user->isDisabled()) {
                 throw new InstitutionalReportingAccessConflict('User cannot be designated for institutional reporting.');
             }
-            if ($this->dedicatedProfile->handle($user)) {
+            if ($this->dedicatedProfile->handleForUpdate($user)) {
                 return false;
             }
 

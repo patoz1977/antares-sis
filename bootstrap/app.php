@@ -116,6 +116,8 @@ use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\CanAccessAllReports;
 use App\IdentityAccess\Application\InstitutionalReportingCapabilityGrant;
 use App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser;
+use App\IdentityAccess\Application\LockingUserCapabilityLookup;
+use App\IdentityAccess\Application\LockingUserRepository;
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
 use App\IdentityAccess\Application\Contract\Clock;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
@@ -216,6 +218,7 @@ use App\Person\Application\CreatePerson;
 use App\Person\Application\Discovery\PersonDiscoveryQuery;
 use App\Person\Application\Discovery\SearchPersons;
 use App\Person\Application\GetPerson;
+use App\Person\Application\LockingPersonRepository;
 use App\Person\Application\UpdatePerson;
 use App\Person\Domain\PersonRepository;
 use App\Person\Http\PersonAdministrationMiddleware;
@@ -227,6 +230,7 @@ use App\Person\Infrastructure\Persistence\PdoPersonDiscoveryQuery;
 use App\Person\Infrastructure\Persistence\PdoPersonRepository;
 use App\Representative\Application\CreateRepresentative;
 use App\Representative\Application\GetRepresentative;
+use App\Representative\Application\LockingRepresentativeRepository;
 use App\Representative\Domain\RepresentativeRepository;
 use App\Representative\Infrastructure\Persistence\PdoRepresentativeRepository;
 use App\Student\Application\CreateStudent;
@@ -355,7 +359,9 @@ $container->singleton(SecurityEventLogger::class, ErrorLogSecurityEventLogger::c
 $container->singleton(TransactionManager::class, PdoTransactionManager::class);
 $container->singleton(SharedTransactionManager::class, PdoTransactionManager::class);
 $container->singleton(IdentityUserRepository::class, PdoUserRepository::class);
+$container->singleton(LockingUserRepository::class, PdoUserRepository::class);
 $container->singleton(UserCapabilityLookup::class, PdoUserCapabilityLookup::class);
+$container->singleton(LockingUserCapabilityLookup::class, PdoUserCapabilityLookup::class);
 $container->singleton(
     InstitutionalReportingCapabilityGrant::class,
     PdoInstitutionalReportingCapabilityGrant::class,
@@ -395,6 +401,7 @@ $container->singleton(RepresentativeDataController::class, RepresentativeDataCon
 $container->singleton(AuthenticationMiddleware::class, AuthenticationMiddleware::class);
 $container->singleton(ReportingAccessMiddleware::class, ReportingAccessMiddleware::class);
 $container->singleton(PersonRepository::class, PdoPersonRepository::class);
+$container->singleton(LockingPersonRepository::class, PdoPersonRepository::class);
 $container->singleton(PersonDiscoveryQuery::class, PdoPersonDiscoveryQuery::class);
 $container->singleton(SearchPersons::class, SearchPersons::class);
 $container->singleton(CreatePerson::class, CreatePerson::class);
@@ -487,6 +494,7 @@ $container->singleton(GetActiveAcademicPeriod::class, GetActiveAcademicPeriod::c
 $container->singleton(ActivateAcademicPeriod::class, ActivateAcademicPeriod::class);
 $container->singleton(DeactivateAcademicPeriod::class, DeactivateAcademicPeriod::class);
 $container->singleton(RepresentativeRepository::class, PdoRepresentativeRepository::class);
+$container->singleton(LockingRepresentativeRepository::class, PdoRepresentativeRepository::class);
 $container->singleton(StudentRepository::class, PdoStudentRepository::class);
 $container->singleton(LockingStudentRepository::class, PdoStudentRepository::class);
 $container->singleton(EnrollmentRepository::class, PdoEnrollmentRepository::class);

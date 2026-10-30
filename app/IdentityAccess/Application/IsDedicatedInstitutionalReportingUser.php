@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\IdentityAccess\Application;
 
 use App\IdentityAccess\Domain\User;
-use App\IdentityAccess\Domain\UserRepository;
 use App\IdentityAccess\Domain\ValueObject\PersonId;
 use App\Shared\Application\DedicatedInstitutionalReportingProfile;
 
@@ -14,8 +13,8 @@ final readonly class IsDedicatedInstitutionalReportingUser implements DedicatedI
     private const LEGACY_ADMIN_LOGIN = 'admin';
 
     public function __construct(
-        private UserRepository $users,
-        private UserCapabilityLookup $capabilities,
+        private LockingUserRepository $users,
+        private LockingUserCapabilityLookup $capabilities,
     ) {
     }
 
@@ -33,14 +32,26 @@ final readonly class IsDedicatedInstitutionalReportingUser implements DedicatedI
         return $user->loginIdentifier()->value() === self::LEGACY_ADMIN_LOGIN;
     }
 
+    public function handleForUpdate(User $user): bool
+    {
+        $userId = $user->id();
+
+        return $userId !== null
+            && !$this->isExactLegacyAdmin($user)
+            && $this->capabilities->hasCapabilityForUpdate(
+                $userId,
+                CanAccessAllReports::CAPABILITY,
+            );
+    }
+
     public function isAssignedToPerson(int $personId): bool
     {
         if ($personId <= 0) {
             return false;
         }
 
-        $user = $this->users->findByPersonId(new PersonId($personId));
+        $user = $this->users->findByPersonIdForUpdate(new PersonId($personId));
 
-        return $user !== null && $this->handle($user);
+        return $user !== null && $this->handleForUpdate($user);
     }
 }
