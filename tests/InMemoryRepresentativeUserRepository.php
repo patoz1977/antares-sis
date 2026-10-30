@@ -23,6 +23,8 @@ final class InMemoryRepresentativeUserRepository implements LockingUserRepositor
 
     private bool $returnWithoutId = false;
 
+    private int $lockingPersonReads = 0;
+
     public function __construct(private int $nextId = 900)
     {
     }
@@ -72,7 +74,14 @@ final class InMemoryRepresentativeUserRepository implements LockingUserRepositor
 
     public function findByPersonIdForUpdate(PersonId $personId): ?User
     {
+        $this->lockingPersonReads++;
+
         return $this->findByPersonId($personId);
+    }
+
+    public function lockingPersonReads(): int
+    {
+        return $this->lockingPersonReads;
     }
 
     public function save(User $user): User

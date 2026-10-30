@@ -19,6 +19,8 @@ final class InMemoryRepresentativeApplicationRepository implements LockingRepres
 
     private bool $returnWithoutId = false;
 
+    private int $lockingPersonReads = 0;
+
     public function __construct(private int $nextId = 700)
     {
     }
@@ -59,7 +61,14 @@ final class InMemoryRepresentativeApplicationRepository implements LockingRepres
 
     public function findByPersonIdForUpdate(PersonId $personId): ?Representative
     {
+        $this->lockingPersonReads++;
+
         return $this->findByPersonId($personId);
+    }
+
+    public function lockingPersonReads(): int
+    {
+        return $this->lockingPersonReads;
     }
 
     public function save(Representative $representative): Representative

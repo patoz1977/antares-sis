@@ -5526,6 +5526,174 @@ if (getenv('E0041_DB_ALLOW_DISPOSABLE') !== '1') {
     );
 }
 
+function runMariaDbInstitutionalReportingCurrentReadScenario(
+    ConnectionManager $managerA,
+    ConnectionManager $managerB,
+    PDO $connectionA,
+    PDO $connectionB,
+    int $generalStatusId,
+): void {
+    $connectionA->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    $connectionB->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+
+    $insertPerson = $connectionA->prepare(
+        'INSERT INTO persons (first_name, first_surname, birth_date, sex_id, email, status_id) '
+        . 'VALUES (:firstName, :firstSurname, :birthDate, 1, :email, :statusId)'
+    );
+    $personIds = [];
+    foreach ([
+        ['Current', 'Grant', 'phase4-current-grant@example.test'],
+        ['Current', 'Provision', 'phase4-current-provision@example.test'],
+    ] as [$firstName, $firstSurname, $email]) {
+        $insertPerson->execute([
+            ':firstName' => $firstName,
+            ':firstSurname' => $firstSurname,
+            ':birthDate' => '1990-01-01',
+            ':email' => $email,
+            ':statusId' => $generalStatusId,
+        ]);
+        $personIds[] = (int) $connectionA->lastInsertId();
+    }
+    [$grantPersonId, $provisionPersonId] = $personIds;
+    assertIntegration(
+        $grantPersonId > 0 && $provisionPersonId > 0 && $grantPersonId !== $provisionPersonId,
+        'Phase 4B concurrency fixtures did not receive distinct Person identities.'
+    );
+
+    $usersA = new PdoUserRepository($managerA);
+    $capabilitiesA = new PdoUserCapabilityLookup($managerA);
+    $eligibilityA = new \App\IdentityAccess\Application\InstitutionalReportingPersonEligibility(
+        new PdoPersonRepository($managerA),
+        new PdoRepresentativeRepository($managerA),
+        new PdoStudentRepository($managerA),
+    );
+    $events = new class implements SecurityEventLogger {
+        public function record(string $event): void
+        {
+        }
+    };
+    $existing = $usersA->save(new \App\IdentityAccess\Domain\User(
+        null,
+        new \App\IdentityAccess\Domain\ValueObject\PersonId($grantPersonId),
+        new LoginIdentifier('phase4-current-grant'),
+        new \App\IdentityAccess\Domain\ValueObject\PasswordHash(
+            password_hash('phase4-current-secret', PASSWORD_DEFAULT)
+        ),
+        UserStatus::Active,
+    ));
+    assertIntegration($existing->id() !== null, 'Phase 4B existing User fixture was not persisted.');
+
+    $connectionB->beginTransaction();
+    try {
+        $connectionB->query('SELECT COUNT(*) FROM user_capabilities')->fetchColumn();
+        (new \App\IdentityAccess\Application\GrantInstitutionalReportingAccessToExistingUser(
+            new PdoTransactionManager($managerA),
+            $eligibilityA,
+            $usersA,
+            new \App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser(
+                $usersA,
+                $capabilitiesA,
+            ),
+            new \App\IdentityAccess\Infrastructure\Persistence\PdoInstitutionalReportingCapabilityGrant(
+                $managerA
+            ),
+            $events,
+        ))->handle($grantPersonId);
+
+        $representativeRejected = false;
+        try {
+            (new CreateRepresentative(
+                new PdoPersonRepository($managerB),
+                new PdoRepresentativeRepository($managerB),
+                new PdoTransactionManager($managerB),
+                new \App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser(
+                    new PdoUserRepository($managerB),
+                    new PdoUserCapabilityLookup($managerB),
+                ),
+            ))->handle(new CreateRepresentativeInput(
+                $grantPersonId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                RepresentativeStatus::Active,
+            ));
+        } catch (\App\Shared\Application\Exception\DedicatedInstitutionalReportingRoleConflict) {
+            $representativeRejected = true;
+        }
+        assertIntegration(
+            $representativeRejected,
+            'A pre-lock REPEATABLE READ snapshot hid a committed reporting grant from Representative guard.'
+        );
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+    }
+
+    $connectionB->beginTransaction();
+    try {
+        $connectionB->query('SELECT COUNT(*) FROM users')->fetchColumn();
+        (new \App\IdentityAccess\Application\ProvisionInstitutionalReportingUser(
+            new PdoTransactionManager($managerA),
+            $eligibilityA,
+            $usersA,
+            new \App\IdentityAccess\Application\Security\InstitutionalReportingPasswordPolicy(),
+            new NativePasswordHasher(),
+            new \App\IdentityAccess\Infrastructure\Persistence\PdoInstitutionalReportingCapabilityGrant(
+                $managerA
+            ),
+            $events,
+        ))->handle(new \App\IdentityAccess\Application\Dto\ProvisionInstitutionalReportingUserInput(
+            $provisionPersonId,
+            'phase4-current-provision',
+            'phase4-current-secret',
+        ));
+
+        $studentRejected = false;
+        try {
+            (new CreateStudent(
+                new PdoPersonRepository($managerB),
+                new PdoStudentRepository($managerB),
+                new PdoTransactionManager($managerB),
+                new \App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser(
+                    new PdoUserRepository($managerB),
+                    new PdoUserCapabilityLookup($managerB),
+                ),
+            ))->handle(new CreateStudentInput(
+                $provisionPersonId,
+                'P4-CURRENT-' . $provisionPersonId,
+                new DateTimeImmutable('2026-10-30', new DateTimeZone('UTC')),
+                StudentStatus::Active,
+            ), new DateTimeImmutable('2026-10-30', new DateTimeZone('UTC')));
+        } catch (\App\Shared\Application\Exception\DedicatedInstitutionalReportingRoleConflict) {
+            $studentRejected = true;
+        }
+        assertIntegration(
+            $studentRejected,
+            'A pre-lock REPEATABLE READ snapshot hid committed provisioning from Student guard.'
+        );
+    } finally {
+        if ($connectionB->inTransaction()) {
+            $connectionB->rollBack();
+        }
+    }
+
+    assertIntegration(
+        (int) $connectionA->query(
+            'SELECT COUNT(*) FROM representatives WHERE person_id IN ('
+                . $grantPersonId . ', ' . $provisionPersonId . ')'
+        )->fetchColumn() === 0
+        && (int) $connectionA->query(
+            'SELECT COUNT(*) FROM students WHERE person_id IN ('
+                . $grantPersonId . ', ' . $provisionPersonId . ')'
+        )->fetchColumn() === 0,
+        'Phase 4B role guard rejection left an unauthorized Representative or Student row.'
+    );
+    echo "PASS MariaDB Phase 4B current locking reads defeat pre-lock REPEATABLE READ snapshots\n";
+}
+
 $host = $environment['E0041_DB_HOST'];
 $port = (int) $environment['E0041_DB_PORT'];
 $username = $environment['E0041_DB_USERNAME'];
@@ -9169,6 +9337,14 @@ try {
     assertIntegration(
         $connectionA->query('SELECT @@session.time_zone')->fetchColumn() === '+00:00',
         'ConnectionFactory did not establish the UTC SQL convention.'
+    );
+
+    runMariaDbInstitutionalReportingCurrentReadScenario(
+        $managerA,
+        $managerB,
+        $connectionA,
+        $connectionB,
+        $generalStatusId,
     );
 
     $concurrencyRequirementsA = new PdoAcknowledgementRequirementRepository($managerA);

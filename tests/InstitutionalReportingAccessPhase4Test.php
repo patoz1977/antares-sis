@@ -10,17 +10,18 @@ use App\IdentityAccess\Application\Dto\ProvisionInstitutionalReportingUserInput;
 use App\IdentityAccess\Application\Dto\InstitutionalReportingAccessState;
 use App\IdentityAccess\Application\Exception\InstitutionalReportingAccessConflict;
 use App\IdentityAccess\Application\Exception\InstitutionalReportingLoginIdentifierAlreadyUsed;
+use App\IdentityAccess\Application\Exception\InstitutionalReportingReservedLoginIdentifier;
 use App\IdentityAccess\Application\Exception\InvalidInstitutionalReportingPassword;
 use App\IdentityAccess\Application\GetInstitutionalReportingAccessState;
 use App\IdentityAccess\Application\GrantInstitutionalReportingAccessToExistingUser;
 use App\IdentityAccess\Application\InstitutionalReportingCapabilityGrant;
 use App\IdentityAccess\Application\InstitutionalReportingPersonEligibility;
 use App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser;
+use App\IdentityAccess\Application\LockingUserCapabilityLookup;
 use App\IdentityAccess\Application\ProvisionInstitutionalReportingUser;
 use App\IdentityAccess\Application\ReactivateInstitutionalReportingUser;
 use App\IdentityAccess\Application\Security\InstitutionalReportingPasswordPolicy;
 use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
-use App\IdentityAccess\Application\UserCapabilityLookup;
 use App\IdentityAccess\Domain\User;
 use App\IdentityAccess\Domain\UserStatus;
 use App\IdentityAccess\Domain\ValueObject\LoginIdentifier;
@@ -28,6 +29,8 @@ use App\IdentityAccess\Domain\ValueObject\PasswordHash;
 use App\IdentityAccess\Domain\ValueObject\PersonId as UserPersonId;
 use App\IdentityAccess\Domain\ValueObject\UserId;
 use App\IdentityAccess\Infrastructure\Persistence\PdoInstitutionalReportingCapabilityGrant;
+use App\IdentityAccess\Infrastructure\Persistence\PdoUserCapabilityLookup;
+use App\IdentityAccess\Http\InstitutionalReportingAccessController;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\Person\Domain\Person;
 use App\Person\Domain\PersonStatus;
@@ -43,6 +46,9 @@ use App\Student\Application\Dto\CreateStudentInput;
 use App\Student\Domain\StudentStatus;
 use DateTimeImmutable;
 use DateTimeZone;
+use Core\Database\ConnectionFactory;
+use Core\Database\ConnectionManager;
+use Core\Database\DatabaseConfig;
 use PDO;
 use ReflectionClass;
 use ReflectionProperty;
@@ -97,6 +103,30 @@ function registerInstitutionalReportingAccessPhase4Tests(TestRunner $runner): vo
         assertSameValue(true, (new CanAccessAllReports($users, $capabilities))->handle(2));
     });
 
+    $runner->add('Phase 4 dedicated guard uses current locking reads after Person serialization', function (): void {
+        $users = new InMemoryRepresentativeUserRepository();
+        $capabilities = new InMemoryInstitutionalReportingCapabilities();
+        $user = phase4User(4, 40, 'current-reporter');
+        $users->seed($user);
+        $capabilities->grant(new UserId(4));
+        $capabilities->makeOrdinarySnapshotStale();
+        $policy = new IsDedicatedInstitutionalReportingUser($users, $capabilities);
+
+        assertSameValue(false, $policy->handle($user));
+        assertSameValue(true, $policy->isAssignedToPerson(40));
+        assertSameValue(1, $users->lockingPersonReads());
+        assertSameValue(1, $capabilities->lockingReads);
+
+        $disabledUsers = new InMemoryRepresentativeUserRepository();
+        $disabledCapabilities = new InMemoryInstitutionalReportingCapabilities();
+        $disabledUsers->seed(phase4User(5, 50, 'disabled-current', UserStatus::Disabled));
+        $disabledCapabilities->grant(new UserId(5));
+        assertSameValue(true, (new IsDedicatedInstitutionalReportingUser(
+            $disabledUsers,
+            $disabledCapabilities,
+        ))->isAssignedToPerson(50));
+    });
+
     $runner->add('Phase 4 provisions one User and capability atomically through approved boundaries', function (): void {
         $fixture = phase4Fixture(100);
         $events = new FakeSecurityEvents();
@@ -127,6 +157,8 @@ function registerInstitutionalReportingAccessPhase4Tests(TestRunner $runner): vo
         assertSameValue(true, password_verify('abcde', $persisted?->passwordHash()->value() ?? ''));
         assertSameValue(false, array_key_exists('password', get_object_vars($result)));
         assertSameValue(false, array_key_exists('passwordHash', get_object_vars($result)));
+        assertSameValue(1, $fixture['representatives']->lockingPersonReads());
+        assertSameValue(1, $fixture['students']->lockingPersonReads());
     });
 
     $runner->add('Phase 4 state query classifies every eligibility and lifecycle state safely', function (): void {
@@ -197,6 +229,49 @@ function registerInstitutionalReportingAccessPhase4Tests(TestRunner $runner): vo
             InstitutionalReportingAccessConflict::class,
         );
         assertSameValue([], $events->events);
+    });
+
+    $runner->add('Phase 4 new User provisioning reserves normalized exact Admin before persistence', function (): void {
+        foreach (['admin', ' ADMIN ', 'AdMiN'] as $reservedLogin) {
+            $fixture = phase4Fixture(127);
+            $events = new FakeSecurityEvents();
+            $useCase = new ProvisionInstitutionalReportingUser(
+                new ImmediateTransactionManager(),
+                $fixture['eligibility'],
+                $fixture['users'],
+                new InstitutionalReportingPasswordPolicy(),
+                new NativePasswordHasher(),
+                $fixture['capabilities'],
+                $events,
+            );
+
+            assertThrows(
+                fn () => $useCase->handle(new ProvisionInstitutionalReportingUserInput(
+                    127,
+                    $reservedLogin,
+                    'abcde',
+                )),
+                InstitutionalReportingReservedLoginIdentifier::class,
+            );
+            assertSameValue(0, $fixture['users']->saveCalls());
+            assertSameValue([], $events->events);
+        }
+
+        $controllerSource = (string) file_get_contents(
+            dirname(__DIR__) . '/app/IdentityAccess/Http/InstitutionalReportingAccessController.php'
+        );
+        assertSameValue(true, str_contains(
+            $controllerSource,
+            'InstitutionalReportingLoginIdentifierAlreadyUsed|InstitutionalReportingReservedLoginIdentifier',
+        ));
+        assertSameValue(true, str_contains(
+            $controllerSource,
+            'Ese identificador de acceso ya está en uso.',
+        ));
+        assertSameValue(false, str_contains(
+            $controllerSource,
+            'Legacy Admin LoginIdentifier is reserved.',
+        ));
     });
 
     $runner->add('Phase 4 existing grant rejects disabled and exact Admin while preserving existing state', function (): void {
@@ -425,6 +500,31 @@ function registerInstitutionalReportingAccessPhase4Tests(TestRunner $runner): vo
         assertSameValue(0, (int) $pdo->query('SELECT COUNT(*) FROM user_capabilities WHERE user_id = 2')->fetchColumn());
     });
 
+    $runner->add('Phase 4 PDO capability current read requires caller transaction', function (): void {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->exec('CREATE TABLE user_capabilities (user_id INTEGER NOT NULL, capability_code TEXT NOT NULL); '
+            . "INSERT INTO user_capabilities VALUES (1, 'REPORTS_VIEW_ALL')");
+        $reflection = new ReflectionClass(PdoUserCapabilityLookup::class);
+        $lookup = $reflection->newInstanceWithoutConstructor();
+        $property = new ReflectionProperty(PdoUserCapabilityLookup::class, 'connection');
+        $property->setValue($lookup, $pdo);
+
+        assertThrows(
+            fn () => $lookup->hasCapabilityForUpdate(new UserId(1), CanAccessAllReports::CAPABILITY),
+            \RuntimeException::class,
+        );
+        $pdo->beginTransaction();
+        try {
+            assertSameValue(true, $lookup->hasCapabilityForUpdate(
+                new UserId(1),
+                CanAccessAllReports::CAPABILITY,
+            ));
+        } finally {
+            $pdo->rollBack();
+        }
+    });
+
     $runner->add('Phase 4 Delivery exposes only exact contextual routes and secret-free Views', function (): void {
         $routes = str_replace("\r\n", "\n", (string) file_get_contents(dirname(__DIR__) . '/routes/web.php'));
         assertSameValue(51, substr_count($routes, '$router->get('));
@@ -445,6 +545,43 @@ function registerInstitutionalReportingAccessPhase4Tests(TestRunner $runner): vo
         assertSameValue(false, preg_match('/name="password"[^>]*value=/i', $view) === 1);
         assertSameValue(true, str_contains($view, 'Acceso institucional a reportes'));
         assertSameValue(true, str_contains($view, 'method="post"'));
+    });
+
+    $runner->add('Phase 4 real container resolves lifecycle graph and registers all routes', function (): void {
+        $app = require dirname(__DIR__) . '/bootstrap/app.php';
+        $manager = new ConnectionManager(
+            new ConnectionFactory(),
+            new DatabaseConfig([
+                'driver' => 'mysql',
+                'host' => '127.0.0.1',
+                'port' => 3306,
+                'database' => 'container-smoke-not-used',
+                'username' => 'container-smoke-not-used',
+                'password' => '',
+                'charset' => 'utf8mb4',
+            ]),
+        );
+        $connectionProperty = new ReflectionProperty(ConnectionManager::class, 'connection');
+        $connectionProperty->setValue($manager, new PDO('sqlite::memory:'));
+        $app->container()->instance(ConnectionManager::class, $manager);
+
+        foreach ([
+            GetInstitutionalReportingAccessState::class,
+            GrantInstitutionalReportingAccessToExistingUser::class,
+            ProvisionInstitutionalReportingUser::class,
+            DisableInstitutionalReportingUser::class,
+            ReactivateInstitutionalReportingUser::class,
+            InstitutionalReportingAccessController::class,
+        ] as $service) {
+            assertSameValue(true, $app->container()->make($service) instanceof $service, $service);
+        }
+
+        $router = $app->router();
+        require dirname(__DIR__) . '/routes/web.php';
+        assertSameValue(51, substr_count(
+            (string) file_get_contents(dirname(__DIR__) . '/routes/web.php'),
+            '$router->get(',
+        ));
     });
 }
 
@@ -550,13 +687,26 @@ function phase4PdoGrant(PDO $pdo): PdoInstitutionalReportingCapabilityGrant
     return $grant;
 }
 
-final class InMemoryInstitutionalReportingCapabilities implements UserCapabilityLookup, InstitutionalReportingCapabilityGrant
+final class InMemoryInstitutionalReportingCapabilities implements LockingUserCapabilityLookup, InstitutionalReportingCapabilityGrant
 {
     /** @var array<int, true> */
     private array $assigned = [];
 
+    private bool $ordinarySnapshotStale = false;
+
+    public int $lockingReads = 0;
+
     public function hasCapability(UserId $userId, string $capabilityCode): bool
     {
+        return !$this->ordinarySnapshotStale
+            && $capabilityCode === CanAccessAllReports::CAPABILITY
+            && isset($this->assigned[$userId->value()]);
+    }
+
+    public function hasCapabilityForUpdate(UserId $userId, string $capabilityCode): bool
+    {
+        $this->lockingReads++;
+
         return $capabilityCode === CanAccessAllReports::CAPABILITY
             && isset($this->assigned[$userId->value()]);
     }
@@ -564,5 +714,10 @@ final class InMemoryInstitutionalReportingCapabilities implements UserCapability
     public function grant(UserId $userId): void
     {
         $this->assigned[$userId->value()] = true;
+    }
+
+    public function makeOrdinarySnapshotStale(): void
+    {
+        $this->ordinarySnapshotStale = true;
     }
 }
