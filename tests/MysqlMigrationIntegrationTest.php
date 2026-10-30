@@ -3985,7 +3985,15 @@ function runMariaDbBulkImportApplicationScenario(
     );
     $createPerson = new CreatePerson($persons);
     $getPerson = new \App\Person\Application\GetPerson($persons);
-    $createRepresentative = new CreateRepresentative($persons, $representatives);
+    $createRepresentative = new CreateRepresentative(
+        $persons,
+        $representatives,
+        new PdoTransactionManager($manager),
+        new \App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser(
+            $users,
+            new PdoUserCapabilityLookup($manager),
+        ),
+    );
     $hasher = new NativePasswordHasher();
     $createUser = new CreateRepresentativeUser(
         $representatives,
@@ -4010,7 +4018,15 @@ function runMariaDbBulkImportApplicationScenario(
     $studentCoordinator = new \App\Family\Application\Orchestration\StudentFamilyCoordinator(
         $createPerson,
         $getPerson,
-        new CreateStudent($persons, $students),
+        new CreateStudent(
+            $persons,
+            $students,
+            new PdoTransactionManager($manager),
+            new \App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser(
+                $users,
+                new PdoUserCapabilityLookup($manager),
+            ),
+        ),
         new \App\Student\Application\GetStudent($students),
         new AddStudentToFamily($families, $students),
     );
@@ -4341,7 +4357,15 @@ function runMariaDbBulkImportApplicationScenario(
     $isolationStudentCoordinator = new \App\Family\Application\Orchestration\StudentFamilyCoordinator(
         $createPerson,
         $getPerson,
-        new CreateStudent($persons, $students),
+        new CreateStudent(
+            $persons,
+            $students,
+            new PdoTransactionManager($manager),
+            new \App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser(
+                $users,
+                new PdoUserCapabilityLookup($manager),
+            ),
+        ),
         new \App\Student\Application\GetStudent($students),
         new AddStudentToFamily($failingFamilies, $students),
     );
@@ -4956,7 +4980,15 @@ function runMariaDbBulkImportDeliveryScenario(
     );
     $createPerson = new CreatePerson($persons);
     $getPerson = new \App\Person\Application\GetPerson($persons);
-    $createRepresentative = new CreateRepresentative($persons, $representatives);
+    $createRepresentative = new CreateRepresentative(
+        $persons,
+        $representatives,
+        new PdoTransactionManager($manager),
+        new \App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser(
+            $users,
+            new PdoUserCapabilityLookup($manager),
+        ),
+    );
     $hasher = new NativePasswordHasher();
     $createUser = new CreateRepresentativeUser(
         $representatives,
@@ -4981,7 +5013,15 @@ function runMariaDbBulkImportDeliveryScenario(
     $studentCoordinator = new \App\Family\Application\Orchestration\StudentFamilyCoordinator(
         $createPerson,
         $getPerson,
-        new CreateStudent($persons, $students),
+        new CreateStudent(
+            $persons,
+            $students,
+            new PdoTransactionManager($manager),
+            new \App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser(
+                $users,
+                new PdoUserCapabilityLookup($manager),
+            ),
+        ),
         new \App\Student\Application\GetStudent($students),
         new AddStudentToFamily($families, $students),
     );
@@ -7750,6 +7790,11 @@ try {
     $createRepresentative = new CreateRepresentative(
         $personRepository,
         $representativeRepository,
+        new PdoTransactionManager($managerA),
+        new \App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser(
+            new PdoUserRepository($managerA),
+            new PdoUserCapabilityLookup($managerA),
+        ),
     );
     $representativeUsers = new PdoUserRepository($managerA);
     $representativePasswordHasher = new NativePasswordHasher();
@@ -7767,7 +7812,15 @@ try {
         $createRepresentative,
         $createRepresentativeUser,
     );
-    $createStudent = new CreateStudent($personRepository, $studentRepository);
+    $createStudent = new CreateStudent(
+        $personRepository,
+        $studentRepository,
+        new PdoTransactionManager($managerA),
+        new \App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser(
+            new PdoUserRepository($managerA),
+            new PdoUserCapabilityLookup($managerA),
+        ),
+    );
     $createFamily = new CreateFamily(
         $familyRepository,
         $representativeRepository,

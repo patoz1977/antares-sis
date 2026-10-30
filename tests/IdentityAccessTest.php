@@ -806,7 +806,7 @@ final class FakeSecurityEvents implements SecurityEventLogger
     }
 }
 
-final class ImmediateTransactionManager implements TransactionManager
+final class ImmediateTransactionManager implements TransactionManager, \App\Shared\Application\TransactionManager
 {
     public function transactional(callable $operation): mixed
     {
@@ -814,11 +814,19 @@ final class ImmediateTransactionManager implements TransactionManager
     }
 }
 
-final class FailingTransactionManager implements TransactionManager
+final class FailingTransactionManager implements TransactionManager, \App\Shared\Application\TransactionManager
 {
     public function transactional(callable $operation): mixed
     {
         $operation();
         throw new RuntimeException('transaction failed');
+    }
+}
+
+final class NeverDedicatedInstitutionalReportingProfile implements \App\Shared\Application\DedicatedInstitutionalReportingProfile
+{
+    public function isAssignedToPerson(int $personId): bool
+    {
+        return false;
     }
 }

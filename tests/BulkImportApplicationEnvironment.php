@@ -65,7 +65,12 @@ final class BulkImportApplicationEnvironment
         );
         $createPerson = new CreatePerson($this->persons);
         $getPerson = new GetPerson($this->persons);
-        $createRepresentative = new CreateRepresentative($this->persons, $this->representatives);
+        $createRepresentative = new CreateRepresentative(
+            $this->persons,
+            $this->representatives,
+            new ImmediateTransactionManager(),
+            new NeverDedicatedInstitutionalReportingProfile(),
+        );
         $createUser = new CreateRepresentativeUser(
             $this->representatives,
             $this->persons,
@@ -89,7 +94,12 @@ final class BulkImportApplicationEnvironment
         $studentCoordinator = new StudentFamilyCoordinator(
             $createPerson,
             $getPerson,
-            new CreateStudent($this->persons, $this->students),
+            new CreateStudent(
+                $this->persons,
+                $this->students,
+                new ImmediateTransactionManager(),
+                new NeverDedicatedInstitutionalReportingProfile(),
+            ),
             new GetStudent($this->students),
             new AddStudentToFamily($this->families, $this->students),
         );

@@ -46,7 +46,7 @@ function registerStudentApplicationTests(TestRunner $runner): void
             StudentStatus::Inactive,
         );
 
-        $output = (new CreateStudent($persons, $students))->handle($input, studentToday());
+        $output = testCreateStudent($persons, $students)->handle($input, studentToday());
 
         assertSameValue(901, $output->id);
         assertSameValue(30, $output->personId);
@@ -67,7 +67,7 @@ function registerStudentApplicationTests(TestRunner $runner): void
             StudentStatus::Active,
         );
 
-        $output = (new CreateStudent($persons, $students))->handle($input, $today);
+        $output = testCreateStudent($persons, $students)->handle($input, $today);
 
         assertSameValue('2026-08-01 00:00:00', $output->admissionDate->format('Y-m-d H:i:s'));
         assertSameValue(StudentStatus::Active, $output->status);
@@ -78,7 +78,7 @@ function registerStudentApplicationTests(TestRunner $runner): void
         $students = new InMemoryStudentApplicationRepository();
 
         assertThrows(
-            static fn () => (new CreateStudent($persons, $students))->handle(
+            static fn () => testCreateStudent($persons, $students)->handle(
                 studentCreateInput(99, 'MISSING-99'),
                 studentToday(),
             ),
@@ -93,7 +93,7 @@ function registerStudentApplicationTests(TestRunner $runner): void
         $students->seed(studentAggregate(61, 32, 'FIRST-32'));
 
         assertThrows(
-            static fn () => (new CreateStudent($persons, $students))->handle(
+            static fn () => testCreateStudent($persons, $students)->handle(
                 studentCreateInput(32, 'SECOND-32'),
                 studentToday(),
             ),
@@ -108,7 +108,7 @@ function registerStudentApplicationTests(TestRunner $runner): void
         $students->seed(studentAggregate(62, 34, 'USED-CODE'));
 
         assertThrows(
-            static fn () => (new CreateStudent($persons, $students))->handle(
+            static fn () => testCreateStudent($persons, $students)->handle(
                 studentCreateInput(33, 'USED-CODE'),
                 studentToday(),
             ),
@@ -128,7 +128,7 @@ function registerStudentApplicationTests(TestRunner $runner): void
         );
 
         assertThrows(
-            static fn () => (new CreateStudent($persons, $students))->handle($input, studentToday()),
+            static fn () => testCreateStudent($persons, $students)->handle($input, studentToday()),
             InvalidStudentState::class,
         );
         assertSameValue(0, $students->saveCalls());
@@ -139,7 +139,7 @@ function registerStudentApplicationTests(TestRunner $runner): void
         $students = new InMemoryStudentApplicationRepository();
 
         assertThrows(
-            static fn () => (new CreateStudent($persons, $students))->handle(
+            static fn () => testCreateStudent($persons, $students)->handle(
                 studentCreateInput(36, ' '),
                 studentToday(),
             ),
@@ -154,7 +154,7 @@ function registerStudentApplicationTests(TestRunner $runner): void
         $students->returnWithoutId();
 
         assertThrows(
-            static fn () => (new CreateStudent($persons, $students))->handle(
+            static fn () => testCreateStudent($persons, $students)->handle(
                 studentCreateInput(37, 'NO-ID-37'),
                 studentToday(),
             ),
@@ -340,6 +340,18 @@ function registerStudentApplicationTests(TestRunner $runner): void
 function studentToday(): DateTimeImmutable
 {
     return new DateTimeImmutable('2026-08-01 23:59:59', new DateTimeZone('UTC'));
+}
+
+function testCreateStudent(
+    \App\Person\Domain\PersonRepository $persons,
+    StudentRepository $students,
+): CreateStudent {
+    return new CreateStudent(
+        $persons,
+        $students,
+        new ImmediateTransactionManager(),
+        new NeverDedicatedInstitutionalReportingProfile(),
+    );
 }
 
 function studentPersonRepository(int $personId): InMemoryPersonApplicationRepository

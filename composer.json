@@ -43,6 +43,7 @@
             "tests/AcademicInitializationDeliveryTest.php",
             "tests/EnrollmentApplicationTest.php",
             "tests/EnrollmentAdministrativeDeliveryTest.php",
+            "tests/InstitutionalReportingAccessPhase4Test.php",
             "tests/PersonDeliveryTest.php"
         ]
     },
