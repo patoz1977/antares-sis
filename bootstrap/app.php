@@ -134,6 +134,7 @@ use App\IdentityAccess\Application\SelectAuthorizedFamily;
 use App\IdentityAccess\Application\UserCapabilityLookup;
 use App\IdentityAccess\Domain\UserRepository as IdentityUserRepository;
 use App\IdentityAccess\Http\AuthenticationController;
+use App\IdentityAccess\Http\ReportingAccessMiddleware;
 use App\IdentityAccess\Http\RepresentativePortalController;
 use App\IdentityAccess\Http\RepresentativeDataController;
 use App\IdentityAccess\Http\RepresentativeUserController;
@@ -371,6 +372,7 @@ $container->singleton(AuthenticationController::class, AuthenticationController:
 $container->singleton(RepresentativePortalController::class, RepresentativePortalController::class);
 $container->singleton(RepresentativeDataController::class, RepresentativeDataController::class);
 $container->singleton(AuthenticationMiddleware::class, AuthenticationMiddleware::class);
+$container->singleton(ReportingAccessMiddleware::class, ReportingAccessMiddleware::class);
 $container->singleton(PersonRepository::class, PdoPersonRepository::class);
 $container->singleton(PersonDiscoveryQuery::class, PdoPersonDiscoveryQuery::class);
 $container->singleton(SearchPersons::class, SearchPersons::class);

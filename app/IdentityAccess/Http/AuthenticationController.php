@@ -6,6 +6,7 @@ namespace App\IdentityAccess\Http;
 
 use App\Controllers\Controller;
 use App\IdentityAccess\Application\AuthenticateUser;
+use App\IdentityAccess\Application\CanAccessAllReports;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
 use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
@@ -24,6 +25,7 @@ final class AuthenticationController extends Controller
         private readonly GetAuthenticatedRepresentative $getAuthenticatedRepresentative,
         private readonly CsrfTokenManager $csrf,
         private readonly SessionManager $session,
+        private readonly CanAccessAllReports $canAccessAllReports,
     ) {
     }
 
@@ -100,6 +102,12 @@ final class AuthenticationController extends Controller
         }
 
         $user = $this->getAuthenticatedUser->handle();
+
+        if ($user !== null
+            && $user->loginIdentifier !== 'admin'
+            && $this->canAccessAllReports->handle($user->id)) {
+            return $this->redirect('/reports/enrollments');
+        }
 
         return $this->view('dashboard.index', [
             'title' => 'Inicio',

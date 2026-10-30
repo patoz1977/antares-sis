@@ -10,6 +10,7 @@ $runner = new TestRunner();
 
 require __DIR__ . '/IdentityAccessTest.php';
 require __DIR__ . '/InstitutionalReportingAccessPhase2Test.php';
+require __DIR__ . '/InstitutionalReportingAccessPhase3Test.php';
 require __DIR__ . '/ProductionErrorHandlingTest.php';
 require __DIR__ . '/DeploymentInstallationSupportTest.php';
 require __DIR__ . '/RepresentativeUserApplicationTest.php';
@@ -82,6 +83,7 @@ require __DIR__ . '/SchemaBaselineTest.php';
 
 \Tests\registerIdentityAccessTests($runner);
 \Tests\registerInstitutionalReportingAccessPhase2Tests($runner);
+\Tests\registerInstitutionalReportingAccessPhase3Tests($runner);
 \Tests\registerProductionErrorHandlingTests($runner);
 \Tests\registerDeploymentInstallationSupportTests($runner);
 \Tests\registerRepresentativeUserApplicationTests($runner);

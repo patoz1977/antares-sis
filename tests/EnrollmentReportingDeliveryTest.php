@@ -42,7 +42,7 @@ use Tests\Support\TestRunner;
 
 function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
 {
-    $runner->add('E013 Phase 3 route inventory freezes eleven protected GET routes without aliases or POST', function (): void {
+    $runner->add('E013 report route inventory freezes thirteen protected GET routes without aliases or POST', function (): void {
         $routes = str_replace("\r\n", "\n", (string) file_get_contents(dirname(__DIR__) . '/routes/web.php'));
         $paths = [
             '/reports/enrollments',
@@ -51,17 +51,19 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
             '/reports/enrollments/directory',
             '/reports/enrollments/billing',
             '/reports/enrollments/medical',
+            '/reports/enrollments/inspection',
             '/reports/enrollments/summary/csv',
             '/reports/enrollments/students/csv',
             '/reports/enrollments/directory/csv',
             '/reports/enrollments/billing/csv',
             '/reports/enrollments/medical/csv',
+            '/reports/enrollments/inspection/csv',
         ];
         foreach ($paths as $path) {
             assertSameValue(1, substr_count($routes, "\$router->get(\n    '" . $path . "',"), $path);
             assertSameValue(false, str_contains($routes, "\$router->post(\n    '" . $path . "',"), $path);
         }
-        assertSameValue(11, count($paths));
+        assertSameValue(13, count($paths));
         assertSameValue(false, str_contains($routes, '/admin/reports'));
 
         $normalizedCrLf = str_replace("\n", "\r\n", $routes);
@@ -70,24 +72,28 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         }
     });
 
-    $runner->add('E013 Phase 3 all report endpoints reuse the exact anonymous non-admin admin gate', function (): void {
+    $runner->add('Institutional reporting makes every report endpoint reuse the exact capability gate', function (): void {
         $routes = str_replace("\r\n", "\n", (string) file_get_contents(dirname(__DIR__) . '/routes/web.php'));
         foreach ([
             '/reports/enrollments', '/reports/enrollments/summary', '/reports/enrollments/students',
             '/reports/enrollments/directory', '/reports/enrollments/billing', '/reports/enrollments/medical',
+            '/reports/enrollments/inspection',
             '/reports/enrollments/summary/csv', '/reports/enrollments/students/csv',
             '/reports/enrollments/directory/csv', '/reports/enrollments/billing/csv',
             '/reports/enrollments/medical/csv',
+            '/reports/enrollments/inspection/csv',
         ] as $path) {
             $start = strpos($routes, "\$router->get(\n    '" . $path . "',");
             assertSameValue(true, is_int($start), $path);
             $block = substr($routes, (int) $start, 260);
-            assertSameValue(true, str_contains($block, '$enrollmentAdministrationMiddleware'), $path);
+            assertSameValue(true, str_contains($block, '$reportingAccessMiddleware'), $path);
+            assertSameValue(false, str_contains($block, '$enrollmentAdministrationMiddleware'), $path);
         }
 
-        $middleware = (string) file_get_contents(dirname(__DIR__) . '/app/Enrollment/Http/EnrollmentAdministrationMiddleware.php');
+        $middleware = (string) file_get_contents(dirname(__DIR__) . '/app/IdentityAccess/Http/ReportingAccessMiddleware.php');
         assertSameValue(true, str_contains($middleware, "header('Location: /login')"));
-        assertSameValue(true, str_contains($middleware, "loginIdentifier !== 'admin'"));
+        assertSameValue(false, str_contains($middleware, 'loginIdentifier'));
+        assertSameValue(true, str_contains($middleware, 'canAccessAllReports->handle($user->id)'));
         assertSameValue(true, str_contains($middleware, "status(403)"));
     });
 
@@ -98,7 +104,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
             assertSameValue(false, str_contains($routes, "\$router->post(\n    '" . $path . "',"), $path);
             $start = strpos($routes, "\$router->get(\n    '" . $path . "',");
             assertSameValue(true, is_int($start));
-            assertSameValue(true, str_contains(substr($routes, (int) $start, 260), '$enrollmentAdministrationMiddleware'));
+            assertSameValue(true, str_contains(substr($routes, (int) $start, 260), '$reportingAccessMiddleware'));
         }
     });
 

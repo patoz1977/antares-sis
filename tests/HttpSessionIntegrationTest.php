@@ -56,6 +56,7 @@ $controller = new AuthenticationController(
     ),
     $csrf,
     $session,
+    Tests\testReportAccessPolicy($repository),
 );
 
 $_SERVER['REQUEST_METHOD'] = 'POST';
@@ -88,6 +89,7 @@ $failedController = new AuthenticationController(
     ),
     $failedCsrf,
     $failedSession,
+    Tests\testReportAccessPolicy($failedRepository),
 );
 $_SERVER['REQUEST_URI'] = '/login';
 $_POST = [
@@ -114,6 +116,7 @@ $invalidLoginController = new AuthenticationController(
     ),
     $invalidLoginCsrf,
     $invalidLoginSession,
+    Tests\testReportAccessPolicy($invalidLoginRepository),
 );
 $_SERVER['REQUEST_URI'] = '/login';
 $_POST = ['_csrf_token' => 'invalid'];
@@ -139,6 +142,7 @@ $invalidLogoutController = new AuthenticationController(
     ),
     $invalidLogoutCsrf,
     $invalidLogoutSession,
+    Tests\testReportAccessPolicy($invalidLogoutRepository),
 );
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $_SERVER['REQUEST_URI'] = '/login';

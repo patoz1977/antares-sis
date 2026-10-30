@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Shared\Http;
 
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
+use App\IdentityAccess\Application\CanAccessAllReports;
 use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
 use App\IdentityAccess\Application\GetAuthenticatedUser;
 use Core\Http\Request;
@@ -16,6 +17,7 @@ final readonly class SharedShellDataFactory
         private GetAuthenticatedRepresentative $getAuthenticatedRepresentative,
         private CsrfTokenManager $csrf,
         private WhiteLabelBranding $branding,
+        private CanAccessAllReports $canAccessAllReports,
     ) {
     }
 
@@ -40,6 +42,21 @@ final readonly class SharedShellDataFactory
                 $this->branding,
                 'admin',
                 $this->adminNavigation($request->uri()),
+                $this->csrf->token(),
+            );
+        }
+
+        if ($this->canAccessAllReports->handle($user->id)) {
+            return new ShellViewData(
+                $this->branding,
+                'reporting',
+                [$this->item(
+                    'Reportes',
+                    '/reports/enrollments',
+                    'bi-bar-chart',
+                    $request->uri(),
+                    ['/reports/enrollments'],
+                )],
                 $this->csrf->token(),
             );
         }

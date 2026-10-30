@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\IdentityAccess\Http\AuthenticationController;
+use App\IdentityAccess\Http\ReportingAccessMiddleware;
 use App\IdentityAccess\Http\RepresentativePortalController;
 use App\IdentityAccess\Http\RepresentativeDataController;
 use App\IdentityAccess\Http\RepresentativeUserController;
@@ -84,6 +85,10 @@ $enrollmentAdministrationMiddleware = [
     AuthenticationMiddleware::class,
     EnrollmentAdministrationMiddleware::class,
 ];
+$reportingAccessMiddleware = [
+    AuthenticationMiddleware::class,
+    ReportingAccessMiddleware::class,
+];
 
 $router->get('/login', [$authenticationController, 'showLogin']);
 $router->get('/forgot-password', [$authenticationController, 'showForgotPassword']);
@@ -148,67 +153,67 @@ $router->get(
 $router->get(
     '/reports/enrollments',
     [$enrollmentReportingController, 'index'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/summary',
     [$enrollmentReportingController, 'summary'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/students',
     [$enrollmentReportingController, 'students'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/directory',
     [$enrollmentReportingController, 'directory'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/billing',
     [$enrollmentReportingController, 'billing'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/medical',
     [$enrollmentReportingController, 'medical'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/inspection',
     [$enrollmentReportingController, 'inspection'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/summary/csv',
     [$enrollmentReportingController, 'summaryCsv'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/students/csv',
     [$enrollmentReportingController, 'studentsCsv'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/directory/csv',
     [$enrollmentReportingController, 'directoryCsv'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/billing/csv',
     [$enrollmentReportingController, 'billingCsv'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/medical/csv',
     [$enrollmentReportingController, 'medicalCsv'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/reports/enrollments/inspection/csv',
     [$enrollmentReportingController, 'inspectionCsv'],
-    $enrollmentAdministrationMiddleware,
+    $reportingAccessMiddleware,
 );
 $router->get(
     '/enrollments/review',

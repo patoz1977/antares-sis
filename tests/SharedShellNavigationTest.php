@@ -181,6 +181,7 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
             $fixture['getRepresentative'],
             new FakeDeliveryCsrf(),
             WhiteLabelBranding::fromConfig([]),
+            testReportAccessPolicy($fixture['users']),
         ))->forRequest(new Request());
 
         assertSameValue('admin', $shell->context);
@@ -199,6 +200,7 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
             $fixture['getRepresentative'],
             new FakeDeliveryCsrf(),
             WhiteLabelBranding::fromConfig([]),
+            testReportAccessPolicy($fixture['users']),
         ))->forRequest(new Request());
         assertSameValue(false, shellItem($boundary, 'Personas')['active']);
     });
@@ -212,6 +214,7 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
             $fixture['getRepresentative'],
             new FakeDeliveryCsrf(),
             WhiteLabelBranding::fromConfig([]),
+            testReportAccessPolicy($fixture['users']),
         ))->forRequest(new Request());
 
         assertSameValue('representative', $shell->context);
@@ -232,6 +235,7 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
             $anonymous['getRepresentative'],
             new FakeDeliveryCsrf(),
             WhiteLabelBranding::fromConfig([]),
+            testReportAccessPolicy($anonymous['users']),
         );
         deliveryRequest('GET', '/login');
         View::setSharedDataResolver(static fn (): array => [
@@ -252,6 +256,7 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
             $admin['getRepresentative'],
             new FakeDeliveryCsrf(),
             WhiteLabelBranding::fromConfig([]),
+            testReportAccessPolicy($admin['users']),
         );
         deliveryRequest('GET', '/');
         View::setSharedDataResolver(static fn (): array => [
@@ -276,6 +281,7 @@ function registerSharedShellNavigationTests(TestRunner $runner): void
             $representative['getRepresentative'],
             new FakeDeliveryCsrf(),
             WhiteLabelBranding::fromConfig([]),
+            testReportAccessPolicy($representative['users']),
         );
         deliveryRequest('GET', '/representative');
         View::setSharedDataResolver(static fn (): array => [

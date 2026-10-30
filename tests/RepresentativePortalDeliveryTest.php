@@ -470,7 +470,11 @@ function representativePortalPost(
 }
 
 /** @return array<string, mixed> */
-function representativePortalLoginFixture(bool $withRepresentative, string $loginIdentifier): array
+function representativePortalLoginFixture(
+    bool $withRepresentative,
+    string $loginIdentifier,
+    bool $canAccessAllReports = false,
+): array
 {
     $session = new FakeSessionManager();
     $users = new InMemoryRepresentativeUserRepository();
@@ -512,6 +516,7 @@ function representativePortalLoginFixture(bool $withRepresentative, string $logi
             $getRepresentative,
             new FakeDeliveryCsrf(),
             $session,
+            testReportAccessPolicy($users, $canAccessAllReports),
         ),
         'portal' => new RepresentativePortalController(
             $resolve,
