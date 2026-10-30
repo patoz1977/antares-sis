@@ -58,6 +58,23 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
         assertSameValue(0, $fixture['clock']->calls);
     });
 
+    $runner->add('E012 Delivery resolves exact Representative access before request validation', function (): void {
+        $fixture = representativeEnrollmentSubmissionDeliveryFixture(representativeExists: false);
+
+        deliveryRequest('GET', '/representative/enrollment/review', ['student_id' => 'invalid']);
+        $review = $fixture['controller']->review();
+        assertSameValue(403, http_response_code());
+        deliveryAssertContains('No tiene acceso a la revisión de esta matrícula.', $review);
+
+        deliveryRequest('POST', '/representative/enrollment/submit', [
+            '_csrf_token' => 'delivery-csrf',
+            'student_id' => 'invalid',
+        ]);
+        $submit = $fixture['controller']->submit();
+        assertSameValue(403, http_response_code());
+        deliveryAssertContains('No tiene acceso a la revisión de esta matrícula.', $submit);
+    });
+
     $runner->add('E012 incomplete review exposes exact authoritative messages and no Submit control', function (): void {
         $fixture = representativeEnrollmentSubmissionDeliveryFixture(
             acknowledgementsSatisfied: false,
@@ -98,6 +115,7 @@ function registerRepresentativeEnrollmentSubmissionDeliveryTests(TestRunner $run
             $noPeriod['acknowledgements']['state'],
             new FakeDeliveryCsrf(),
             $session,
+            $noPeriod['getRepresentative'],
         );
         $html = representativeEnrollmentSubmissionReview($controller);
         assertSameValue(422, http_response_code());
@@ -323,11 +341,13 @@ function representativeEnrollmentSubmissionDeliveryFixture(
     bool $acknowledgementsSatisfied = true,
     bool $stableAcknowledgementsSatisfied = true,
     EnrollmentStatus $status = EnrollmentStatus::Draft,
+    bool $representativeExists = true,
 ): array {
     $fixture = e012SubmissionFixture(
         acknowledgementsSatisfied: $acknowledgementsSatisfied,
         stableAcknowledgementsSatisfied: $stableAcknowledgementsSatisfied,
         status: $status,
+        representativeExists: $representativeExists,
     );
     $session = new FakeSessionManager();
     $controller = new RepresentativeEnrollmentSubmissionController(
@@ -337,6 +357,7 @@ function representativeEnrollmentSubmissionDeliveryFixture(
         $fixture['acknowledgements']['state'],
         new FakeDeliveryCsrf(),
         $session,
+        $fixture['getRepresentative'],
     );
     $fixture['controller'] = $controller;
     $fixture['session'] = $session;

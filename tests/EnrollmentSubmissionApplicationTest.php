@@ -358,10 +358,12 @@ function e012SubmissionFixture(
     bool $activeStudentMembership = true,
     bool $seedEnrollment = true,
     EnrollmentStatus $status = EnrollmentStatus::Draft,
+    bool $representativeExists = true,
 ): array {
     $base = e011PortalFixture(
         acknowledgementsSatisfied: $acknowledgementsSatisfied,
         periodActive: $periodActive,
+        representativeExists: $representativeExists,
     );
     $base['families']->seed(e012CompleteFamily($activeStudentMembership));
     if ($seedEnrollment) {

@@ -37,6 +37,7 @@ use App\Enrollment\Domain\Exception\InvalidEnrollmentState;
 use App\Family\Http\FamilyFormOptionsProvider;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
+use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
 use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementsRequired;
 use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\ActiveAcademicPeriodUnavailable;
 use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementAccessUnavailable;
@@ -74,6 +75,7 @@ final class RepresentativeEnrollmentController extends Controller
         private readonly RepresentativeEnrollmentInputMapper $inputMapper,
         private readonly RepresentativeEnrollmentAutosaveResponder $autosaveResponder,
         private readonly GetRepresentativeAcknowledgementPortalState $getAcknowledgementState,
+        private readonly GetAuthenticatedRepresentative $getAuthenticatedRepresentative,
     ) {
     }
 
@@ -114,6 +116,10 @@ final class RepresentativeEnrollmentController extends Controller
 
     private function pageFromQuery(string $page, bool $studentRequired): string
     {
+        if ($this->getAuthenticatedRepresentative->handle() === null) {
+            return $this->forbidden();
+        }
+
         $query = (new Request())->query();
         $studentId = null;
         if (array_key_exists('student_id', $query)) {
@@ -415,6 +421,10 @@ final class RepresentativeEnrollmentController extends Controller
         string $section,
         bool $studentRequired = false,
     ): string {
+        if ($this->getAuthenticatedRepresentative->handle() === null) {
+            return $this->forbidden();
+        }
+
         $autosave = $section !== 'draft' && $this->autosaveResponder->isRequested();
         $request = (new Request())->input();
         if (!$this->csrf->isValid($this->rawScalar($request, '_csrf_token'))) {

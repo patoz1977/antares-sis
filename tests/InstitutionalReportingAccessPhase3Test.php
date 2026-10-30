@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\Enrollment\Http\EnrollmentAdministrationMiddleware;
 use App\IdentityAccess\Application\AuthenticateUser;
 use App\IdentityAccess\Application\AuthenticationPolicy;
 use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
@@ -254,6 +255,50 @@ function registerInstitutionalReportingAccessPhase3Tests(TestRunner $runner): vo
             $source = (string) file_get_contents(dirname(__DIR__) . '/' . $path);
             assertSameValue(false, str_contains($source, "['capabilities']"), $path);
             assertSameValue(false, str_contains($source, '$_SESSION'), $path);
+        }
+    });
+
+    $runner->add('Reporting capability grants neither Representative nor non-report administration access', function (): void {
+        $reporter = phase3AuthenticationFixture(false, 'reporting-user', true);
+        $reporter['session']->userId = 1;
+
+        [$reportResult, $reportCalls] = phase3RunReportMiddleware('reporting-user', true);
+        assertSameValue(200, $reportResult['status']);
+        assertSameValue(1, $reportCalls());
+        assertSameValue(null, $reporter['getRepresentative']->handle());
+
+        $adminCalls = 0;
+        deliveryRequest('GET', '/enrollments');
+        $adminResponse = (new EnrollmentAdministrationMiddleware($reporter['getUser']))->handle(
+            new Request(),
+            static function (Request $request) use (&$adminCalls): Response {
+                $adminCalls++;
+
+                return (new Response())->content('admin-handler');
+            },
+        );
+        ob_start();
+        $adminResponse->send();
+        $adminHtml = (string) ob_get_clean();
+        assertSameValue(403, http_response_code());
+        assertSameValue(0, $adminCalls);
+        deliveryAssertContains('No tienes permiso para acceder a esta página.', $adminHtml);
+
+        $representativeControllers = [
+            'app/Family/Http/RepresentativeFamilyResourceController.php' => 2,
+            'app/Enrollment/Http/RepresentativeEnrollmentController.php' => 2,
+            'app/Enrollment/Http/RepresentativeEnrollmentSubmissionController.php' => 2,
+        ];
+        foreach ($representativeControllers as $path => $minimumExactResolutions) {
+            $source = (string) file_get_contents(dirname(__DIR__) . '/' . $path);
+            assertSameValue(
+                true,
+                substr_count($source, 'getAuthenticatedRepresentative->handle()') >= $minimumExactResolutions,
+                $path,
+            );
+            foreach (['REPORTS_VIEW_ALL', 'CanAccessAllReports', 'loginIdentifier'] as $forbidden) {
+                assertSameValue(false, str_contains($source, $forbidden), $path . ': ' . $forbidden);
+            }
         }
     });
 }

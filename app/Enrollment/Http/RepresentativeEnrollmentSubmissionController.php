@@ -17,6 +17,7 @@ use App\Enrollment\Application\Submission\GetRepresentativeEnrollmentSubmissionR
 use App\Enrollment\Application\Submission\SubmitRepresentativeEnrollment;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\SessionManager;
+use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
 use App\InstitutionalDocuments\Application\RepresentativePortal\GetRepresentativeAcknowledgementPortalState;
 use Core\Http\Request;
 use Throwable;
@@ -33,11 +34,16 @@ final class RepresentativeEnrollmentSubmissionController extends Controller
         private readonly GetRepresentativeAcknowledgementPortalState $getAcknowledgementState,
         private readonly CsrfTokenManager $csrf,
         private readonly SessionManager $session,
+        private readonly GetAuthenticatedRepresentative $getAuthenticatedRepresentative,
     ) {
     }
 
     public function review(): string
     {
+        if ($this->getAuthenticatedRepresentative->handle() === null) {
+            return $this->error('No tiene acceso a la revisión de esta matrícula.', 403);
+        }
+
         $studentId = $this->positiveInteger((new Request())->query()['student_id'] ?? null);
         if ($studentId === null) {
             return $this->error('Seleccione un estudiante antes de revisar su matrícula.', 422);
@@ -74,6 +80,10 @@ final class RepresentativeEnrollmentSubmissionController extends Controller
 
     public function submit(): string
     {
+        if ($this->getAuthenticatedRepresentative->handle() === null) {
+            return $this->error('No tiene acceso a la revisión de esta matrícula.', 403);
+        }
+
         $input = (new Request())->input();
         if (!$this->csrf->isValid($this->scalar($input, '_csrf_token'))) {
             return $this->error('No se pudo verificar la solicitud.', 403);
