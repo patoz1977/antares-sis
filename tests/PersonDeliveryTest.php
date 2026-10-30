@@ -567,6 +567,7 @@ function deliveryDashboardController(string $identifier): AuthenticationControll
         ),
         new FakeDeliveryCsrf(),
         $session,
+        testReportAccessPolicy($repository),
     );
 }
 

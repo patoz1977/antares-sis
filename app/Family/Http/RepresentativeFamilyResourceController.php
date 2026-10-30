@@ -25,6 +25,7 @@ use App\Family\Domain\Exception\InvalidFamilyState;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\Clock;
 use App\IdentityAccess\Application\Contract\SessionManager;
+use App\IdentityAccess\Application\GetAuthenticatedRepresentative;
 use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\ActiveAcademicPeriodUnavailable;
 use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementAccessUnavailable;
 use App\InstitutionalDocuments\Application\RepresentativePortal\Exception\RepresentativeAcknowledgementsRequired;
@@ -47,11 +48,16 @@ final class RepresentativeFamilyResourceController extends Controller
         private readonly SessionManager $session,
         private readonly FamilyResourceFormOptionsProvider $optionsProvider,
         private readonly Clock $clock,
+        private readonly GetAuthenticatedRepresentative $getAuthenticatedRepresentative,
     ) {
     }
 
     public function index(): string
     {
+        if ($this->getAuthenticatedRepresentative->handle() === null) {
+            return $this->forbidden();
+        }
+
         return $this->redirect('/representative/data', 302);
     }
 
@@ -356,6 +362,10 @@ final class RepresentativeFamilyResourceController extends Controller
      */
     private function execute(callable $validate, callable $handle, string $success): string
     {
+        if ($this->getAuthenticatedRepresentative->handle() === null) {
+            return $this->forbidden();
+        }
+
         $input = (new Request())->input();
         $scalarErrors = [];
         $values = $this->safeValues($input, $scalarErrors);

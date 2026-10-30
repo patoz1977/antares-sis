@@ -11,6 +11,11 @@ $logoPath = $shell?->branding->logoPath;
 $faviconPath = $shell?->branding->faviconPath;
 $primaryColor = $shell?->branding->primaryColor ?? '#0D6EFD';
 $assetVersion = $shell?->branding->assetVersion ?? 'e014-p2';
+$brandHref = match ($shell?->context) {
+    'representative' => '/representative',
+    'reporting' => '/reports/enrollments',
+    default => '/',
+};
 ?>
 <!doctype html>
 <html lang="es">
@@ -33,7 +38,7 @@ $assetVersion = $shell?->branding->assetVersion ?? 'e014-p2';
     <header class="app-header shadow-sm">
         <nav class="navbar navbar-expand-lg app-navbar" aria-label="Navegación principal">
             <div class="container-fluid px-3 px-lg-4">
-                <a class="navbar-brand d-flex align-items-center gap-2 text-wrap" href="<?= $shell?->context === 'representative' ? '/representative' : '/' ?>">
+                <a class="navbar-brand d-flex align-items-center gap-2 text-wrap" href="<?= $brandHref ?>">
                     <?php if (is_string($logoPath)): ?>
                     <img class="app-brand-logo" src="<?= $escape($logoPath) ?>" alt="">
                     <?php else: ?>

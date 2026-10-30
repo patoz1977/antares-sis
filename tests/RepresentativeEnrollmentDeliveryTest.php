@@ -100,6 +100,15 @@ function registerRepresentativeEnrollmentDeliveryTests(TestRunner $runner): void
         deliveryRequest('GET', '/representative/enrollment');
         assertSameValue(403, representativeEnrollmentStatus($nonRepresentative['controller']));
 
+        deliveryRequest(
+            'GET',
+            '/representative/enrollment/student/medical?student_id=invalid',
+            ['student_id' => 'invalid'],
+        );
+        $nonRepresentativeInvalidQuery = $nonRepresentative['controller']->medical();
+        assertSameValue(403, http_response_code());
+        deliveryAssertContains('Acceso no autorizado', $nonRepresentativeInvalidQuery);
+
         $selection = representativeEnrollmentDeliveryFixture(familyCount: 2);
         deliveryRequest('GET', '/representative/enrollment');
         assertSameValue('', $selection['controller']->index());
@@ -755,6 +764,7 @@ function representativeEnrollmentDeliveryFixture(
         new RepresentativeEnrollmentInputMapper(),
         new RepresentativeEnrollmentAutosaveResponder(),
         $services['acknowledgements']['state'],
+        $services['getRepresentative'],
     );
 
     return ['controller' => $controller, 'services' => $services, 'session' => $session];

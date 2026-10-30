@@ -405,6 +405,7 @@ function e011PortalFixture(
         'transactions' => $transactions,
         'resolveFamilyContext' => $access['resolve'],
         'selectFamily' => $access['select'],
+        'getRepresentative' => $access['getRepresentative'],
         'periods' => $acknowledgements['periods'],
         'requirements' => $acknowledgements['requirements'],
         'completions' => $acknowledgements['completions'],

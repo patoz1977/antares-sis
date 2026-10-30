@@ -191,7 +191,7 @@ function registerBulkImportDeliveryTests(TestRunner $runner): void
         }
         assertSameValue(50, substr_count($routes, '$router->get('));
         assertSameValue(75, substr_count($routes, '$router->post('));
-        assertSameValue(28, substr_count($routes, "    \$enrollmentAdministrationMiddleware,\n);"));
+        assertSameValue(15, substr_count($routes, "    \$enrollmentAdministrationMiddleware,\n);"));
 
         foreach ([
             [null, null, 302],
@@ -217,6 +217,7 @@ function registerBulkImportDeliveryTests(TestRunner $runner): void
             $fixture['getRepresentative'],
             new FakeDeliveryCsrf(),
             WhiteLabelBranding::fromConfig([]),
+            testReportAccessPolicy($fixture['users']),
         ))->forRequest(new Request());
         assertSameValue(true, shellItem($adminShell, 'Importación masiva')['active']);
 
@@ -227,6 +228,7 @@ function registerBulkImportDeliveryTests(TestRunner $runner): void
             $representative['getRepresentative'],
             new FakeDeliveryCsrf(),
             WhiteLabelBranding::fromConfig([]),
+            testReportAccessPolicy($representative['users']),
         ))->forRequest(new Request());
         assertSameValue(false, in_array(
             'Importación masiva',

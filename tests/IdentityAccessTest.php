@@ -6,6 +6,7 @@ namespace Tests;
 
 use App\IdentityAccess\Application\AuthenticateUser;
 use App\IdentityAccess\Application\AuthenticationPolicy;
+use App\IdentityAccess\Application\CanAccessAllReports;
 use App\IdentityAccess\Application\Contract\Clock;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
 use App\IdentityAccess\Application\Contract\PasswordHasher;
@@ -14,6 +15,7 @@ use App\IdentityAccess\Application\Contract\SessionManager;
 use App\IdentityAccess\Application\Contract\TransactionManager;
 use App\IdentityAccess\Application\Exception\InvalidAuthenticationPolicy;
 use App\IdentityAccess\Application\LogoutUser;
+use App\IdentityAccess\Application\UserCapabilityLookup;
 use App\IdentityAccess\Domain\Exception\InvalidUserState;
 use App\IdentityAccess\Domain\User;
 use App\IdentityAccess\Domain\UserRepository;
@@ -739,6 +741,23 @@ final class FakeSessionManager implements SessionManager
         $this->userId = null;
         $this->values = [];
     }
+}
+
+function testReportAccessPolicy(UserRepository $users, bool $allowed = false): CanAccessAllReports
+{
+    return new CanAccessAllReports(
+        $users,
+        new class($allowed) implements UserCapabilityLookup {
+            public function __construct(private readonly bool $allowed)
+            {
+            }
+
+            public function hasCapability(UserId $userId, string $capabilityCode): bool
+            {
+                return $this->allowed && $capabilityCode === CanAccessAllReports::CAPABILITY;
+            }
+        },
+    );
 }
 
 final class CountingPasswordHasher implements PasswordHasher

@@ -197,6 +197,40 @@ function registerRepresentativeFamilyResourcesDeliveryTests(TestRunner $runner):
         assertSameValue(600, $multiple['session']->get('representative_family_context_id'));
     });
 
+    $runner->add('Representative Family Resources alias resolves exact Representative access before redirecting', function (): void {
+        $representative = representativeFamilyResourcesFixture();
+        deliveryRequest('GET', '/representative/resources');
+        assertSameValue('', $representative['controller']->index());
+        assertSameValue(302, http_response_code());
+
+        foreach (['reporting-user', 'admin'] as $loginIdentifier) {
+            $nonRepresentative = representativeFamilyResourcesFixture(
+                withRepresentative: false,
+                withFamily: false,
+                loginIdentifier: $loginIdentifier,
+            );
+            deliveryRequest('GET', '/representative/resources');
+            $html = $nonRepresentative['controller']->index();
+            assertSameValue(403, http_response_code(), $loginIdentifier);
+            deliveryAssertContains('Acceso no permitido', $html);
+
+            $post = representativeFamilyResourcesPost(
+                $nonRepresentative['controller'],
+                'createAddress',
+                ['_csrf_token' => 'invalid'],
+            );
+            assertSameValue(403, http_response_code(), $loginIdentifier);
+            deliveryAssertContains('Acceso no permitido', $post);
+        }
+
+        $source = (string) file_get_contents(
+            dirname(__DIR__) . '/app/Family/Http/RepresentativeFamilyResourceController.php'
+        );
+        foreach (['REPORTS_VIEW_ALL', 'CanAccessAllReports', 'loginIdentifier'] as $forbidden) {
+            assertSameValue(false, str_contains($source, $forbidden), $forbidden);
+        }
+    });
+
     $runner->add('Representative Family Resources binds every POST to the freshly resolved Family context', function (): void {
         $fixture = representativeFamilyResourcesFixture(withSecondFamily: true);
         $fixture['select']->handle(500);
@@ -621,8 +655,9 @@ function representativeFamilyResourcesFixture(
     bool $withSecondFamily = false,
     array $acknowledgementRequirements = [],
     ?array $academicPeriods = null,
+    string $loginIdentifier = 'representative-22',
 ): array {
-    $identity = familyContextAuthorizationFixture($withUser, $withRepresentative);
+    $identity = familyContextAuthorizationFixture($withUser, $withRepresentative, $loginIdentifier);
     $families = $identity['families'];
     if ($withFamily && $withRepresentative) {
         $families->seed(representativeFamilyResourcesFamily(500, 'Family <A>', 301));
@@ -715,6 +750,7 @@ function representativeFamilyResourcesFixture(
                 return new DateTimeImmutable('2026-08-11 18:19:20+00:00');
             }
         },
+        $identity['getRepresentative'],
     );
 
     return array_merge($identity, [
