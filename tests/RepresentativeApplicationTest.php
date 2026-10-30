@@ -40,7 +40,7 @@ function registerRepresentativeApplicationTests(TestRunner $runner): void
         $persons = representativePersonRepository(10);
         $representatives = new InMemoryRepresentativeApplicationRepository(701);
 
-        $output = (new CreateRepresentative($persons, $representatives))->handle(
+        $output = testCreateRepresentative($persons, $representatives)->handle(
             representativeCreateInput(10, RepresentativeStatus::Inactive),
         );
 
@@ -69,7 +69,7 @@ function registerRepresentativeApplicationTests(TestRunner $runner): void
             RepresentativeStatus::Active,
         );
 
-        $output = (new CreateRepresentative($persons, $representatives))->handle($input);
+        $output = testCreateRepresentative($persons, $representatives)->handle($input);
 
         assertSameValue(true, $output->id > 0);
         assertSameValue('Engineer', $output->occupation);
@@ -93,7 +93,7 @@ function registerRepresentativeApplicationTests(TestRunner $runner): void
             RepresentativeStatus::Active,
         );
 
-        $output = (new CreateRepresentative($persons, $representatives))->handle($input);
+        $output = testCreateRepresentative($persons, $representatives)->handle($input);
 
         assertSameValue(null, $output->occupation);
         assertSameValue(null, $representatives->findByPersonId(new PersonId(12))?->employmentInformation());
@@ -104,7 +104,7 @@ function registerRepresentativeApplicationTests(TestRunner $runner): void
         $representatives = new InMemoryRepresentativeApplicationRepository();
 
         assertThrows(
-            static fn () => (new CreateRepresentative($persons, $representatives))->handle(
+            static fn () => testCreateRepresentative($persons, $representatives)->handle(
                 representativeCreateInput(99, RepresentativeStatus::Active),
             ),
             RepresentativePersonNotFound::class,
@@ -121,7 +121,7 @@ function registerRepresentativeApplicationTests(TestRunner $runner): void
             $representatives = new InMemoryRepresentativeApplicationRepository();
 
             assertThrows(
-                static fn () => (new CreateRepresentative($persons, $representatives))->handle(
+                static fn () => testCreateRepresentative($persons, $representatives)->handle(
                     new CreateRepresentativeInput(
                         $personId,
                         null,
@@ -144,7 +144,7 @@ function registerRepresentativeApplicationTests(TestRunner $runner): void
         $representatives->seed(representativeAggregate(31, 13));
 
         assertThrows(
-            static fn () => (new CreateRepresentative($persons, $representatives))->handle(
+            static fn () => testCreateRepresentative($persons, $representatives)->handle(
                 representativeCreateInput(13, RepresentativeStatus::Active),
             ),
             RepresentativeAlreadyExistsForPerson::class,
@@ -166,7 +166,7 @@ function registerRepresentativeApplicationTests(TestRunner $runner): void
         );
 
         assertThrows(
-            static fn () => (new CreateRepresentative($persons, $representatives))->handle($input),
+            static fn () => testCreateRepresentative($persons, $representatives)->handle($input),
             InvalidRepresentativeState::class,
         );
         assertSameValue(0, $representatives->saveCalls());
@@ -178,7 +178,7 @@ function registerRepresentativeApplicationTests(TestRunner $runner): void
         $representatives->returnWithoutId();
 
         assertThrows(
-            static fn () => (new CreateRepresentative($persons, $representatives))->handle(
+            static fn () => testCreateRepresentative($persons, $representatives)->handle(
                 representativeCreateInput(15, RepresentativeStatus::Active),
             ),
             InvalidPersistedRepresentativeResult::class,
@@ -343,6 +343,18 @@ function registerRepresentativeApplicationTests(TestRunner $runner): void
 function representativeToday(): DateTimeImmutable
 {
     return new DateTimeImmutable('2026-08-01 23:30:00', new DateTimeZone('UTC'));
+}
+
+function testCreateRepresentative(
+    \App\Person\Domain\PersonRepository $persons,
+    RepresentativeRepository $representatives,
+): CreateRepresentative {
+    return new CreateRepresentative(
+        $persons,
+        $representatives,
+        new ImmediateTransactionManager(),
+        new NeverDedicatedInstitutionalReportingProfile(),
+    );
 }
 
 function representativePersonRepository(

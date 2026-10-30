@@ -16,23 +16,40 @@ use App\Representative\Domain\Representative;
 use App\Representative\Domain\RepresentativeRepository;
 use App\Representative\Domain\ValueObject\EmploymentInformation;
 use App\Representative\Domain\ValueObject\PersonId;
+use App\Shared\Application\DedicatedInstitutionalReportingProfile;
+use App\Shared\Application\Exception\DedicatedInstitutionalReportingRoleConflict;
+use App\Shared\Application\TransactionManager;
 
 final readonly class CreateRepresentative
 {
     public function __construct(
         private PersonRepository $persons,
         private RepresentativeRepository $representatives,
+        private TransactionManager $transactions,
+        private DedicatedInstitutionalReportingProfile $dedicatedReportingProfile,
     ) {
     }
 
     public function handle(CreateRepresentativeInput $input): RepresentativeOutput
     {
+        return $this->transactions->transactional(
+            fn (): RepresentativeOutput => $this->createWithinTransaction($input)
+        );
+    }
+
+    private function createWithinTransaction(CreateRepresentativeInput $input): RepresentativeOutput
+    {
         $personDomainId = new PersonDomainId($input->personId);
         $employment = $this->employmentInformation($input);
 
-        $person = $this->persons->findById($personDomainId);
+        $person = $this->persons->findByIdForUpdate($personDomainId);
         if ($person === null) {
             throw new RepresentativePersonNotFound('Person for Representative was not found.');
+        }
+        if ($this->dedicatedReportingProfile->isAssignedToPerson($input->personId)) {
+            throw new DedicatedInstitutionalReportingRoleConflict(
+                'Dedicated institutional reporting Person cannot become Representative.'
+            );
         }
         if ($person->contactInformation()?->email() === null) {
             throw new RepresentativeRequiresContactEmail(

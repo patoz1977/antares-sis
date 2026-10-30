@@ -86,7 +86,12 @@ final class CompositeOrchestrationEnvironment
             new CreateRepresentativeAccess(
                 new CreatePerson($this->persons),
                 new GetPerson($this->persons),
-                new CreateRepresentative($this->persons, $this->representatives),
+                new CreateRepresentative(
+                    $this->persons,
+                    $this->representatives,
+                    new ImmediateTransactionManager(),
+                    new NeverDedicatedInstitutionalReportingProfile(),
+                ),
                 new CreateRepresentativeUser(
                     $this->representatives,
                     $this->persons,
@@ -114,7 +119,12 @@ final class CompositeOrchestrationEnvironment
             new StudentFamilyCoordinator(
                 new CreatePerson($this->persons),
                 new GetPerson($this->persons),
-                new CreateStudent($this->persons, $this->students),
+                new CreateStudent(
+                    $this->persons,
+                    $this->students,
+                    new ImmediateTransactionManager(),
+                    new NeverDedicatedInstitutionalReportingProfile(),
+                ),
                 new GetStudent($this->students),
                 new AddStudentToFamily($familyRepository, $this->students),
             ),

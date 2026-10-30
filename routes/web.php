@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\IdentityAccess\Http\AuthenticationController;
+use App\IdentityAccess\Http\InstitutionalReportingAccessController;
 use App\IdentityAccess\Http\ReportingAccessMiddleware;
 use App\IdentityAccess\Http\RepresentativePortalController;
 use App\IdentityAccess\Http\RepresentativeDataController;
@@ -38,6 +39,9 @@ $authenticationController = $app->container()->make(AuthenticationController::cl
 $representativePortalController = $app->container()->make(RepresentativePortalController::class);
 $representativeDataController = $app->container()->make(RepresentativeDataController::class);
 $representativeUserController = $app->container()->make(RepresentativeUserController::class);
+$institutionalReportingAccessController = $app->container()->make(
+    InstitutionalReportingAccessController::class,
+);
 $bulkImportController = $app->container()->make(BulkImportController::class);
 $bulkImportApplyController = $app->container()->make(BulkImportApplyController::class);
 $bulkImportTemplateController = $app->container()->make(BulkImportTemplateController::class);
@@ -74,6 +78,10 @@ $familyMiddleware = [
     FamilyAdministrationMiddleware::class,
 ];
 $representativeUserMiddleware = [
+    AuthenticationMiddleware::class,
+    PersonAdministrationMiddleware::class,
+];
+$institutionalReportingAccessMiddleware = [
     AuthenticationMiddleware::class,
     PersonAdministrationMiddleware::class,
 ];
@@ -554,4 +562,24 @@ $router->post(
     '/representative-users/password',
     [$representativeUserController, 'changePassword'],
     $representativeUserMiddleware,
+);
+$router->get(
+    '/institutional-reporting-access/manage',
+    [$institutionalReportingAccessController, 'showManage'],
+    $institutionalReportingAccessMiddleware,
+);
+$router->post(
+    '/institutional-reporting-access/provision',
+    [$institutionalReportingAccessController, 'provision'],
+    $institutionalReportingAccessMiddleware,
+);
+$router->post(
+    '/institutional-reporting-access/disable',
+    [$institutionalReportingAccessController, 'disable'],
+    $institutionalReportingAccessMiddleware,
+);
+$router->post(
+    '/institutional-reporting-access/reactivate',
+    [$institutionalReportingAccessController, 'reactivate'],
+    $institutionalReportingAccessMiddleware,
 );

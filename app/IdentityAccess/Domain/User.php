@@ -83,6 +83,28 @@ final class User
         return $this->status === UserStatus::Disabled;
     }
 
+    public function disable(): bool
+    {
+        if ($this->status === UserStatus::Disabled) {
+            return false;
+        }
+
+        $this->status = UserStatus::Disabled;
+
+        return true;
+    }
+
+    public function reactivate(): bool
+    {
+        if ($this->status === UserStatus::Active) {
+            return false;
+        }
+
+        $this->status = UserStatus::Active;
+
+        return true;
+    }
+
     public function isTemporarilyLocked(DateTimeImmutable $now, int $durationSeconds): bool
     {
         if ($durationSeconds <= 0) {

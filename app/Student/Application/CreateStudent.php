@@ -18,23 +18,42 @@ use App\Student\Domain\ValueObject\AdmissionDate;
 use App\Student\Domain\ValueObject\InstitutionalCode;
 use App\Student\Domain\ValueObject\PersonId;
 use DateTimeImmutable;
+use App\Shared\Application\DedicatedInstitutionalReportingProfile;
+use App\Shared\Application\Exception\DedicatedInstitutionalReportingRoleConflict;
+use App\Shared\Application\TransactionManager;
 
 final readonly class CreateStudent
 {
     public function __construct(
         private PersonRepository $persons,
         private StudentRepository $students,
+        private TransactionManager $transactions,
+        private DedicatedInstitutionalReportingProfile $dedicatedReportingProfile,
     ) {
     }
 
     public function handle(CreateStudentInput $input, DateTimeImmutable $today): StudentOutput
     {
+        return $this->transactions->transactional(
+            fn (): StudentOutput => $this->createWithinTransaction($input, $today)
+        );
+    }
+
+    private function createWithinTransaction(
+        CreateStudentInput $input,
+        DateTimeImmutable $today,
+    ): StudentOutput {
         $personDomainId = new PersonDomainId($input->personId);
         $institutionalCode = new InstitutionalCode($input->institutionalCode);
         $admissionDate = new AdmissionDate($input->admissionDate, $today->setTime(0, 0));
 
-        if ($this->persons->findById($personDomainId) === null) {
+        if ($this->persons->findByIdForUpdate($personDomainId) === null) {
             throw new StudentPersonNotFound('Person for Student was not found.');
+        }
+        if ($this->dedicatedReportingProfile->isAssignedToPerson($input->personId)) {
+            throw new DedicatedInstitutionalReportingRoleConflict(
+                'Dedicated institutional reporting Person cannot become Student.'
+            );
         }
 
         $personId = new PersonId($input->personId);

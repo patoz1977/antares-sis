@@ -42,6 +42,7 @@ use App\Student\Application\Exception\InvalidPersistedStudentResult;
 use App\Student\Application\Exception\StudentAlreadyExistsForPerson;
 use App\Student\Domain\Exception\InvalidStudentState;
 use App\Student\Domain\StudentStatus;
+use App\Shared\Application\Exception\DedicatedInstitutionalReportingRoleConflict;
 use Core\Http\Request;
 use DateTimeImmutable;
 
@@ -148,6 +149,14 @@ final class FamilyController extends Controller
             return $this->representativeFormView(
                 $values,
                 ['La persona ya tiene un rol de representante.'],
+                $personOptions,
+                $familyOptions,
+                422,
+            );
+        } catch (DedicatedInstitutionalReportingRoleConflict) {
+            return $this->representativeFormView(
+                $values,
+                ['La persona tiene un acceso institucional incompatible con el rol de representante.'],
                 $personOptions,
                 $familyOptions,
                 422,
@@ -373,6 +382,14 @@ final class FamilyController extends Controller
                 $family,
                 $values,
                 ['La persona ya tiene un rol de estudiante.'],
+                $personOptions,
+                $trustedFamilyId,
+            );
+        } catch (DedicatedInstitutionalReportingRoleConflict) {
+            return $this->studentFailure(
+                $family,
+                $values,
+                ['La persona tiene un acceso institucional incompatible con el rol de estudiante.'],
                 $personOptions,
                 $trustedFamilyId,
             );

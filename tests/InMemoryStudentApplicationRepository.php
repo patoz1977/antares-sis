@@ -20,6 +20,8 @@ final class InMemoryStudentApplicationRepository implements LockingStudentReposi
 
     private bool $returnWithoutId = false;
 
+    private int $lockingPersonReads = 0;
+
     public function __construct(private int $nextId = 900)
     {
     }
@@ -58,7 +60,14 @@ final class InMemoryStudentApplicationRepository implements LockingStudentReposi
 
     public function findByPersonIdForUpdate(PersonId $personId): ?Student
     {
+        $this->lockingPersonReads++;
+
         return $this->findByPersonId($personId);
+    }
+
+    public function lockingPersonReads(): int
+    {
+        return $this->lockingPersonReads;
     }
 
     public function findByInstitutionalCode(InstitutionalCode $institutionalCode): ?Student
