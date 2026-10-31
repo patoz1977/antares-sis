@@ -134,6 +134,7 @@ use App\Student\Domain\ValueObject\AdmissionDate;
 use App\Student\Domain\ValueObject\InstitutionalCode;
 use App\Student\Domain\ValueObject\PersonId as StudentPersonId;
 use App\Student\Application\CreateStudent;
+use App\Student\Application\Dto\CreateStudentInput;
 use App\Student\Infrastructure\Persistence\PdoStudentRepository;
 use App\Enrollment\Domain\Enrollment as EnrollmentAggregate;
 use App\Enrollment\Domain\EnrollmentStatus as EnrollmentAggregateStatus;
@@ -575,7 +576,7 @@ function assertMariaDbUserCapabilitySchema(PDO $connection): void
         && $columns[3]['column_name'] === 'granted_at'
         && $columns[3]['column_type'] === 'timestamp'
         && $columns[3]['is_nullable'] === 'NO'
-        && strtoupper((string) $columns[3]['column_default']) === 'CURRENT_TIMESTAMP',
+        && strtoupper((string) $columns[3]['column_default']) === 'CURRENT_TIMESTAMP()',
         'MariaDB user_capabilities columns differ from migration 012 contract.'
     );
 
@@ -639,9 +640,11 @@ function runMariaDbUserCapabilityLegacyUpgradeScenario(PDO $connection): void
     $connection->prepare(
         'INSERT INTO users (person_id, login_identifier, normalized_login_identifier, password_hash, status_id, '
         . 'last_access_at, failed_login_attempts, locked_at, created_at, updated_at) '
-        . 'VALUES (:personId, :login, :login, :password, :statusId, :lastAccessAt, 4, :lockedAt, :createdAt, :updatedAt)'
+        . 'VALUES (:personId, :login, :normalizedLogin, :password, :statusId, :lastAccessAt, 4, '
+        . ':lockedAt, :createdAt, :updatedAt)'
     )->execute([
-        ':personId' => $personId, ':login' => 'admin', ':password' => 'legacy-preserved-hash',
+        ':personId' => $personId, ':login' => 'admin', ':normalizedLogin' => 'admin',
+        ':password' => 'legacy-preserved-hash',
         ':statusId' => $disabledStatusId, ':lastAccessAt' => '2026-10-02 11:00:00',
         ':lockedAt' => '2026-10-01 10:00:00', ':createdAt' => '2026-01-01 00:00:00',
         ':updatedAt' => '2026-10-02 11:00:00',
@@ -3432,6 +3435,15 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
     };
     $generalActive = $statusId('GENERAL_STATUS', 'ACTIVE');
     $generalInactive = $statusId('GENERAL_STATUS', 'INACTIVE');
+    $connection->exec(
+        "UPDATE family_students fs "
+        . "INNER JOIN families f ON f.id = fs.family_id "
+        . "INNER JOIN statuses family_status ON family_status.id = f.status_id "
+        . "INNER JOIN status_types family_status_type ON family_status_type.id = family_status.status_type_id "
+        . "SET fs.ended_at = '2037-01-01 00:00:00' "
+        . "WHERE fs.ended_at IS NULL "
+        . "AND (family_status_type.code <> 'GENERAL_STATUS' OR family_status.code <> 'ACTIVE')"
+    );
     $enrollmentStatuses = [];
     foreach (['DRAFT', 'SUBMITTED', 'COMPLETED', 'CANCELLED'] as $code) {
         $enrollmentStatuses[$code] = $statusId('ENROLLMENT_STATUS', $code);
@@ -3594,14 +3606,14 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
     $familyId = (int) $connection->lastInsertId();
     $connection->prepare(
         'INSERT INTO family_students (family_id, student_id, started_at) VALUES (:familyId, :studentId, :startedAt)'
-    )->execute([':familyId' => $familyId, ':studentId' => $studentIds[2], ':startedAt' => '2040-01-01 00:00:00']);
+    )->execute([':familyId' => $familyId, ':studentId' => $studentIds[2], ':startedAt' => '2037-01-01 00:00:00']);
     $connection->prepare(
         'INSERT INTO family_representatives '
         . '(family_id, representative_id, relationship_type_id, is_primary, started_at) '
         . 'VALUES (:familyId, :representativeId, :relationshipTypeId, 1, :startedAt)'
     )->execute([
         ':familyId' => $familyId, ':representativeId' => $representativeId,
-        ':relationshipTypeId' => $fatherRelationshipTypeId, ':startedAt' => '2040-01-01 00:00:00',
+        ':relationshipTypeId' => $fatherRelationshipTypeId, ':startedAt' => '2037-01-01 00:00:00',
     ]);
     $insertSecondaryMembership = $connection->prepare(
         'INSERT INTO family_representatives '
@@ -3610,11 +3622,11 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
     );
     $insertSecondaryMembership->execute([
         ':familyId' => $familyId, ':representativeId' => $motherRepresentativeId,
-        ':relationshipTypeId' => $motherRelationshipTypeId, ':startedAt' => '2040-01-02 00:00:00',
+        ':relationshipTypeId' => $motherRelationshipTypeId, ':startedAt' => '2037-01-02 00:00:00',
     ]);
     $insertSecondaryMembership->execute([
         ':familyId' => $familyId, ':representativeId' => $otherRepresentativeId,
-        ':relationshipTypeId' => $otherRelationshipTypeId, ':startedAt' => '2040-01-03 00:00:00',
+        ':relationshipTypeId' => $otherRelationshipTypeId, ':startedAt' => '2037-01-03 00:00:00',
     ]);
     $connection->prepare(
         'INSERT INTO family_addresses '
@@ -3632,7 +3644,7 @@ function runMariaDbEnrollmentReportingScenario(ConnectionManager $manager, PDO $
         . 'VALUES (:familyId, :addressId, :studentId, :startedAt)'
     )->execute([
         ':familyId' => $familyId, ':addressId' => $addressId,
-        ':studentId' => $studentIds[2], ':startedAt' => '2040-01-01 00:00:00',
+        ':studentId' => $studentIds[2], ':startedAt' => '2037-01-01 00:00:00',
     ]);
 
     $insertEnrollment = $connection->prepare(
@@ -5067,6 +5079,7 @@ function runMariaDbBulkImportDeliveryScenario(
         $session,
         new PdoPersonFormOptionsProvider($manager),
         new PdoFamilyFormOptionsProvider($manager),
+        $clock,
     );
     $applyController = new \App\BulkImport\Http\BulkImportApplyController(
         $apply,
