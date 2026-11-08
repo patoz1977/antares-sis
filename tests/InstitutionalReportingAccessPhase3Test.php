@@ -103,8 +103,8 @@ function registerInstitutionalReportingAccessPhase3Tests(TestRunner $runner): vo
             $routes,
         );
         assertSameValue(13, count($reportPaths));
-        assertSameValue(51, substr_count($routes, '$router->get('));
-        assertSameValue(78, substr_count($routes, '$router->post('));
+        assertSameValue(53, substr_count($routes, '$router->get('));
+        assertSameValue(82, substr_count($routes, '$router->post('));
         assertSameValue(false, str_contains($routes, '/admin/reports'));
     });
 

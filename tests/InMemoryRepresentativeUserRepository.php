@@ -72,6 +72,11 @@ final class InMemoryRepresentativeUserRepository implements LockingUserRepositor
         return null;
     }
 
+    public function findByIdForUpdate(UserId $id): ?User
+    {
+        return $this->findById($id);
+    }
+
     public function findByPersonIdForUpdate(PersonId $personId): ?User
     {
         $this->lockingPersonReads++;
