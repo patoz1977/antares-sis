@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\IdentityAccess\Http\AuthenticationController;
+use App\IdentityAccess\Http\AdministrativeUserController;
 use App\IdentityAccess\Http\InstitutionalReportingAccessController;
 use App\IdentityAccess\Http\ReportingAccessMiddleware;
 use App\IdentityAccess\Http\RepresentativePortalController;
@@ -36,6 +37,7 @@ use Core\Routing\Router;
 /** @var Router $router */
 /** @var Application $app */
 $authenticationController = $app->container()->make(AuthenticationController::class);
+$administrativeUserController = $app->container()->make(AdministrativeUserController::class);
 $representativePortalController = $app->container()->make(RepresentativePortalController::class);
 $representativeDataController = $app->container()->make(RepresentativeDataController::class);
 $representativeUserController = $app->container()->make(RepresentativeUserController::class);
@@ -81,6 +83,10 @@ $representativeUserMiddleware = [
     AuthenticationMiddleware::class,
     PersonAdministrationMiddleware::class,
 ];
+$administrativeUserMiddleware = [
+    AuthenticationMiddleware::class,
+    PersonAdministrationMiddleware::class,
+];
 $institutionalReportingAccessMiddleware = [
     AuthenticationMiddleware::class,
     PersonAdministrationMiddleware::class,
@@ -103,6 +109,16 @@ $router->get('/forgot-password', [$authenticationController, 'showForgotPassword
 $router->post('/login', [$authenticationController, 'login']);
 $router->post('/logout', [$authenticationController, 'logout']);
 $router->get('/', [$authenticationController, 'dashboard'], AuthenticationMiddleware::class);
+$router->get('/admin/users', [$administrativeUserController, 'index'], $administrativeUserMiddleware);
+$router->post('/admin/users/search', [$administrativeUserController, 'search'], $administrativeUserMiddleware);
+$router->get('/admin/users/manage', [$administrativeUserController, 'show'], $administrativeUserMiddleware);
+$router->post('/admin/users/status', [$administrativeUserController, 'changeStatus'], $administrativeUserMiddleware);
+$router->post('/admin/users/password', [$administrativeUserController, 'changePassword'], $administrativeUserMiddleware);
+$router->post(
+    '/admin/users/login-identifier',
+    [$administrativeUserController, 'changeLoginIdentifier'],
+    $administrativeUserMiddleware,
+);
 $router->get(
     '/admin/bulk-import',
     [$bulkImportController, 'index'],
