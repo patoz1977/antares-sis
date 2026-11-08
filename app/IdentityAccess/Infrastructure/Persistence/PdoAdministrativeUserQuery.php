@@ -63,7 +63,7 @@ final readonly class PdoAdministrativeUserQuery implements AdministrativeUserQue
             . 's.code AS user_status, st.code AS status_type, r.id AS representative_id, '
             . 'student.id AS student_id, '
             . 'EXISTS (SELECT 1 FROM user_capabilities capability '
-            . 'WHERE capability.user_id = u.id AND BINARY capability.capability_code = BINARY :capability) '
+            . 'WHERE capability.user_id = u.id AND capability.capability_code = :capability) '
             . 'AS has_reports_capability '
             . 'FROM users u '
             . 'INNER JOIN persons p ON p.id = u.person_id '

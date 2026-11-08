@@ -88,6 +88,49 @@ function registerAdministrativeUserManagementTests(TestRunner $runner): void
         assertSameValue(false, str_contains($source, 'SELECT *'));
     });
 
+    $runner->add('Admin User PDO query executes bounded prepared discovery over existing relationships', function (): void {
+        $pdo = new \PDO('sqlite::memory:');
+        $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $pdo->exec(
+            'CREATE TABLE status_types (id INTEGER PRIMARY KEY, code TEXT NOT NULL);'
+            . 'CREATE TABLE statuses (id INTEGER PRIMARY KEY, status_type_id INTEGER NOT NULL, code TEXT NOT NULL);'
+            . 'CREATE TABLE persons (id INTEGER PRIMARY KEY, first_name TEXT NOT NULL, middle_name TEXT NULL, '
+            . 'first_surname TEXT NOT NULL, second_surname TEXT NULL, document_number TEXT NULL);'
+            . 'CREATE TABLE users (id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL, status_id INTEGER NOT NULL, '
+            . 'login_identifier TEXT NOT NULL, normalized_login_identifier TEXT NOT NULL, last_access_at TEXT NULL);'
+            . 'CREATE TABLE representatives (id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL);'
+            . 'CREATE TABLE students (id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL);'
+            . 'CREATE TABLE user_capabilities (user_id INTEGER NOT NULL, capability_code TEXT NOT NULL);'
+            . "INSERT INTO status_types VALUES (1, 'USER_STATUS');"
+            . "INSERT INTO statuses VALUES (1, 1, 'ACTIVE'), (2, 1, 'DISABLED');"
+            . "INSERT INTO persons VALUES (101, 'Ana', NULL, 'Pérez', NULL, 'ID-101'), "
+            . "(102, 'Bruno', NULL, 'Representante', NULL, 'ID-102'), "
+            . "(103, 'Carla', NULL, 'Reportes', NULL, 'ID-103');"
+            . "INSERT INTO users VALUES (1, 101, 1, 'admin', 'admin', NULL), "
+            . "(2, 102, 1, 'rep-102', 'rep-102', '2026-11-08 10:00:00'), "
+            . "(3, 103, 2, 'reportes-103', 'reportes-103', NULL);"
+            . 'INSERT INTO representatives VALUES (22, 102);'
+            . "INSERT INTO user_capabilities VALUES (1, 'REPORTS_VIEW_ALL'), (3, 'REPORTS_VIEW_ALL');"
+        );
+        $query = (new \ReflectionClass(PdoAdministrativeUserQuery::class))->newInstanceWithoutConstructor();
+        (new \ReflectionProperty(PdoAdministrativeUserQuery::class, 'connection'))->setValue($query, $pdo);
+
+        $name = $query->search(new AdministrativeUserSearchCriteria('name', 'Ana Pérez'), 31);
+        assertSameValue([1], array_column($name, 'userId'));
+        assertSameValue(AdministrativeUserAccessType::Administrator, $name[0]->accessType);
+        $identification = $query->search(
+            new AdministrativeUserSearchCriteria('identification_number', ' id-102 '),
+            31,
+        );
+        assertSameValue([2], array_column($identification, 'userId'));
+        assertSameValue(AdministrativeUserAccessType::Representative, $identification[0]->accessType);
+        $login = $query->search(new AdministrativeUserSearchCriteria('login_identifier', ' REPORTES-103 '), 31);
+        assertSameValue([3], array_column($login, 'userId'));
+        assertSameValue(UserStatus::Disabled, $login[0]->status);
+        assertSameValue(AdministrativeUserAccessType::InstitutionalReporting, $login[0]->accessType);
+        assertSameValue(2, $query->findById(2)?->userId);
+    });
+
     $runner->add('Admin User management reuses Representative lifecycle and preserves login synchronization rule', function (): void {
         $services = administrativeMutationServices(
             administrativeUserRow(701, AdministrativeUserAccessType::Representative, 801),
