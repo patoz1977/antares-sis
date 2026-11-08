@@ -288,4 +288,3 @@ function administrativeUserDatabaseRow(
         'has_reports_capability' => $hasReports,
     ];
 }
-
