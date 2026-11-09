@@ -399,6 +399,10 @@ function registerIdentityAccessTests(TestRunner $runner): void
             fn () => $repository->findByLoginIdentifierForUpdate(new LoginIdentifier('admin')),
             RuntimeException::class
         );
+        assertThrows(
+            fn () => $repository->findByIdForUpdate(new UserId(1)),
+            RuntimeException::class
+        );
 
         $pdo->beginTransaction();
         try {
@@ -408,6 +412,7 @@ function registerIdentityAccessTests(TestRunner $runner): void
                     new LoginIdentifier('admin')
                 )?->id()->value()
             );
+            assertSameValue(1, $repository->findByIdForUpdate(new UserId(1))?->id()?->value());
         } finally {
             $pdo->rollBack();
         }

@@ -7,6 +7,7 @@ namespace Tests;
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
 use App\IdentityAccess\Application\CreateRepresentativeUser;
 use App\IdentityAccess\Application\GetUserByPersonId;
+use App\IdentityAccess\Application\LockRepresentativeUserForAdministration;
 use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
 use App\IdentityAccess\Domain\User;
 use App\IdentityAccess\Domain\UserStatus;
@@ -279,7 +280,18 @@ function representativeUserDeliveryController(bool $withEmail = true): array
             new GetPerson($persons),
             new GetUserByPersonId($users),
             new CreateRepresentativeUser($representatives, $persons, $users, $hasher, $policy),
-            new ChangeRepresentativeUserPassword($representatives, $users, $hasher, $policy),
+            new ChangeRepresentativeUserPassword(
+                new ImmediateTransactionManager(),
+                new LockRepresentativeUserForAdministration(
+                    $persons,
+                    $representatives,
+                    $users,
+                    new NeverDedicatedInstitutionalReportingProfile(),
+                ),
+                $users,
+                $hasher,
+                $policy,
+            ),
             new FakeDeliveryCsrf(),
             $session,
         ),

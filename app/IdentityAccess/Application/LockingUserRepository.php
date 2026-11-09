@@ -7,8 +7,11 @@ namespace App\IdentityAccess\Application;
 use App\IdentityAccess\Domain\User;
 use App\IdentityAccess\Domain\UserRepository;
 use App\IdentityAccess\Domain\ValueObject\PersonId;
+use App\IdentityAccess\Domain\ValueObject\UserId;
 
 interface LockingUserRepository extends UserRepository
 {
+    public function findByIdForUpdate(UserId $id): ?User;
+
     public function findByPersonIdForUpdate(PersonId $personId): ?User;
 }

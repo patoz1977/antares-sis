@@ -69,6 +69,7 @@ final readonly class SharedShellDataFactory
         return [
             $this->item('Inicio', '/', 'bi-house-door', $path, ['/'], true),
             $this->item('Personas', '/persons', 'bi-person-vcard', $path, ['/persons']),
+            $this->item('Usuarios', '/admin/users', 'bi-person-gear', $path, ['/admin/users']),
             $this->item('Familias', '/families', 'bi-people', $path, ['/families', '/representative-users']),
             $this->item('Importación masiva', '/admin/bulk-import', 'bi-file-earmark-arrow-up', $path, ['/admin/bulk-import']),
             $this->item('Inicialización académica', '/admin/academic-initialization', 'bi-mortarboard', $path, ['/admin/academic-initialization']),

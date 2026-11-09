@@ -14,6 +14,8 @@ use App\AcademicCore\Domain\ValueObject\AcademicPeriodId as CoreAcademicPeriodId
 use App\AcademicCore\Infrastructure\Persistence\PdoAcademicPeriodRepository;
 use App\IdentityAccess\Application\AuthenticateUser;
 use App\IdentityAccess\Application\AuthenticationPolicy;
+use App\IdentityAccess\Application\AdministrativeUsers\AdministrativeUserAccessType;
+use App\IdentityAccess\Application\AdministrativeUsers\AdministrativeUserSearchCriteria;
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
 use App\IdentityAccess\Application\CanAccessAllReports;
 use App\IdentityAccess\Application\Contract\Clock;
@@ -45,6 +47,7 @@ use App\IdentityAccess\Domain\ValueObject\UserId;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserCapabilityLookup;
 use App\IdentityAccess\Infrastructure\Persistence\PdoUserRepository;
 use App\IdentityAccess\Infrastructure\Persistence\PdoTransactionManager;
+use App\IdentityAccess\Infrastructure\Persistence\PdoAdministrativeUserQuery;
 use App\IdentityAccess\Infrastructure\Security\NativePasswordHasher;
 use App\InstitutionalDocuments\Domain\AcknowledgementRequirementStatus;
 use App\InstitutionalDocuments\Application\ActivateAcknowledgementRequirement;
@@ -8679,7 +8682,16 @@ try {
     );
     $newRepresentativePassword = '12345';
     $changedPasswordOutput = (new ChangeRepresentativeUserPassword(
-        $representativeRepository,
+        new PdoTransactionManager($managerA),
+        new \App\IdentityAccess\Application\LockRepresentativeUserForAdministration(
+            $personRepository,
+            $representativeRepository,
+            $representativeUsers,
+            new \App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser(
+                $representativeUsers,
+                new PdoUserCapabilityLookup($managerA),
+            ),
+        ),
         $representativeUsers,
         $representativePasswordHasher,
         $representativePasswordPolicy,
@@ -8713,6 +8725,47 @@ try {
         ),
         'Administrative password change did not preserve Representative User authentication state.'
     );
+
+    $administrativeUsers = new PdoAdministrativeUserQuery($managerA);
+    $representativeDiscovery = $administrativeUsers->search(
+        new AdministrativeUserSearchCriteria(
+            'login_identifier',
+            $afterPasswordChange?->loginIdentifier()->value() ?? '',
+        ),
+        31,
+    );
+    assertIntegration(
+        count($representativeDiscovery) === 1
+        && $representativeDiscovery[0]->userId === $generatedRepresentativeUserId
+        && $representativeDiscovery[0]->accessType === AdministrativeUserAccessType::Representative,
+        'MariaDB administrative User query did not classify the Representative User.'
+    );
+
+    $studentOnlyClassificationPassed = false;
+    $connectionA->beginTransaction();
+    try {
+        $studentOnlyUser = $representativeUsers->save(new User(
+            null,
+            new UserPersonId($studentFlowOutput->person->id),
+            new LoginIdentifier('physical-student-user'),
+            new PasswordHash('synthetic-hash'),
+            UserStatus::Active,
+        ));
+        $studentOnlyRows = $administrativeUsers->search(
+            new AdministrativeUserSearchCriteria('login_identifier', 'physical-student-user'),
+            31,
+        );
+        $studentOnlyClassificationPassed = count($studentOnlyRows) === 1
+            && $studentOnlyRows[0]->userId === $studentOnlyUser->id()?->value()
+            && $studentOnlyRows[0]->accessType === AdministrativeUserAccessType::Incoherent;
+    } finally {
+        $connectionA->rollBack();
+    }
+    assertIntegration(
+        $studentOnlyClassificationPassed,
+        'MariaDB administrative User query accepted a Student-only User as coherent.'
+    );
+    echo "PASS MySQL Administrative User query classifies valid Representative and incoherent Student-only User\n";
 
     $updateRepresentativePerson = new UpdatePersonWithRepresentativeUserSync(
         new UpdatePerson($personRepository),

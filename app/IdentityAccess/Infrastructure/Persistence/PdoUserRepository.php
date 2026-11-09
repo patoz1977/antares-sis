@@ -71,6 +71,22 @@ final class PdoUserRepository implements LockingUserRepository
         return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));
     }
 
+    public function findByIdForUpdate(UserId $id): ?User
+    {
+        if (!$this->connection->inTransaction()) {
+            throw new RuntimeException('User row locking requires an active transaction.');
+        }
+
+        $sql = $this->selectSql() . ' WHERE u.id = :id LIMIT 1';
+        if ($this->connection->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql') {
+            $sql .= ' FOR UPDATE';
+        }
+        $statement = $this->connection->prepare($sql);
+        $statement->execute([':id' => $id->value()]);
+
+        return $this->mapRow($statement->fetch(PDO::FETCH_ASSOC));
+    }
+
     public function findByPersonId(PersonId $personId): ?User
     {
         $statement = $this->connection->prepare(
