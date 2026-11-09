@@ -6,6 +6,7 @@ namespace Tests;
 
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
 use App\IdentityAccess\Application\CreateRepresentativeUser;
+use App\IdentityAccess\Application\LockRepresentativeUserForAdministration;
 use App\IdentityAccess\Application\Dto\ChangeRepresentativeUserPasswordInput;
 use App\IdentityAccess\Application\Dto\CreateRepresentativeUserInput;
 use App\IdentityAccess\Application\Exception\InvalidPersistedUserResult;
@@ -177,7 +178,7 @@ function registerRepresentativeUserApplicationTests(TestRunner $runner): void
     });
 
     $runner->add('ChangeRepresentativeUserPassword preserves identity login status and auth state', function (): void {
-        [, , $representatives, $users] = representativeUserCreateFixture();
+        [, $persons, $representatives, $users] = representativeUserCreateFixture();
         $lockedAt = representativeUserToday()->modify('-20 minutes');
         $lastAccessAt = representativeUserToday()->modify('-1 day');
         $users->seed(new User(
@@ -191,7 +192,13 @@ function registerRepresentativeUserApplicationTests(TestRunner $runner): void
             $lastAccessAt,
         ));
         $useCase = new ChangeRepresentativeUserPassword(
-            $representatives,
+            new ImmediateTransactionManager(),
+            new LockRepresentativeUserForAdministration(
+                $persons,
+                $representatives,
+                $users,
+                new NeverDedicatedInstitutionalReportingProfile(),
+            ),
             $users,
             new NativePasswordHasher(),
             new RepresentativePasswordPolicy(),
@@ -215,9 +222,15 @@ function registerRepresentativeUserApplicationTests(TestRunner $runner): void
     });
 
     $runner->add('ChangeRepresentativeUserPassword rejects missing User and invalid password', function (): void {
-        [, , $representatives, $users] = representativeUserCreateFixture();
+        [, $persons, $representatives, $users] = representativeUserCreateFixture();
         $useCase = new ChangeRepresentativeUserPassword(
-            $representatives,
+            new ImmediateTransactionManager(),
+            new LockRepresentativeUserForAdministration(
+                $persons,
+                $representatives,
+                $users,
+                new NeverDedicatedInstitutionalReportingProfile(),
+            ),
             $users,
             new NativePasswordHasher(),
             new RepresentativePasswordPolicy(),

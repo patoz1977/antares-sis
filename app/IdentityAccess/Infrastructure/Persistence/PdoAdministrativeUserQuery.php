@@ -155,13 +155,13 @@ final readonly class PdoAdministrativeUserQuery implements AdministrativeUserQue
         if ($loginIdentifier === 'admin') {
             return AdministrativeUserAccessType::Administrator;
         }
-        if ($representativeId !== null && $hasReports) {
+        if ($hasReports && ($representativeId !== null || $studentId !== null)) {
             return AdministrativeUserAccessType::Incoherent;
         }
         if ($representativeId !== null) {
             return AdministrativeUserAccessType::Representative;
         }
-        if ($studentId !== null && $hasReports) {
+        if ($studentId !== null) {
             return AdministrativeUserAccessType::Incoherent;
         }
         if ($hasReports) {

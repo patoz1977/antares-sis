@@ -7,6 +7,8 @@ namespace App\IdentityAccess\Application\AdministrativeUsers;
 use App\IdentityAccess\Application\AdministrativeUsers\Exception\AdministrativeUserOperationNotAllowed;
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
 use App\IdentityAccess\Application\Dto\ChangeRepresentativeUserPasswordInput;
+use App\IdentityAccess\Application\Exception\RepresentativeUserNotFound;
+use App\Representative\Application\Exception\RepresentativeNotFound;
 
 final readonly class ChangeAdministrativeUserPassword
 {
@@ -23,9 +25,19 @@ final readonly class ChangeAdministrativeUserPassword
         if ($user->accessType === AdministrativeUserAccessType::Representative
             && $user->representativeId !== null
         ) {
-            $this->changeRepresentativePassword->handle(
-                new ChangeRepresentativeUserPasswordInput($user->representativeId, $plainTextPassword)
-            );
+            try {
+                $this->changeRepresentativePassword->handle(
+                    new ChangeRepresentativeUserPasswordInput(
+                        $user->representativeId,
+                        $plainTextPassword,
+                    )
+                );
+            } catch (RepresentativeNotFound|RepresentativeUserNotFound $exception) {
+                throw new AdministrativeUserOperationNotAllowed(
+                    'The requested Representative User is no longer administrable.',
+                    previous: $exception,
+                );
+            }
 
             return;
         }

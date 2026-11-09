@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\IdentityAccess\Application\AdministrativeUsers;
 
-use App\IdentityAccess\Application\AdministrativeUsers\Exception\AdministrativeUserNotFound;
 use App\IdentityAccess\Application\AdministrativeUsers\Exception\AdministrativeUserOperationNotAllowed;
+use App\IdentityAccess\Application\Exception\RepresentativeUserNotFound;
+use App\IdentityAccess\Application\LockRepresentativeUserForAdministration;
 use App\IdentityAccess\Application\LockingUserRepository;
-use App\IdentityAccess\Domain\ValueObject\UserId;
-use App\Representative\Domain\RepresentativeRepository;
-use App\Representative\Domain\ValueObject\PersonId as RepresentativePersonId;
 use App\Shared\Application\TransactionManager;
 
 final readonly class ChangeRepresentativeUserStatus
@@ -17,22 +15,26 @@ final readonly class ChangeRepresentativeUserStatus
     public function __construct(
         private TransactionManager $transactions,
         private LockingUserRepository $users,
-        private RepresentativeRepository $representatives,
+        private LockRepresentativeUserForAdministration $representativeUser,
     ) {
     }
 
-    public function handle(int $userId, bool $activate): bool
+    public function handle(
+        int $userId,
+        int $representativeId,
+        int $personId,
+        bool $activate,
+    ): bool
     {
-        return $this->transactions->transactional(function () use ($userId, $activate): bool {
-            $user = $this->users->findByIdForUpdate(new UserId($userId));
-            if ($user === null) {
-                throw new AdministrativeUserNotFound('User was not found.');
-            }
-            if ($user->loginIdentifier()->value() === 'admin'
-                || $this->representatives->findByPersonId(
-                    new RepresentativePersonId($user->personId()->value())
-                ) === null
-            ) {
+        return $this->transactions->transactional(function () use (
+            $userId,
+            $representativeId,
+            $personId,
+            $activate,
+        ): bool {
+            try {
+                $user = $this->representativeUser->lock($representativeId, $personId, $userId);
+            } catch (RepresentativeUserNotFound) {
                 throw new AdministrativeUserOperationNotAllowed('User is not a Representative account.');
             }
 

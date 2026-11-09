@@ -23,8 +23,16 @@ final readonly class ChangeAdministrativeUserStatus
         $user = $this->getUser->handle($userId);
 
         return match ($user->accessType) {
-            AdministrativeUserAccessType::Representative =>
-                $this->changeRepresentativeStatus->handle($userId, $activate),
+            AdministrativeUserAccessType::Representative => $user->representativeId === null
+                ? throw new AdministrativeUserOperationNotAllowed(
+                    'Representative identity is unavailable.'
+                )
+                : $this->changeRepresentativeStatus->handle(
+                    $userId,
+                    $user->representativeId,
+                    $user->personId,
+                    $activate,
+                ),
             AdministrativeUserAccessType::InstitutionalReporting => $activate
                 ? $this->reactivateReportingUser->handle($user->personId)
                 : $this->disableReportingUser->handle($user->personId),

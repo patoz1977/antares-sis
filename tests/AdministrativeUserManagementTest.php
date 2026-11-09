@@ -19,6 +19,7 @@ use App\IdentityAccess\Application\AdministrativeUsers\SearchAdministrativeUsers
 use App\IdentityAccess\Application\ChangeRepresentativeUserPassword;
 use App\IdentityAccess\Application\DisableInstitutionalReportingUser;
 use App\IdentityAccess\Application\IsDedicatedInstitutionalReportingUser;
+use App\IdentityAccess\Application\LockRepresentativeUserForAdministration;
 use App\IdentityAccess\Application\ReactivateInstitutionalReportingUser;
 use App\IdentityAccess\Application\Security\InstitutionalReportingPasswordPolicy;
 use App\IdentityAccess\Application\Security\RepresentativePasswordPolicy;
@@ -69,6 +70,8 @@ function registerAdministrativeUserManagementTests(TestRunner $runner): void
             administrativeUserDatabaseRow(5, 'student-user', null, 14, 0),
             administrativeUserDatabaseRow(6, 'unsupported', null, null, 0),
             administrativeUserDatabaseRow(7, 'representative-student', 15, 16, 0),
+            administrativeUserDatabaseRow(8, 'student-reporting', null, 17, 1),
+            administrativeUserDatabaseRow(9, 'admin', 18, 19, 1),
         ]);
 
         assertSameValue([
@@ -76,9 +79,11 @@ function registerAdministrativeUserManagementTests(TestRunner $runner): void
             AdministrativeUserAccessType::Representative,
             AdministrativeUserAccessType::InstitutionalReporting,
             AdministrativeUserAccessType::Incoherent,
-            AdministrativeUserAccessType::Unsupported,
+            AdministrativeUserAccessType::Incoherent,
             AdministrativeUserAccessType::Unsupported,
             AdministrativeUserAccessType::Representative,
+            AdministrativeUserAccessType::Incoherent,
+            AdministrativeUserAccessType::Administrator,
         ], array_column($rows, 'accessType'));
 
         $source = (string) file_get_contents(
@@ -187,6 +192,34 @@ function registerAdministrativeUserManagementTests(TestRunner $runner): void
         }
     });
 
+    $runner->add('Admin User mutations reject stale Representative classification at execution time', function (): void {
+        $row = administrativeUserRow(704, AdministrativeUserAccessType::Representative, 804);
+        $withCapability = administrativeMutationServices($row, true);
+        $withCapability['capabilities']->grant(new UserId(704));
+
+        assertThrows(
+            fn () => $withCapability['status']->handle(704, false),
+            AdministrativeUserOperationNotAllowed::class,
+        );
+        assertThrows(
+            fn () => $withCapability['password']->handle(704, 'nueva-clave'),
+            AdministrativeUserOperationNotAllowed::class,
+        );
+        $stored = $withCapability['users']->findById(new UserId(704));
+        assertSameValue(UserStatus::Active, $stored?->status());
+        assertSameValue('preserved-hash', $stored?->passwordHash()->value());
+
+        $withoutRepresentative = administrativeMutationServices($row);
+        assertThrows(
+            fn () => $withoutRepresentative['status']->handle(704, false),
+            AdministrativeUserOperationNotAllowed::class,
+        );
+        assertThrows(
+            fn () => $withoutRepresentative['password']->handle(704, 'nueva-clave'),
+            AdministrativeUserOperationNotAllowed::class,
+        );
+    });
+
     $runner->add('Admin User Delivery exposes only exact Admin operations and no secret or capability editor', function (): void {
         $routes = str_replace("\r\n", "\n", (string) file_get_contents(dirname(__DIR__) . '/routes/web.php'));
         foreach (['/admin/users', '/admin/users/search', '/admin/users/manage', '/admin/users/status', '/admin/users/password', '/admin/users/login-identifier'] as $route) {
@@ -257,7 +290,12 @@ function administrativeMutationServices(
             new ChangeRepresentativeUserStatus(
                 new ImmediateTransactionManager(),
                 $fixture['users'],
-                $fixture['representatives'],
+                new LockRepresentativeUserForAdministration(
+                    $fixture['persons'],
+                    $fixture['representatives'],
+                    $fixture['users'],
+                    $profile,
+                ),
             ),
             new DisableInstitutionalReportingUser(
                 new ImmediateTransactionManager(),
@@ -277,7 +315,13 @@ function administrativeMutationServices(
         'password' => new ChangeAdministrativeUserPassword(
             $getUser,
             new ChangeRepresentativeUserPassword(
-                $fixture['representatives'],
+                new ImmediateTransactionManager(),
+                new LockRepresentativeUserForAdministration(
+                    $fixture['persons'],
+                    $fixture['representatives'],
+                    $fixture['users'],
+                    $profile,
+                ),
                 $fixture['users'],
                 $hasher,
                 new RepresentativePasswordPolicy(),
