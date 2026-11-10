@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\AcademicCore\Application\GetActiveAcademicPeriod;
+use App\AcademicCore\Domain\AcademicPeriodStatus;
+use App\Family\Application\Discovery\FamilyDirectoryCriteria;
+use App\Family\Application\Discovery\FamilyDirectoryStatus;
 use App\Family\Application\Discovery\Dto\FamilyDiscoveryRow;
 use App\Family\Application\Discovery\FamilyDiscoveryCriteria;
 use App\Family\Application\Discovery\FamilyDiscoveryQuery;
@@ -93,9 +97,12 @@ function registerAdministrativeDiscoveryTests(TestRunner $runner): void
         }
         $familyQuery = new class($familyRows) implements FamilyDiscoveryQuery {
             public function __construct(private array $rows) {}
-            public function search(FamilyDiscoveryCriteria $criteria): array { return $this->rows; }
+            public function search(FamilyDirectoryCriteria $criteria, int $academicPeriodId): array { return $this->rows; }
         };
-        $familyResult = (new SearchFamilies($familyQuery))->handle(new FamilyDiscoveryCriteria('display_name', 'Fam'));
+        $familyResult = administrativeFamilySearch($familyQuery)->handle(new FamilyDirectoryCriteria(
+            FamilyDirectoryStatus::Active,
+            new FamilyDiscoveryCriteria('display_name', 'Fam'),
+        ));
         assertSameValue([30, true], [count($familyResult->rows), $familyResult->hasMore]);
         foreach ([PersonDiscoveryRow::class, \App\Person\Application\Discovery\Dto\PersonDiscoveryResult::class,
             FamilyDiscoveryRow::class, \App\Family\Application\Discovery\Dto\FamilyDiscoveryResult::class,
@@ -124,11 +131,13 @@ function registerAdministrativeDiscoveryTests(TestRunner $runner): void
     $runner->add('Phase 4 PDO Family search is case-sensitive direct and resolves only active matching members', function (): void {
         [$manager] = administrativeDiscoveryFixture();
         $query = new PdoFamilyDiscoveryQuery($manager);
-        assertSameValue([10], array_column($query->search(new FamilyDiscoveryCriteria('family_code', 'F00000010')), 'familyId'));
-        assertSameValue([], $query->search(new FamilyDiscoveryCriteria('family_code', 'F00000011')));
-        assertSameValue([11, 10], array_column($query->search(new FamilyDiscoveryCriteria('display_name', 'Familia')), 'familyId'));
+        $directory = static fn (FamilyDiscoveryCriteria $criteria): FamilyDirectoryCriteria =>
+            new FamilyDirectoryCriteria(FamilyDirectoryStatus::All, $criteria);
+        assertSameValue([10], array_column($query->search($directory(new FamilyDiscoveryCriteria('family_code', 'F00000010')), 7), 'familyId'));
+        assertSameValue([], $query->search($directory(new FamilyDiscoveryCriteria('family_code', 'F00000011')), 7));
+        assertSameValue([11, 10], array_column($query->search($directory(new FamilyDiscoveryCriteria('display_name', 'Familia')), 7), 'familyId'));
 
-        $families = $query->search(new FamilyDiscoveryCriteria('person_first_name', 'Mar'));
+        $families = $query->search($directory(new FamilyDiscoveryCriteria('person_first_name', 'Mar')), 7);
         assertSameValue([11, 10], array_column($families, 'familyId'));
         assertSameValue(['María Isabel Pérez Del Río — Estudiante'], array_map(
             static fn ($member): string => $member->fullName . ' — ' . $member->role,
@@ -150,11 +159,24 @@ function registerAdministrativeDiscoveryTests(TestRunner $runner): void
             ['person_personal_email', 'maria@example.test'],
         ] as [$field, $value]) {
             assertSameValue([11, 10], array_column(
-                $query->search(new FamilyDiscoveryCriteria($field, $value)),
+                $query->search($directory(new FamilyDiscoveryCriteria($field, $value)), 7),
                 'familyId',
             ), $field);
         }
-        assertSameValue([], $query->search(new FamilyDiscoveryCriteria('person_first_name', 'His')));
+        assertSameValue([], $query->search($directory(new FamilyDiscoveryCriteria('person_first_name', 'His')), 7));
+
+        $active = $query->search(FamilyDirectoryCriteria::active(), 7);
+        assertSameValue([10], array_column($active, 'familyId'));
+        assertSameValue('Marcos José Pérez Gómez', $active[0]->primaryRepresentative?->fullName);
+        assertSameValue('0990000001', $active[0]->primaryRepresentative?->mobilePhone);
+        assertSameValue(['María Isabel Pérez Del Río'], array_column($active[0]->students, 'fullName'));
+        assertSameValue(['Primero — A'], array_map(
+            static fn ($student): string => $student->academicPlacement(),
+            $active[0]->students,
+        ));
+        assertSameValue([11], array_column($query->search(new FamilyDirectoryCriteria(
+            FamilyDirectoryStatus::Inactive,
+        ), 7), 'familyId'));
     });
 
     $runner->add('Phase 4 PDO queries are prepared read-only bounded projections outside transactional repositories', function (): void {
@@ -198,20 +220,31 @@ function registerAdministrativeDiscoveryTests(TestRunner $runner): void
         }
 
         $familyQuery = new class implements FamilyDiscoveryQuery {
-            public function search(FamilyDiscoveryCriteria $criteria): array
+            /** @var list<FamilyDirectoryCriteria> */
+            public array $received = [];
+
+            public function search(FamilyDirectoryCriteria $criteria, int $academicPeriodId): array
             {
+                $this->received[] = $criteria;
+
                 return [new FamilyDiscoveryRow(9, 'F00000009', '<Familia>', 'ACTIVE', [
                     new \App\Family\Application\Discovery\Dto\FamilyMatchedMember('<Miembro>', 'Padre & tutor'),
                 ])];
             }
         };
         deliveryRequest('POST', '/families/search', [
-            '_csrf_token' => 'delivery-csrf', 'criterion' => 'display_name', 'value' => 'Fam',
+            '_csrf_token' => 'delivery-csrf', 'criterion' => 'display_name', 'value' => 'Fam', 'status' => 'all',
         ]);
-        $html = (new FamilyDiscoveryController(new SearchFamilies($familyQuery), new FakeDeliveryCsrf()))->search();
+        $html = (new FamilyDiscoveryController(administrativeFamilySearch($familyQuery), new FakeDeliveryCsrf()))->search();
         foreach (['&lt;Familia&gt;', '&lt;Miembro&gt;', 'Padre &amp; tutor', '/families/show?id=9'] as $expected) {
             deliveryAssertContains($expected, $html);
         }
+        deliveryRequest('POST', '/families/search', [
+            '_csrf_token' => 'delivery-csrf', 'criterion' => 'display_name', 'value' => '', 'status' => 'inactive',
+        ]);
+        (new FamilyDiscoveryController(administrativeFamilySearch($familyQuery), new FakeDeliveryCsrf()))->search();
+        assertSameValue(null, $familyQuery->received[1]->search);
+        assertSameValue(FamilyDirectoryStatus::Inactive, $familyQuery->received[1]->status);
 
         deliveryRequest('POST', '/persons/search', [
             '_csrf_token' => 'invalid', 'criterion' => 'personal_email', 'value' => 'secret@example.test',
@@ -259,24 +292,40 @@ function administrativeDiscoveryFixture(): array
     $pdo->exec('PRAGMA case_sensitive_like = OFF');
     $pdo->exec('CREATE TABLE status_types (id INTEGER PRIMARY KEY, code TEXT NOT NULL)');
     $pdo->exec('CREATE TABLE statuses (id INTEGER PRIMARY KEY, status_type_id INTEGER NOT NULL, code TEXT NOT NULL)');
-    $pdo->exec('CREATE TABLE persons (id INTEGER PRIMARY KEY, first_name TEXT NOT NULL, middle_name TEXT, first_surname TEXT NOT NULL, second_surname TEXT, document_number TEXT, email TEXT)');
+    $pdo->exec('CREATE TABLE persons (id INTEGER PRIMARY KEY, first_name TEXT NOT NULL, middle_name TEXT, first_surname TEXT NOT NULL, second_surname TEXT, document_number TEXT, email TEXT, mobile_phone TEXT)');
     $pdo->exec('CREATE TABLE representatives (id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL)');
     $pdo->exec('CREATE TABLE students (id INTEGER PRIMARY KEY, person_id INTEGER NOT NULL)');
     $pdo->exec('CREATE TABLE families (id INTEGER PRIMARY KEY, family_code TEXT NOT NULL COLLATE BINARY, display_name TEXT NOT NULL, status_id INTEGER NOT NULL)');
     $pdo->exec('CREATE TABLE relationship_types (id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
-    $pdo->exec('CREATE TABLE family_representatives (id INTEGER PRIMARY KEY, family_id INTEGER NOT NULL, representative_id INTEGER NOT NULL, relationship_type_id INTEGER NOT NULL, ended_at TEXT)');
+    $pdo->exec('CREATE TABLE family_representatives (id INTEGER PRIMARY KEY, family_id INTEGER NOT NULL, representative_id INTEGER NOT NULL, relationship_type_id INTEGER NOT NULL, is_primary INTEGER NOT NULL, ended_at TEXT)');
     $pdo->exec('CREATE TABLE family_students (id INTEGER PRIMARY KEY, family_id INTEGER NOT NULL, student_id INTEGER NOT NULL, ended_at TEXT)');
-    $pdo->exec("INSERT INTO status_types VALUES (1,'GENERAL_STATUS')");
-    $pdo->exec("INSERT INTO statuses VALUES (1,1,'ACTIVE'),(2,1,'INACTIVE')");
-    $pdo->exec("INSERT INTO persons VALUES (1,'Marcos','José','Pérez','Gómez','AB-001','marcos@example.test'),(2,'María','Isabel','Pérez','Del Río','AB-002','maria@example.test'),(3,'Historical',NULL,'Member',NULL,'OLD-3','old@example.test')");
+    $pdo->exec('CREATE TABLE grades (id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
+    $pdo->exec('CREATE TABLE sections (id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
+    $pdo->exec('CREATE TABLE enrollments (id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL, academic_period_id INTEGER NOT NULL, status_id INTEGER NOT NULL, grade_id INTEGER, section_id INTEGER)');
+    $pdo->exec("INSERT INTO status_types VALUES (1,'GENERAL_STATUS'),(2,'ENROLLMENT_STATUS')");
+    $pdo->exec("INSERT INTO statuses VALUES (1,1,'ACTIVE'),(2,1,'INACTIVE'),(3,2,'DRAFT')");
+    $pdo->exec("INSERT INTO persons VALUES (1,'Marcos','José','Pérez','Gómez','AB-001','marcos@example.test','0990000001'),(2,'María','Isabel','Pérez','Del Río','AB-002','maria@example.test',NULL),(3,'Historical',NULL,'Member',NULL,'OLD-3','old@example.test',NULL)");
     $pdo->exec("INSERT INTO representatives VALUES (101,1),(103,3)");
     $pdo->exec("INSERT INTO students VALUES (202,2)");
     $pdo->exec("INSERT INTO families VALUES (10,'F00000010','Familia Zeta',1),(11,'F00000020','Familia Alfa',2)");
     $pdo->exec("INSERT INTO relationship_types VALUES (1,'Padre')");
-    $pdo->exec("INSERT INTO family_representatives VALUES (1,10,101,1,NULL),(2,10,103,1,'2026-01-01')");
+    $pdo->exec("INSERT INTO family_representatives VALUES (1,10,101,1,1,NULL),(2,10,103,1,0,'2026-01-01')");
     $pdo->exec("INSERT INTO family_students VALUES (1,10,202,NULL),(2,11,202,NULL),(3,11,202,'2026-01-01')");
+    $pdo->exec("INSERT INTO grades VALUES (1,'Primero')");
+    $pdo->exec("INSERT INTO sections VALUES (1,'A')");
+    $pdo->exec("INSERT INTO enrollments VALUES (1,202,7,3,1,1)");
 
     return [$manager, $pdo];
+}
+
+function administrativeFamilySearch(FamilyDiscoveryQuery $query): SearchFamilies
+{
+    return new SearchFamilies(
+        $query,
+        new GetActiveAcademicPeriod(new InMemoryAcademicPeriodRepository([
+            academicPeriodFixture(7, AcademicPeriodStatus::Active),
+        ])),
+    );
 }
 
 function administrativeDiscoveryAssertThrows(callable $operation, string $expected): void

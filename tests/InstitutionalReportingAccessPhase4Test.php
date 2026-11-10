@@ -528,7 +528,7 @@ function registerInstitutionalReportingAccessPhase4Tests(TestRunner $runner): vo
     $runner->add('Phase 4 Delivery exposes only exact contextual routes and secret-free Views', function (): void {
         $routes = str_replace("\r\n", "\n", (string) file_get_contents(dirname(__DIR__) . '/routes/web.php'));
         assertSameValue(53, substr_count($routes, '$router->get('));
-        assertSameValue(82, substr_count($routes, '$router->post('));
+        assertSameValue(84, substr_count($routes, '$router->post('));
         assertSameValue(1, substr_count($routes, "'/institutional-reporting-access/manage'"));
         foreach (['provision', 'disable', 'reactivate'] as $action) {
             assertSameValue(1, substr_count($routes, "'/institutional-reporting-access/{$action}'"));

@@ -6,6 +6,7 @@ namespace Tests;
 
 use App\Family\Application\AddRepresentativeToFamily;
 use App\Family\Application\AddStudentToFamily;
+use App\Family\Application\ChangeFamilyStatus;
 use App\Family\Application\CreateFamily;
 use App\Family\Application\Dto\AddRepresentativeToFamilyInput;
 use App\Family\Application\Dto\AddStudentToFamilyInput;
@@ -64,6 +65,32 @@ use Tests\Support\TestRunner;
 
 function registerFamilyMembershipApplicationTests(TestRunner $runner): void
 {
+    $runner->add('Family administrative lifecycle changes only root status and is idempotent', function (): void {
+        $families = new InMemoryFamilyApplicationRepository();
+        $families->seed(familyApplicationAggregate(
+            90,
+            FamilyStatus::Active,
+            [familyApplicationRepresentativeMembership(901, 10, 1, true, '2026-01-01 00:00:00')],
+            [familyApplicationStudentMembership(902, 20, '2026-01-01 00:00:00')],
+        ));
+        $lifecycle = new ChangeFamilyStatus(new ImmediateTransactionManager(), $families);
+
+        assertSameValue(true, $lifecycle->handle(90, FamilyStatus::Inactive));
+        $inactive = $families->findById(new FamilyId(90));
+        assertSameValue(FamilyStatus::Inactive, $inactive?->status());
+        assertSameValue([1, 1], [
+            count($inactive?->activeRepresentatives() ?? []),
+            count($inactive?->activeStudents() ?? []),
+        ]);
+        assertSameValue(false, $lifecycle->handle(90, FamilyStatus::Inactive));
+        assertSameValue(true, $lifecycle->handle(90, FamilyStatus::Active));
+        assertSameValue(FamilyStatus::Active, $families->findById(new FamilyId(90))?->status());
+        familyApplicationAssertThrows(
+            static fn (): bool => $lifecycle->handle(999, FamilyStatus::Inactive),
+            FamilyNotFound::class,
+        );
+    });
+
     $runner->add('CreateFamily persists an ACTIVE Family with normalized complete output', function (): void {
         $families = new InMemoryFamilyApplicationRepository();
         $representatives = familyRepresentativeRepository(10);
@@ -699,7 +726,15 @@ function registerFamilyMembershipApplicationTests(TestRunner $runner): void
         assertSameValue('int', $lookupMethod->getParameters()[0]->getType()?->getName());
         assertSameValue('bool', $lookupMethod->getReturnType()?->getName());
 
-        $source = familyApplicationSource();
+        $changeStatus = (new ReflectionClass(ChangeFamilyStatus::class))->getConstructor()?->getParameters();
+        assertSameValue(\App\Shared\Application\TransactionManager::class, $changeStatus[0]->getType()?->getName());
+        assertSameValue(FamilyRepository::class, $changeStatus[1]->getType()?->getName());
+
+        $source = str_replace(
+            (string) file_get_contents(dirname(__DIR__) . '/app/Family/Application/ChangeFamilyStatus.php'),
+            '',
+            familyApplicationSource(),
+        );
         foreach ([
             'PDO',
             '\\Infrastructure\\',
@@ -1021,6 +1056,19 @@ function familyOutputSnapshot(FamilyOutput $output): array
             $output->students,
         ),
     ];
+}
+
+function familyApplicationAssertThrows(callable $operation, string $expectedClass): void
+{
+    try {
+        $operation();
+    } catch (\Throwable $exception) {
+        assertSameValue($expectedClass, $exception::class);
+
+        return;
+    }
+
+    throw new \RuntimeException('Expected exception ' . $expectedClass . '.');
 }
 
 function familyApplicationSource(): string
