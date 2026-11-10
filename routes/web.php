@@ -541,6 +541,8 @@ $router->post('/families/search', [$familyDiscoveryController, 'search'], $famil
 $router->get('/families/create', [$familyController, 'showCreateRepresentativeFamily'], $familyMiddleware);
 $router->post('/families/create', [$familyController, 'createRepresentativeFamily'], $familyMiddleware);
 $router->get('/families/show', [$familyController, 'show'], $familyMiddleware);
+$router->post('/families/activate', [$familyController, 'activate'], $familyMiddleware);
+$router->post('/families/deactivate', [$familyController, 'deactivate'], $familyMiddleware);
 $router->get('/families/students/create', [$familyController, 'showCreateStudent'], $familyMiddleware);
 $router->post('/families/students/create', [$familyController, 'createStudent'], $familyMiddleware);
 $router->get('/families/resources', [$familyResourceController, 'index'], $familyMiddleware);

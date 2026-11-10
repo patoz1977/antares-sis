@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace App\Family\Http;
 
 use App\Controllers\Controller;
+use App\Family\Application\ChangeFamilyStatus;
+use App\Family\Application\Discovery\FamilyDirectoryCriteria;
+use App\Family\Application\Discovery\FamilyDirectoryStatus;
+use App\Family\Application\Discovery\SearchFamilies;
 use App\Family\Application\Dto\FamilyOutput;
 use App\Family\Application\Exception\FamilyNotFound;
 use App\Family\Application\Exception\InvalidPersistedFamilyResult;
@@ -45,6 +49,7 @@ use App\Student\Domain\StudentStatus;
 use App\Shared\Application\Exception\DedicatedInstitutionalReportingRoleConflict;
 use Core\Http\Request;
 use DateTimeImmutable;
+use Throwable;
 
 final class FamilyController extends Controller
 {
@@ -63,11 +68,22 @@ final class FamilyController extends Controller
         private readonly PersonFormOptionsProvider $personFormOptions,
         private readonly FamilyFormOptionsProvider $familyFormOptions,
         private readonly FamilyMemberLabelsProvider $memberLabels,
+        private readonly SearchFamilies $searchFamilies,
+        private readonly ChangeFamilyStatus $changeFamilyStatus,
     ) {
     }
 
     public function index(): string
     {
+        $this->preventCaching();
+        $errors = [];
+        try {
+            $result = $this->searchFamilies->handle(FamilyDirectoryCriteria::active());
+        } catch (Throwable) {
+            $result = null;
+            $errors[] = 'No se pudo cargar el directorio de familias. Inténtalo de nuevo.';
+        }
+
         return $this->view('families.index', [
             'title' => 'Familias',
             'successMessage' => $this->flashMessage(self::FLASH_SUCCESS_KEY),
@@ -75,8 +91,9 @@ final class FamilyController extends Controller
             'csrfToken' => $this->csrf->token(),
             'criterion' => 'display_name',
             'searchValue' => '',
-            'searchErrors' => [],
-            'searchResult' => null,
+            'directoryStatus' => FamilyDirectoryStatus::Active->value,
+            'searchErrors' => $errors,
+            'searchResult' => $result,
         ]);
     }
 
@@ -268,7 +285,19 @@ final class FamilyController extends Controller
             'family' => $family,
             'memberLabels' => $this->memberLabels->forFamily($family->id),
             'successMessage' => $this->flashMessage(self::FLASH_SUCCESS_KEY),
+            'errorMessage' => $this->flashMessage(self::FLASH_ERROR_KEY),
+            'csrfToken' => $this->csrf->token(),
         ]);
+    }
+
+    public function activate(): string
+    {
+        return $this->changeStatus(FamilyStatus::Active);
+    }
+
+    public function deactivate(): string
+    {
+        return $this->changeStatus(FamilyStatus::Inactive);
     }
 
     public function showCreateStudent(): string
@@ -935,6 +964,47 @@ final class FamilyController extends Controller
     private function personCatalogUnavailableMessage(): string
     {
         return 'No se puede guardar la persona porque faltan catálogos necesarios.';
+    }
+
+    private function changeStatus(FamilyStatus $target): string
+    {
+        $input = (new Request())->input();
+        $familyId = $this->positiveInteger($input['family_id'] ?? null);
+        if ($familyId === null) {
+            $this->session->put(self::FLASH_ERROR_KEY, 'Selecciona una familia válida.');
+
+            return $this->redirect('/families', 303);
+        }
+        if (!$this->csrf->isValid($this->scalarValue($input, '_csrf_token'))) {
+            $this->session->put(self::FLASH_ERROR_KEY, 'El formulario caducó. Inténtalo de nuevo.');
+
+            return $this->redirect('/families/show?id=' . $familyId, 303);
+        }
+
+        try {
+            $changed = $this->changeFamilyStatus->handle($familyId, $target);
+        } catch (FamilyNotFound) {
+            return $this->notFound();
+        } catch (Throwable) {
+            $this->session->put(
+                self::FLASH_ERROR_KEY,
+                'No se pudo cambiar el estado de la familia. Inténtalo de nuevo.',
+            );
+
+            return $this->redirect('/families/show?id=' . $familyId, 303);
+        }
+
+        $active = $target === FamilyStatus::Active;
+        $this->session->put(self::FLASH_SUCCESS_KEY, $changed
+            ? ($active ? 'La familia fue activada.' : 'La familia fue desactivada.')
+            : ($active ? 'La familia ya estaba activa.' : 'La familia ya estaba inactiva.'));
+
+        return $this->redirect('/families/show?id=' . $familyId, 303);
+    }
+
+    private function preventCaching(): void
+    {
+        header('Cache-Control: no-store');
     }
 
     private function redirect(string $location, int $status = 302): string

@@ -27,6 +27,9 @@ final readonly class GetAuthorizedFamilies
         $authorizedFamilies = [];
         $seenFamilyIds = [];
         foreach ($this->families->findActiveByRepresentativeId($representativeId) as $family) {
+            if (!$family->isActive()) {
+                continue;
+            }
             $familyId = $family->id();
             if ($familyId === null || isset($seenFamilyIds[$familyId->value()])) {
                 throw new InvalidPersistedFamilyResult(

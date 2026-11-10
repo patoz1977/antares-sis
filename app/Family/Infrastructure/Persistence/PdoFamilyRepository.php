@@ -206,6 +206,9 @@ final class PdoFamilyRepository implements FamilyRepository
         if ($family === null) {
             throw new RuntimeException('Locked active FamilyRepresentative references a missing Family.');
         }
+        if (!$family->isActive()) {
+            return null;
+        }
         $matches = array_values(array_filter(
             $family->activeRepresentatives(),
             static fn (FamilyRepresentative $membership): bool =>

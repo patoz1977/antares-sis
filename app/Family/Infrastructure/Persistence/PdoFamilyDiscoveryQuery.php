@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Family\Infrastructure\Persistence;
 
+use App\Family\Application\Discovery\Dto\FamilyDirectoryRepresentative;
+use App\Family\Application\Discovery\Dto\FamilyDirectoryStudent;
 use App\Family\Application\Discovery\Dto\FamilyDiscoveryRow;
 use App\Family\Application\Discovery\Dto\FamilyMatchedMember;
+use App\Family\Application\Discovery\FamilyDirectoryCriteria;
 use App\Family\Application\Discovery\FamilyDiscoveryCriteria;
 use App\Family\Application\Discovery\FamilyDiscoveryField;
 use App\Family\Application\Discovery\FamilyDiscoveryQuery;
@@ -24,9 +27,19 @@ final readonly class PdoFamilyDiscoveryQuery implements FamilyDiscoveryQuery
         $this->connection = $connectionManager->connection();
     }
 
-    public function search(FamilyDiscoveryCriteria $criteria): array
+    public function search(FamilyDirectoryCriteria $directory, int $academicPeriodId): array
     {
-        [$where, $parameters] = $this->familyPredicate($criteria);
+        if ($academicPeriodId <= 0) {
+            throw new RuntimeException('Family directory requires a valid AcademicPeriod identity.');
+        }
+        [$where, $parameters] = $directory->search === null
+            ? ['1 = 1', []]
+            : $this->familyPredicate($directory->search);
+        $statusCode = $directory->status->persistedCode();
+        if ($statusCode !== null) {
+            $where = '(' . $where . ') AND s.code = :familyStatus';
+            $parameters[':familyStatus'] = $statusCode;
+        }
         $statement = $this->connection->prepare(
             'SELECT f.id, f.family_code, f.display_name, s.code AS status_code, '
             . 'st.code AS status_type FROM families f '
@@ -41,9 +54,11 @@ final readonly class PdoFamilyDiscoveryQuery implements FamilyDiscoveryQuery
         foreach (array_slice($familyRows, 0, 30) as $row) {
             $visibleFamilyIds[] = $this->positiveInt($row['id'] ?? null, 'Family identity');
         }
-        $membersByFamily = $criteria->isPersonSearch()
-            ? $this->matchedMembers($visibleFamilyIds, $criteria)
+        $membersByFamily = $directory->search?->isPersonSearch() === true
+            ? $this->matchedMembers($visibleFamilyIds, $directory->search)
             : [];
+        $representativesByFamily = $this->primaryRepresentatives($visibleFamilyIds);
+        $studentsByFamily = $this->students($visibleFamilyIds, $academicPeriodId);
 
         $result = [];
         foreach ($familyRows as $row) {
@@ -57,10 +72,142 @@ final readonly class PdoFamilyDiscoveryQuery implements FamilyDiscoveryQuery
                 $this->requiredString($row['display_name'] ?? null, 'Family display name'),
                 $this->requiredString($row['status_code'] ?? null, 'Family status'),
                 $membersByFamily[$familyId] ?? [],
+                $representativesByFamily[$familyId] ?? null,
+                $studentsByFamily[$familyId] ?? [],
             );
         }
 
         return $result;
+    }
+
+    /** @param list<int> $familyIds
+     *  @return array<int, FamilyDirectoryRepresentative>
+     */
+    private function primaryRepresentatives(array $familyIds): array
+    {
+        if ($familyIds === []) {
+            return [];
+        }
+        [$placeholders, $parameters] = $this->familyParameters($familyIds, 'primaryFamily');
+        $statement = $this->connection->prepare(
+            'SELECT fr.family_id, r.id AS representative_id, p.first_name, p.middle_name, '
+            . 'p.first_surname, p.second_surname, p.mobile_phone, p.email '
+            . 'FROM family_representatives fr '
+            . 'INNER JOIN representatives r ON r.id = fr.representative_id '
+            . 'INNER JOIN persons p ON p.id = r.person_id '
+            . 'WHERE fr.ended_at IS NULL AND fr.is_primary = 1 '
+            . 'AND fr.family_id IN (' . implode(', ', $placeholders) . ') '
+            . 'ORDER BY fr.family_id, r.id'
+        );
+        $statement->execute($parameters);
+
+        $result = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $familyId = $this->positiveInt($row['family_id'] ?? null, 'Family identity');
+            $this->positiveInt($row['representative_id'] ?? null, 'Representative identity');
+            if (isset($result[$familyId])) {
+                throw new RuntimeException('Family directory returned multiple active primary Representatives.');
+            }
+            $result[$familyId] = new FamilyDirectoryRepresentative(
+                $this->fullName($row),
+                $this->optionalString($row['mobile_phone'] ?? null),
+                $this->optionalString($row['email'] ?? null),
+            );
+        }
+
+        return $result;
+    }
+
+    /** @param list<int> $familyIds
+     *  @return array<int, list<FamilyDirectoryStudent>>
+     */
+    private function students(array $familyIds, int $academicPeriodId): array
+    {
+        if ($familyIds === []) {
+            return [];
+        }
+        [$placeholders, $parameters] = $this->familyParameters($familyIds, 'studentFamily');
+        $parameters[':academicPeriodId'] = $academicPeriodId;
+        $statement = $this->connection->prepare(
+            'SELECT fs.family_id, stu.id AS student_id, p.first_name, p.middle_name, '
+            . 'p.first_surname, p.second_surname, e.id AS enrollment_id, '
+            . 'est.code AS enrollment_status, estt.code AS enrollment_status_type, '
+            . 'g.id AS grade_id, g.name AS grade_name, sec.id AS section_id, sec.name AS section_name '
+            . 'FROM family_students fs '
+            . 'INNER JOIN students stu ON stu.id = fs.student_id '
+            . 'INNER JOIN persons p ON p.id = stu.person_id '
+            . 'LEFT JOIN enrollments e ON e.student_id = stu.id '
+            . 'AND e.academic_period_id = :academicPeriodId '
+            . 'LEFT JOIN statuses est ON est.id = e.status_id '
+            . 'LEFT JOIN status_types estt ON estt.id = est.status_type_id '
+            . 'LEFT JOIN grades g ON g.id = e.grade_id '
+            . 'LEFT JOIN sections sec ON sec.id = e.section_id '
+            . 'WHERE fs.ended_at IS NULL AND fs.family_id IN (' . implode(', ', $placeholders) . ') '
+            . 'ORDER BY fs.family_id, p.first_surname, p.second_surname, '
+            . 'p.first_name, p.middle_name, stu.id'
+        );
+        $statement->execute($parameters);
+
+        $result = [];
+        $seen = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $familyId = $this->positiveInt($row['family_id'] ?? null, 'Family identity');
+            $studentId = $this->positiveInt($row['student_id'] ?? null, 'Student identity');
+            $key = $familyId . ':' . $studentId;
+            if (isset($seen[$key])) {
+                throw new RuntimeException('Family directory returned a duplicate current Student membership.');
+            }
+            $seen[$key] = true;
+
+            $enrollmentId = $row['enrollment_id'] ?? null;
+            if ($enrollmentId !== null) {
+                $this->positiveInt($enrollmentId, 'Enrollment identity');
+                if (($row['enrollment_status_type'] ?? null) !== 'ENROLLMENT_STATUS') {
+                    throw new RuntimeException('Family directory returned an invalid Enrollment status type.');
+                }
+                $this->requiredString($row['enrollment_status'] ?? null, 'Enrollment status');
+            }
+            $gradeId = $row['grade_id'] ?? null;
+            $sectionId = $row['section_id'] ?? null;
+            $grade = null;
+            $section = null;
+            if ($gradeId !== null) {
+                $this->positiveInt($gradeId, 'Grade identity');
+                $grade = $this->requiredString($row['grade_name'] ?? null, 'Grade name');
+            }
+            if ($sectionId !== null) {
+                if ($grade === null) {
+                    throw new RuntimeException('Family directory returned Section without Grade.');
+                }
+                $this->positiveInt($sectionId, 'Section identity');
+                $section = $this->requiredString($row['section_name'] ?? null, 'Section name');
+            }
+
+            $result[$familyId][] = new FamilyDirectoryStudent(
+                $studentId,
+                $this->fullName($row),
+                $grade,
+                $section,
+            );
+        }
+
+        return $result;
+    }
+
+    /** @param list<int> $familyIds
+     *  @return array{list<string>, array<string, int>}
+     */
+    private function familyParameters(array $familyIds, string $prefix): array
+    {
+        $placeholders = [];
+        $parameters = [];
+        foreach ($familyIds as $index => $familyId) {
+            $placeholder = ':' . $prefix . $index;
+            $placeholders[] = $placeholder;
+            $parameters[$placeholder] = $familyId;
+        }
+
+        return [$placeholders, $parameters];
     }
 
     /** @return array{string, array<string, string>} */
@@ -162,14 +309,8 @@ final readonly class PdoFamilyDiscoveryQuery implements FamilyDiscoveryQuery
         foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $familyId = $this->positiveInt($row['family_id'] ?? null, 'Family identity');
             $this->positiveInt($row['person_id'] ?? null, 'Person identity');
-            $fullName = implode(' ', array_values(array_filter([
-                $this->requiredString($row['first_name'] ?? null, 'first name'),
-                $this->nullableString($row['middle_name'] ?? null),
-                $this->requiredString($row['first_surname'] ?? null, 'first surname'),
-                $this->nullableString($row['second_surname'] ?? null),
-            ], static fn (?string $part): bool => $part !== null && $part !== '')));
             $result[$familyId][] = new FamilyMatchedMember(
-                $fullName,
+                $this->fullName($row),
                 $this->requiredString($row['role'] ?? null, 'member role'),
             );
         }
@@ -244,6 +385,27 @@ final readonly class PdoFamilyDiscoveryQuery implements FamilyDiscoveryQuery
         }
         if (!is_string($value)) {
             throw new RuntimeException('Family discovery returned invalid optional member data.');
+        }
+
+        return $value;
+    }
+
+    /** @param array<string, mixed> $row */
+    private function fullName(array $row): string
+    {
+        return implode(' ', array_values(array_filter([
+            $this->requiredString($row['first_name'] ?? null, 'first name'),
+            $this->nullableString($row['middle_name'] ?? null),
+            $this->requiredString($row['first_surname'] ?? null, 'first surname'),
+            $this->nullableString($row['second_surname'] ?? null),
+        ], static fn (?string $part): bool => $part !== null && $part !== '')));
+    }
+
+    private function optionalString(mixed $value): ?string
+    {
+        $value = $this->nullableString($value);
+        if ($value === null || trim($value) === '') {
+            return null;
         }
 
         return $value;

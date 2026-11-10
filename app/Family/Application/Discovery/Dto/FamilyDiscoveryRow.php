@@ -13,6 +13,9 @@ final readonly class FamilyDiscoveryRow
         public string $displayName,
         public string $status,
         public array $matchedMembers,
+        public ?FamilyDirectoryRepresentative $primaryRepresentative = null,
+        /** @var list<FamilyDirectoryStudent> */
+        public array $students = [],
     ) {
     }
 }

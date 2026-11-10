@@ -16,7 +16,7 @@ $searchErrors = is_array($searchErrors ?? null) ? $searchErrors : [];
 
 <section class="app-form-section" aria-labelledby="family-search-heading">
     <h2 class="h4" id="family-search-heading">Buscar familia</h2>
-    <p class="text-body-secondary">Elige un único criterio. Los resultados por persona explican qué miembros actuales produjeron la coincidencia.</p>
+    <p class="text-body-secondary">Elige un estado y, si necesitas acotar los resultados, un único criterio. Los resultados por persona explican qué miembros actuales produjeron la coincidencia.</p>
     <?php if ($searchErrors !== []): ?>
         <div class="alert alert-danger" role="alert"><ul class="mb-0"><?php foreach ($searchErrors as $error): ?><li><?= $escape($error) ?></li><?php endforeach; ?></ul></div>
     <?php endif; ?>
@@ -32,9 +32,18 @@ $searchErrors = is_array($searchErrors ?? null) ? $searchErrors : [];
         </div>
         <div class="col-lg-5">
             <label class="form-label" for="family-search-value">Valor</label>
-            <input class="form-control" id="family-search-value" name="value" type="text" maxlength="254" value="<?= $escape($searchValue ?? '') ?>" required autocomplete="off">
+            <input class="form-control" id="family-search-value" name="value" type="text" maxlength="254" value="<?= $escape($searchValue ?? '') ?>" autocomplete="off" aria-describedby="family-search-value-help">
+            <div class="form-text" id="family-search-value-help">Déjalo vacío para filtrar únicamente por estado.</div>
         </div>
-        <div class="col-lg-3"><button class="btn btn-outline-primary w-100" type="submit">Buscar familia</button></div>
+        <div class="col-lg-3">
+            <label class="form-label" for="family-status-filter">Estado</label>
+            <select class="form-select" id="family-status-filter" name="status" required>
+                <?php foreach (['active' => 'Activas', 'inactive' => 'Inactivas', 'all' => 'Todas'] as $value => $label): ?>
+                    <option value="<?= $escape($value) ?>" <?= ($directoryStatus ?? 'active') === $value ? 'selected' : '' ?>><?= $escape($label) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-12 col-lg-3 ms-lg-auto"><button class="btn btn-outline-primary w-100" type="submit">Aplicar filtros</button></div>
     </form>
 </section>
 
@@ -46,11 +55,17 @@ $searchErrors = is_array($searchErrors ?? null) ? $searchErrors : [];
     <?php else: ?>
         <?php if ($searchResult->hasMore): ?><p class="alert alert-warning">Existen más coincidencias. Refina la búsqueda para ver un resultado más específico.</p><?php endif; ?>
         <div class="table-responsive"><table class="table table-striped align-middle">
-            <caption>Familias que coinciden con el criterio seleccionado.</caption>
-            <thead><tr><th scope="col">Código</th><th scope="col">Nombre visible</th><th scope="col">Estado</th><th scope="col">Miembros coincidentes</th><th scope="col"><span class="visually-hidden">Acción</span></th></tr></thead>
+            <caption>Directorio administrativo de familias y sus integrantes vigentes.</caption>
+            <thead><tr><th scope="col">Código</th><th scope="col">Familia</th><th scope="col">Representante principal</th><th scope="col">Teléfono</th><th scope="col">Correo</th><th scope="col">Estudiantes</th><th scope="col">Grado / paralelo</th><th scope="col">Estado</th><th scope="col"><span class="visually-hidden">Acción</span></th></tr></thead>
             <tbody><?php foreach ($searchResult->rows as $row): ?><tr>
-                <td class="text-nowrap"><?= $escape($row->familyCode) ?></td><td><?= $escape($row->displayName) ?></td><td><?php $statusCode = $row->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></td>
-                <td><?php if ($row->matchedMembers === []): ?><span class="text-body-secondary">No aplica</span><?php else: ?><ul class="mb-0 ps-3"><?php foreach ($row->matchedMembers as $member): ?><li><?= $escape($member->fullName) ?> — <?= $escape($member->role) ?></li><?php endforeach; ?></ul><?php endif; ?></td>
+                <td class="text-nowrap"><?= $escape($row->familyCode) ?></td>
+                <td><?= $escape($row->displayName) ?><?php if ($row->matchedMembers !== []): ?><small class="d-block text-body-secondary">Coincidencia: <?php foreach ($row->matchedMembers as $index => $member): ?><?= $index > 0 ? '; ' : '' ?><?= $escape($member->fullName) ?> — <?= $escape($member->role) ?><?php endforeach; ?></small><?php endif; ?></td>
+                <td><?= $row->primaryRepresentative === null ? '<span class="text-body-secondary">Sin representante principal</span>' : $escape($row->primaryRepresentative->fullName) ?></td>
+                <td><?= $row->primaryRepresentative?->mobilePhone === null ? '<span class="text-body-secondary">Sin teléfono</span>' : $escape($row->primaryRepresentative->mobilePhone) ?></td>
+                <td><?= $row->primaryRepresentative?->personalEmail === null ? '<span class="text-body-secondary">Sin correo</span>' : $escape($row->primaryRepresentative->personalEmail) ?></td>
+                <td><?php if ($row->students === []): ?><span class="text-body-secondary">Sin estudiantes vigentes</span><?php else: ?><ul class="list-unstyled mb-0"><?php foreach ($row->students as $student): ?><li><?= $escape($student->fullName) ?></li><?php endforeach; ?></ul><?php endif; ?></td>
+                <td><?php if ($row->students === []): ?><span class="text-body-secondary">No aplica</span><?php else: ?><ul class="list-unstyled mb-0"><?php foreach ($row->students as $student): ?><li><?= $escape($student->academicPlacement()) ?></li><?php endforeach; ?></ul><?php endif; ?></td>
+                <td><?php $statusCode = $row->status; require dirname(__DIR__) . '/components/status-badge.php'; ?></td>
                 <td class="text-nowrap"><a class="btn btn-sm btn-outline-primary" href="/families/show?id=<?= $escape($row->familyId) ?>">Abrir detalle</a></td>
             </tr><?php endforeach; ?></tbody>
         </table></div>
