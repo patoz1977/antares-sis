@@ -27,9 +27,9 @@ final readonly class PdoFamilyDiscoveryQuery implements FamilyDiscoveryQuery
         $this->connection = $connectionManager->connection();
     }
 
-    public function search(FamilyDirectoryCriteria $directory, int $academicPeriodId): array
+    public function search(FamilyDirectoryCriteria $directory, ?int $academicPeriodId): array
     {
-        if ($academicPeriodId <= 0) {
+        if ($academicPeriodId !== null && $academicPeriodId <= 0) {
             throw new RuntimeException('Family directory requires a valid AcademicPeriod identity.');
         }
         [$where, $parameters] = $directory->search === null
@@ -121,7 +121,7 @@ final readonly class PdoFamilyDiscoveryQuery implements FamilyDiscoveryQuery
     /** @param list<int> $familyIds
      *  @return array<int, list<FamilyDirectoryStudent>>
      */
-    private function students(array $familyIds, int $academicPeriodId): array
+    private function students(array $familyIds, ?int $academicPeriodId): array
     {
         if ($familyIds === []) {
             return [];

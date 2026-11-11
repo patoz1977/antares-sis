@@ -97,13 +97,41 @@ function registerAdministrativeDiscoveryTests(TestRunner $runner): void
         }
         $familyQuery = new class($familyRows) implements FamilyDiscoveryQuery {
             public function __construct(private array $rows) {}
-            public function search(FamilyDirectoryCriteria $criteria, int $academicPeriodId): array { return $this->rows; }
+            public function search(FamilyDirectoryCriteria $criteria, ?int $academicPeriodId): array { return $this->rows; }
         };
         $familyResult = administrativeFamilySearch($familyQuery)->handle(new FamilyDirectoryCriteria(
             FamilyDirectoryStatus::Active,
             new FamilyDiscoveryCriteria('display_name', 'Fam'),
         ));
         assertSameValue([30, true], [count($familyResult->rows), $familyResult->hasMore]);
+
+        $periodlessQuery = new class implements FamilyDiscoveryQuery {
+            public ?int $receivedAcademicPeriodId = 99;
+
+            public function search(FamilyDirectoryCriteria $criteria, ?int $academicPeriodId): array
+            {
+                $this->receivedAcademicPeriodId = $academicPeriodId;
+
+                return [new FamilyDiscoveryRow(1, 'F00000001', 'Family', 'ACTIVE', [])];
+            }
+        };
+        $periodlessResult = (new SearchFamilies(
+            $periodlessQuery,
+            new GetActiveAcademicPeriod(new InMemoryAcademicPeriodRepository([])),
+        ))->handle(FamilyDirectoryCriteria::active());
+        assertSameValue(null, $periodlessQuery->receivedAcademicPeriodId);
+        assertSameValue(1, count($periodlessResult->rows));
+
+        administrativeDiscoveryAssertThrows(
+            static fn () => (new SearchFamilies(
+                $periodlessQuery,
+                new GetActiveAcademicPeriod(new InMemoryAcademicPeriodRepository([
+                    academicPeriodFixture(7, AcademicPeriodStatus::Active),
+                    academicPeriodFixture(8, AcademicPeriodStatus::Active),
+                ])),
+            ))->handle(FamilyDirectoryCriteria::active()),
+            \App\AcademicCore\Domain\Exception\AcademicPeriodOperationalStateConflict::class,
+        );
         foreach ([PersonDiscoveryRow::class, \App\Person\Application\Discovery\Dto\PersonDiscoveryResult::class,
             FamilyDiscoveryRow::class, \App\Family\Application\Discovery\Dto\FamilyDiscoveryResult::class,
         ] as $dto) {
@@ -174,6 +202,12 @@ function registerAdministrativeDiscoveryTests(TestRunner $runner): void
             static fn ($student): string => $student->academicPlacement(),
             $active[0]->students,
         ));
+        $withoutActivePeriod = $query->search(FamilyDirectoryCriteria::active(), null);
+        assertSameValue(['María Isabel Pérez Del Río'], array_column($withoutActivePeriod[0]->students, 'fullName'));
+        assertSameValue(['Sin ubicación académica'], array_map(
+            static fn ($student): string => $student->academicPlacement(),
+            $withoutActivePeriod[0]->students,
+        ));
         assertSameValue([11], array_column($query->search(new FamilyDirectoryCriteria(
             FamilyDirectoryStatus::Inactive,
         ), 7), 'familyId'));
@@ -223,7 +257,7 @@ function registerAdministrativeDiscoveryTests(TestRunner $runner): void
             /** @var list<FamilyDirectoryCriteria> */
             public array $received = [];
 
-            public function search(FamilyDirectoryCriteria $criteria, int $academicPeriodId): array
+            public function search(FamilyDirectoryCriteria $criteria, ?int $academicPeriodId): array
             {
                 $this->received[] = $criteria;
 

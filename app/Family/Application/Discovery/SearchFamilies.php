@@ -21,11 +21,7 @@ final readonly class SearchFamilies
     public function handle(FamilyDirectoryCriteria $criteria): FamilyDiscoveryResult
     {
         $activePeriod = $this->getActiveAcademicPeriod->handle();
-        if ($activePeriod === null) {
-            throw new RuntimeException('An ACTIVE AcademicPeriod is required for the Family directory.');
-        }
-
-        $rows = $this->query->search($criteria, $activePeriod->id);
+        $rows = $this->query->search($criteria, $activePeriod?->id);
         if (count($rows) > self::VISIBLE_LIMIT + 1) {
             throw new RuntimeException('Family discovery query exceeded its bounded contract.');
         }

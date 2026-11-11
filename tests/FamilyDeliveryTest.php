@@ -129,7 +129,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
     });
 
     $runner->add('Family status actions enforce CSRF preserve memberships and use PRG', function (): void {
-        [$controller, $environment] = familyDeliveryController();
+        [$controller, $environment, $session] = familyDeliveryController();
         $familyId = $environment->familyId;
         $beforeRepresentativeCount = count($environment->families
             ->findById(new \App\Family\Domain\ValueObject\FamilyId($familyId))?->representatives() ?? []);
@@ -142,6 +142,8 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         assertSameValue(303, http_response_code());
         assertSameValue(FamilyStatus::Active, $environment->families
             ->findById(new \App\Family\Domain\ValueObject\FamilyId($familyId))?->status());
+        deliveryRequest('GET', '/families/show?id=' . $familyId, ['id' => (string) $familyId]);
+        deliveryAssertContains('El formulario caducó. Inténtalo de nuevo.', $controller->show());
 
         deliveryRequest('POST', '/families/deactivate', [
             '_csrf_token' => 'delivery-csrf',
@@ -153,6 +155,8 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             ->findById(new \App\Family\Domain\ValueObject\FamilyId($familyId));
         assertSameValue(FamilyStatus::Inactive, $inactive?->status());
         assertSameValue($beforeRepresentativeCount, count($inactive?->representatives() ?? []));
+        deliveryRequest('GET', '/families/show?id=' . $familyId, ['id' => (string) $familyId]);
+        deliveryAssertContains('La familia fue desactivada.', $controller->show());
 
         deliveryRequest('POST', '/families/activate', [
             '_csrf_token' => 'delivery-csrf',
@@ -161,6 +165,12 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         assertSameValue('', $controller->activate());
         assertSameValue(FamilyStatus::Active, $environment->families
             ->findById(new \App\Family\Domain\ValueObject\FamilyId($familyId))?->status());
+        $session->put('_flash_family_error', '<fallo seguro>');
+        deliveryRequest('GET', '/families/show?id=' . $familyId, ['id' => (string) $familyId]);
+        $feedback = $controller->show();
+        deliveryAssertContains('La familia fue activada.', $feedback);
+        deliveryAssertContains('&lt;fallo seguro&gt;', $feedback);
+        assertSameValue(false, str_contains($feedback, '<fallo seguro>'));
     });
 
     $runner->add('Representative and Family form is composite catalog-backed and escaped', function (): void {
@@ -542,7 +552,7 @@ function familyDeliveryController(
             administrativeFamilySearch(new class implements \App\Family\Application\Discovery\FamilyDiscoveryQuery {
                 public function search(
                     \App\Family\Application\Discovery\FamilyDirectoryCriteria $criteria,
-                    int $academicPeriodId,
+                    ?int $academicPeriodId,
                 ): array {
                     return [];
                 }

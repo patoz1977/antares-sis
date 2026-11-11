@@ -31,6 +31,8 @@ $timestamp = static fn (DateTimeImmutable $value): string => $value->format(Date
     </div>
 </header>
 
+<?php require dirname(__DIR__) . '/components/feedback.php'; ?>
+
 <section class="app-data-card" aria-labelledby="family-identity-heading">
     <h2 class="h4" id="family-identity-heading">Identidad familiar</h2>
     <dl class="app-data-list">
