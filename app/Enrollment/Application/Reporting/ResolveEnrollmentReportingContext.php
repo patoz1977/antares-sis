@@ -16,7 +16,11 @@ final readonly class ResolveEnrollmentReportingContext
     ) {
     }
 
-    public function handle(int $academicPeriodId, mixed $requestedGradeSections): EnrollmentReportingContext
+    public function handle(
+        int $academicPeriodId,
+        mixed $requestedGradeSections,
+        ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::Active,
+    ): EnrollmentReportingContext
     {
         $period = $this->resolvePeriod->handle($academicPeriodId);
         $options = $this->gradeSections->findForAcademicPeriod($period->id);
@@ -55,6 +59,6 @@ final readonly class ResolveEnrollmentReportingContext
             $filter = ReportingGradeSectionFilter::selected($period->id, array_values($selected));
         }
 
-        return new EnrollmentReportingContext($period, $options, $filter);
+        return new EnrollmentReportingContext($period, $options, $filter, $studentStatusFilter);
     }
 }

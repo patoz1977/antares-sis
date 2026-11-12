@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 $reportPageTitle = 'Directorio de estudiantes y representantes';
-$reportPageDescription = 'Contacto familiar actual y ubicación académica del período seleccionado.';
+$showAllStudents = $selectedStudentStatus === 'all';
+$reportPageDescription = ($showAllStudents ? 'Estudiantes activos e inactivos. ' : 'Estudiantes activos. ')
+    . 'Contacto familiar actual y ubicación académica del período seleccionado.';
 $reportCsvPath = '/reports/enrollments/directory/csv';
 include __DIR__ . '/_navigation.php';
 $atomicName = static fn (
@@ -23,7 +25,7 @@ $atomicName = static fn (
 <p class="report-notice">El estado y la ubicación de la matrícula corresponden al período seleccionado. El contacto y la dirección son datos actuales del SIS.</p>
 <?php endif; ?>
 <?php if ($dataset === []): ?>
-<?php $emptyStateTitle = 'No hay estudiantes activos'; $emptyStateText = 'No existen estudiantes activos para presentar en este directorio.'; require dirname(__DIR__, 2) . '/components/empty-state.php'; ?>
+<?php $emptyStateTitle = $showAllStudents ? 'No hay estudiantes' : 'No hay estudiantes activos'; $emptyStateText = $showAllStudents ? 'No existen estudiantes para presentar en este directorio.' : 'No existen estudiantes activos para presentar en este directorio.'; require dirname(__DIR__, 2) . '/components/empty-state.php'; ?>
 <?php else: ?>
 <div class="report-table-wrap">
 <table class="table table-striped table-hover align-top">

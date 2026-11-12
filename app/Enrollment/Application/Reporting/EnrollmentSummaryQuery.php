@@ -12,5 +12,6 @@ interface EnrollmentSummaryQuery
     public function fetch(
         int $academicPeriodId,
         ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+        ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::All,
     ): array;
 }

@@ -6,6 +6,7 @@ namespace App\Enrollment\Infrastructure\Reporting;
 
 use App\Enrollment\Application\Reporting\EnrollmentReportingStatus;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\ReportingStudentStatusFilter;
 use App\Enrollment\Domain\ValueObject\BillingInformation;
 use App\Enrollment\Domain\ValueObject\IdentificationTypeId;
 use App\Enrollment\Domain\ValueObject\MedicalInformation;
@@ -63,6 +64,27 @@ abstract class PdoEnrollmentReportingQuery
         }
 
         return '(' . implode(' OR ', $pairs) . ')';
+    }
+
+    /** @param array<string, int|string> $parameters */
+    protected function studentStatusPredicate(
+        string $statusTypeAlias,
+        string $statusAlias,
+        ReportingStudentStatusFilter $filter,
+        array &$parameters,
+    ): string {
+        $parameters[':reportStudentStatusMode'] = $filter->value;
+        $parameters[':reportStudentStatusAllMode'] = ReportingStudentStatusFilter::All->value;
+        $parameters[':reportStudentGeneralStatusType'] = self::STUDENT_STATUS_TYPE;
+        $parameters[':reportStudentKnownActiveStatus'] = 'ACTIVE';
+        $parameters[':reportStudentKnownInactiveStatus'] = 'INACTIVE';
+        $parameters[':reportStudentSelectedActiveStatus'] = 'ACTIVE';
+
+        return '(:reportStudentStatusMode = :reportStudentStatusAllMode '
+            . "OR {$statusTypeAlias}.code <> :reportStudentGeneralStatusType "
+            . "OR {$statusAlias}.code NOT IN "
+            . '(:reportStudentKnownActiveStatus, :reportStudentKnownInactiveStatus) '
+            . "OR {$statusAlias}.code = :reportStudentSelectedActiveStatus)";
     }
 
     protected function positiveInt(mixed $value, string $field): int

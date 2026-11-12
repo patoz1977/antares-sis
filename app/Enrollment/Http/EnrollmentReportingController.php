@@ -9,6 +9,7 @@ use App\Enrollment\Application\Reporting\Dto\EnrollmentReportingContext;
 use App\Enrollment\Application\Reporting\Dto\EnrollmentReportingPeriods;
 use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingPeriodNotFound;
 use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingSelectionInvalid;
+use App\Enrollment\Application\Reporting\Exception\ReportingStudentStatusSelectionInvalid;
 use App\Enrollment\Application\Reporting\GetEnrollmentReportingPeriods;
 use App\Enrollment\Application\Reporting\GetEnrollmentSummaryReport;
 use App\Enrollment\Application\Reporting\GetPhysicalDepartureReport;
@@ -17,6 +18,7 @@ use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
 use App\Enrollment\Application\Reporting\GetStudentMedicalReport;
 use App\Enrollment\Application\Reporting\GetStudentRepresentativeDirectory;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\ReportingStudentStatusFilter;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingContext;
 use App\Enrollment\Application\Reporting\ResolveInspectionReportingContext;
 use App\Shared\Http\SafeErrorPage;
@@ -43,7 +45,7 @@ final class EnrollmentReportingController extends Controller
     public function index(): string
     {
         try {
-            [$periods, $context] = $this->reportingContext();
+            [$periods, $context] = $this->reportingContext(ReportingStudentStatusFilter::Active, false);
             $this->noStore();
 
             return $this->view('reports.enrollments.index', $this->viewData(
@@ -63,8 +65,9 @@ final class EnrollmentReportingController extends Controller
             'Enrollment Summary',
             '/reports/enrollments/summary',
             'reports.enrollments.summary',
-            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
-                $this->getSummary->handle($periodId, $filter),
+            ReportingStudentStatusFilter::All,
+            fn (int $periodId, ReportingGradeSectionFilter $filter, ReportingStudentStatusFilter $status): mixed =>
+                $this->getSummary->handle($periodId, $filter, $status),
         );
     }
 
@@ -74,8 +77,9 @@ final class EnrollmentReportingController extends Controller
             'Student Enrollment List',
             '/reports/enrollments/students',
             'reports.enrollments.students',
-            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
-                $this->getStudents->handle($periodId, $filter),
+            ReportingStudentStatusFilter::Active,
+            fn (int $periodId, ReportingGradeSectionFilter $filter, ReportingStudentStatusFilter $status): mixed =>
+                $this->getStudents->handle($periodId, $filter, $status),
         );
     }
 
@@ -85,8 +89,9 @@ final class EnrollmentReportingController extends Controller
             'Student and Representative Directory',
             '/reports/enrollments/directory',
             'reports.enrollments.directory',
-            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
-                $this->getDirectory->handle($periodId, $filter),
+            ReportingStudentStatusFilter::Active,
+            fn (int $periodId, ReportingGradeSectionFilter $filter, ReportingStudentStatusFilter $status): mixed =>
+                $this->getDirectory->handle($periodId, $filter, $status),
         );
     }
 
@@ -96,8 +101,9 @@ final class EnrollmentReportingController extends Controller
             'Student Billing Information',
             '/reports/enrollments/billing',
             'reports.enrollments.billing',
-            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
-                $this->getBilling->handle($periodId, $filter),
+            ReportingStudentStatusFilter::Active,
+            fn (int $periodId, ReportingGradeSectionFilter $filter, ReportingStudentStatusFilter $status): mixed =>
+                $this->getBilling->handle($periodId, $filter, $status),
         );
     }
 
@@ -107,8 +113,9 @@ final class EnrollmentReportingController extends Controller
             'Student Medical Information',
             '/reports/enrollments/medical',
             'reports.enrollments.medical',
-            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
-                $this->getMedical->handle($periodId, $filter),
+            ReportingStudentStatusFilter::Active,
+            fn (int $periodId, ReportingGradeSectionFilter $filter, ReportingStudentStatusFilter $status): mixed =>
+                $this->getMedical->handle($periodId, $filter, $status),
         );
     }
 
@@ -131,8 +138,9 @@ final class EnrollmentReportingController extends Controller
     {
         return $this->csvReport(
             'enrollment-summary-period-',
-            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
-                $this->getSummary->handle($periodId, $filter),
+            ReportingStudentStatusFilter::All,
+            fn (int $periodId, ReportingGradeSectionFilter $filter, ReportingStudentStatusFilter $status): mixed =>
+                $this->getSummary->handle($periodId, $filter, $status),
             fn (mixed $dataset): string => $this->csv->summary($dataset),
         );
     }
@@ -141,8 +149,9 @@ final class EnrollmentReportingController extends Controller
     {
         return $this->csvReport(
             'student-enrollment-period-',
-            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
-                $this->getStudents->handle($periodId, $filter),
+            ReportingStudentStatusFilter::Active,
+            fn (int $periodId, ReportingGradeSectionFilter $filter, ReportingStudentStatusFilter $status): mixed =>
+                $this->getStudents->handle($periodId, $filter, $status),
             fn (mixed $dataset): string => $this->csv->students($dataset),
         );
     }
@@ -151,8 +160,9 @@ final class EnrollmentReportingController extends Controller
     {
         return $this->csvReport(
             'student-directory-period-',
-            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
-                $this->getDirectory->handle($periodId, $filter),
+            ReportingStudentStatusFilter::Active,
+            fn (int $periodId, ReportingGradeSectionFilter $filter, ReportingStudentStatusFilter $status): mixed =>
+                $this->getDirectory->handle($periodId, $filter, $status),
             fn (mixed $dataset): string => $this->csv->directory($dataset),
         );
     }
@@ -161,8 +171,9 @@ final class EnrollmentReportingController extends Controller
     {
         return $this->csvReport(
             'student-billing-period-',
-            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
-                $this->getBilling->handle($periodId, $filter),
+            ReportingStudentStatusFilter::Active,
+            fn (int $periodId, ReportingGradeSectionFilter $filter, ReportingStudentStatusFilter $status): mixed =>
+                $this->getBilling->handle($periodId, $filter, $status),
             fn (mixed $dataset): string => $this->csv->billing($dataset),
         );
     }
@@ -171,8 +182,9 @@ final class EnrollmentReportingController extends Controller
     {
         return $this->csvReport(
             'student-medical-period-',
-            fn (int $periodId, ReportingGradeSectionFilter $filter): mixed =>
-                $this->getMedical->handle($periodId, $filter),
+            ReportingStudentStatusFilter::Active,
+            fn (int $periodId, ReportingGradeSectionFilter $filter, ReportingStudentStatusFilter $status): mixed =>
+                $this->getMedical->handle($periodId, $filter, $status),
             fn (mixed $dataset): string => $this->csv->medical($dataset),
         );
     }
@@ -193,17 +205,34 @@ final class EnrollmentReportingController extends Controller
         }
     }
 
-    /** @param callable(int, ReportingGradeSectionFilter): mixed $load */
-    private function htmlReport(string $title, string $path, string $view, callable $load): string
+    /** @param callable(int, ReportingGradeSectionFilter, ReportingStudentStatusFilter): mixed $load */
+    private function htmlReport(
+        string $title,
+        string $path,
+        string $view,
+        ReportingStudentStatusFilter $defaultStudentStatus,
+        callable $load,
+    ): string
     {
         try {
-            [$periods, $context] = $this->reportingContext();
+            [$periods, $context, $studentStatusExplicit] = $this->reportingContext($defaultStudentStatus);
             $dataset = $context === null
                 ? null
-                : $load($context->academicPeriod->id, $context->gradeSectionFilter);
+                : $load(
+                    $context->academicPeriod->id,
+                    $context->gradeSectionFilter,
+                    $context->studentStatusFilter,
+                );
             $this->noStore();
 
-            return $this->view($view, $this->viewData($title, $path, $periods, $context) + [
+            return $this->view($view, $this->viewData(
+                $title,
+                $path,
+                $periods,
+                $context,
+                true,
+                $studentStatusExplicit,
+            ) + [
                 'dataset' => $dataset,
             ]);
         } catch (Throwable $exception) {
@@ -211,16 +240,27 @@ final class EnrollmentReportingController extends Controller
         }
     }
 
-    /** @param callable(int, ReportingGradeSectionFilter): mixed $load @param callable(mixed): string $write */
-    private function csvReport(string $filenamePrefix, callable $load, callable $write): string
+    /** @param callable(int, ReportingGradeSectionFilter, ReportingStudentStatusFilter): mixed $load
+     *  @param callable(mixed): string $write
+     */
+    private function csvReport(
+        string $filenamePrefix,
+        ReportingStudentStatusFilter $defaultStudentStatus,
+        callable $load,
+        callable $write,
+    ): string
     {
         try {
-            [, $context] = $this->reportingContext();
+            [, $context] = $this->reportingContext($defaultStudentStatus);
             if ($context === null) {
                 throw new InvalidArgumentException('An AcademicPeriod selection is required.');
             }
 
-            $dataset = $load($context->academicPeriod->id, $context->gradeSectionFilter);
+            $dataset = $load(
+                $context->academicPeriod->id,
+                $context->gradeSectionFilter,
+                $context->studentStatusFilter,
+            );
             $content = $write($dataset);
             $filename = $filenamePrefix . $context->academicPeriod->id . '.csv';
 
@@ -230,14 +270,21 @@ final class EnrollmentReportingController extends Controller
         }
     }
 
-    /** @return array{EnrollmentReportingPeriods, ?EnrollmentReportingContext} */
-    private function reportingContext(): array
+    /** @return array{EnrollmentReportingPeriods, ?EnrollmentReportingContext, bool} */
+    private function reportingContext(
+        ReportingStudentStatusFilter $defaultStudentStatus,
+        bool $studentStatusAllowed = true,
+    ): array
     {
         $query = (new Request())->query();
         $keys = array_keys($query);
         sort($keys, SORT_STRING);
+        $allowed = ['academic_period_id', 'grade_section'];
+        if ($studentStatusAllowed) {
+            $allowed[] = 'student_status';
+        }
         foreach ($keys as $key) {
-            if (!in_array($key, ['academic_period_id', 'grade_section'], true)) {
+            if (!in_array($key, $allowed, true)) {
                 throw new InvalidArgumentException('Invalid reporting selector.');
             }
         }
@@ -252,6 +299,18 @@ final class EnrollmentReportingController extends Controller
         }
 
         $requestedGradeSections = $query['grade_section'] ?? null;
+        $studentStatusExplicit = array_key_exists('student_status', $query);
+        $studentStatus = $defaultStudentStatus;
+        if ($studentStatusExplicit) {
+            $requestedStudentStatus = $query['student_status'];
+            if (!is_string($requestedStudentStatus)
+                || trim($requestedStudentStatus) !== $requestedStudentStatus
+            ) {
+                throw new ReportingStudentStatusSelectionInvalid('Invalid Student status selection.');
+            }
+            $studentStatus = ReportingStudentStatusFilter::tryFrom($requestedStudentStatus)
+                ?? throw new ReportingStudentStatusSelectionInvalid('Unknown Student status selection.');
+        }
         if ($periodId === null) {
             if ($requestedGradeSections !== null) {
                 throw new EnrollmentReportingSelectionInvalid(
@@ -259,10 +318,14 @@ final class EnrollmentReportingController extends Controller
                 );
             }
 
-            return [$periods, null];
+            return [$periods, null, $studentStatusExplicit];
         }
 
-        return [$periods, $this->resolveContext->handle($periodId, $requestedGradeSections)];
+        return [
+            $periods,
+            $this->resolveContext->handle($periodId, $requestedGradeSections, $studentStatus),
+            $studentStatusExplicit,
+        ];
     }
 
     private function inspectionContext(): EnrollmentReportingContext
@@ -301,6 +364,9 @@ final class EnrollmentReportingController extends Controller
             'selectedGradeSections' => $selectedGradeSections,
             'gradeSectionFilterActive' => $selectedGradeSections !== [],
             'inspectionActivePeriodOnly' => true,
+            'studentStatusFilterAvailable' => false,
+            'selectedStudentStatus' => ReportingStudentStatusFilter::Active->value,
+            'studentStatusExplicit' => false,
         ];
     }
 
@@ -310,10 +376,15 @@ final class EnrollmentReportingController extends Controller
         string $path,
         EnrollmentReportingPeriods $periods,
         ?EnrollmentReportingContext $context,
+        bool $studentStatusFilterAvailable = false,
+        bool $studentStatusExplicit = false,
     ): array {
         $selected = $context?->academicPeriod;
         $selectedGradeSections = $context?->gradeSectionFilter->keys() ?? [];
         $periodParameters = $selected === null ? [] : ['academic_period_id' => $selected->id];
+        if ($studentStatusFilterAvailable && $studentStatusExplicit && $context !== null) {
+            $periodParameters['student_status'] = $context->studentStatusFilter->value;
+        }
         $reportParameters = $periodParameters;
         if ($selectedGradeSections !== []) {
             $reportParameters['grade_section'] = $selectedGradeSections;
@@ -337,6 +408,9 @@ final class EnrollmentReportingController extends Controller
             'gradeSectionOptions' => $context?->gradeSectionOptions ?? [],
             'selectedGradeSections' => $selectedGradeSections,
             'gradeSectionFilterActive' => $selectedGradeSections !== [],
+            'studentStatusFilterAvailable' => $studentStatusFilterAvailable,
+            'selectedStudentStatus' => $context?->studentStatusFilter->value,
+            'studentStatusExplicit' => $studentStatusExplicit,
         ];
     }
 
@@ -358,9 +432,11 @@ final class EnrollmentReportingController extends Controller
             default => 500,
         };
         $message = match ($status) {
-            400 => $exception instanceof EnrollmentReportingSelectionInvalid
-                ? 'Selecciona combinaciones válidas de grado y paralelo.'
-                : 'Seleccione un período académico válido.',
+            400 => $exception instanceof ReportingStudentStatusSelectionInvalid
+                ? 'Selecciona un estado actual de estudiante válido.'
+                : ($exception instanceof EnrollmentReportingSelectionInvalid
+                    ? 'Selecciona combinaciones válidas de grado y paralelo.'
+                    : 'Seleccione un período académico válido.'),
             404 => 'El período académico no está disponible.',
             default => 'No se pudo generar el reporte.',
         };

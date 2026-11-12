@@ -7,6 +7,7 @@ namespace App\Enrollment\Infrastructure\Reporting;
 use App\Enrollment\Application\Reporting\Dto\StudentMedicalReportRow;
 use App\Enrollment\Application\Reporting\StudentMedicalReportQuery;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\ReportingStudentStatusFilter;
 use RuntimeException;
 
 final class PdoStudentMedicalReportQuery extends PdoEnrollmentReportingQuery implements StudentMedicalReportQuery
@@ -14,6 +15,7 @@ final class PdoStudentMedicalReportQuery extends PdoEnrollmentReportingQuery imp
     public function fetch(
         int $academicPeriodId,
         ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+        ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::Active,
     ): array
     {
         $this->positiveInt($academicPeriodId, 'AcademicPeriod identity');
@@ -22,6 +24,12 @@ final class PdoStudentMedicalReportQuery extends PdoEnrollmentReportingQuery imp
             'e',
             $academicPeriodId,
             $gradeSectionFilter,
+            $parameters,
+        );
+        $studentStatusPredicate = $this->studentStatusPredicate(
+            'student_status_type',
+            'student_status',
+            $studentStatusFilter,
             $parameters,
         );
         $rows = $this->rows(
@@ -48,7 +56,7 @@ final class PdoStudentMedicalReportQuery extends PdoEnrollmentReportingQuery imp
             . 'ON enrollment_status_type.id = enrollment_status.status_type_id '
             . 'LEFT JOIN grades g ON g.id = e.grade_id '
             . 'LEFT JOIN sections sec ON sec.id = e.section_id '
-            . 'WHERE ' . $gradeSectionPredicate . ' '
+            . 'WHERE ' . $gradeSectionPredicate . ' AND ' . $studentStatusPredicate . ' '
             . 'ORDER BY CASE WHEN g.id IS NULL THEN 1 ELSE 0 END, g.sort_order, g.id, '
             . 'CASE WHEN sec.id IS NULL THEN 1 ELSE 0 END, sec.name, sec.id, '
             . 'p.first_surname, p.second_surname, p.first_name, p.middle_name, s.id',
@@ -68,7 +76,7 @@ final class PdoStudentMedicalReportQuery extends PdoEnrollmentReportingQuery imp
             [$gradeId, $gradeName, $sectionId, $sectionName] = $this->placement($row);
             [$surnames, $names] = $this->studentName($row);
             $medical = $this->medicalInformation($row);
-            if (!$active) {
+            if (!$studentStatusFilter->includes($active)) {
                 continue;
             }
 

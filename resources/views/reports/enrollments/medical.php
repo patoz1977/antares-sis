@@ -3,14 +3,16 @@
 declare(strict_types=1);
 
 $reportPageTitle = 'Reporte médico';
-$reportPageDescription = 'Información médica anual sensible del período seleccionado.';
+$showAllStudents = $selectedStudentStatus === 'all';
+$reportPageDescription = ($showAllStudents ? 'Estudiantes activos e inactivos. ' : 'Estudiantes activos. ')
+    . 'Información médica anual sensible del período seleccionado.';
 $reportCsvPath = '/reports/enrollments/medical/csv';
 include __DIR__ . '/_navigation.php';
 ?>
 <?php if (!$selectionRequired): ?>
 <p class="report-notice app-sensitive-data">Acceso restringido: utiliza esta información únicamente para la finalidad institucional autorizada.</p>
 <?php if ($dataset === []): ?>
-<?php $emptyStateTitle = 'No hay estudiantes activos'; $emptyStateText = 'No existen datos médicos para presentar en este reporte.'; require dirname(__DIR__, 2) . '/components/empty-state.php'; ?>
+<?php $emptyStateTitle = $showAllStudents ? 'No hay estudiantes' : 'No hay estudiantes activos'; $emptyStateText = 'No existen datos médicos para presentar en este reporte.'; require dirname(__DIR__, 2) . '/components/empty-state.php'; ?>
 <?php else: ?>
 <div class="report-table-wrap">
 <table class="table table-striped table-hover">

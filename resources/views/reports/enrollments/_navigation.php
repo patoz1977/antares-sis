@@ -24,6 +24,9 @@ $reportPageTitle = is_string($reportPageTitle ?? null) ? $reportPageTitle : 'Rep
 $reportPageDescription = is_string($reportPageDescription ?? null) ? $reportPageDescription : '';
 $reportCsvPath = is_string($reportCsvPath ?? null) ? $reportCsvPath : null;
 $inspectionActivePeriodOnly = ($inspectionActivePeriodOnly ?? false) === true;
+$studentStatusFilterAvailable = ($studentStatusFilterAvailable ?? false) === true;
+$selectedStudentStatus = is_string($selectedStudentStatus ?? null) ? $selectedStudentStatus : null;
+$studentStatusExplicit = ($studentStatusExplicit ?? false) === true;
 ?>
 <header class="app-page-header d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-start">
     <div>
@@ -51,6 +54,7 @@ $inspectionActivePeriodOnly = ($inspectionActivePeriodOnly ?? false) === true;
     <p class="mb-0">Período académico activo: <strong><?= $escape($selectedPeriod->code . ' — ' . $selectedPeriod->name) ?></strong></p>
 <?php else: ?>
     <form class="row g-3 align-items-end" method="get" action="<?= $escape($reportPath) ?>">
+        <?php if ($studentStatusFilterAvailable && $studentStatusExplicit): ?><input type="hidden" name="student_status" value="<?= $escape($selectedStudentStatus) ?>"><?php endif; ?>
         <div class="col-lg-9">
             <label class="form-label" for="academic_period_id">Período académico</label>
             <select class="form-select" id="academic_period_id" name="academic_period_id" required>
@@ -70,6 +74,33 @@ $inspectionActivePeriodOnly = ($inspectionActivePeriodOnly ?? false) === true;
 <?php else: ?>
 <?php if (!$inspectionActivePeriodOnly): ?><p>Período seleccionado: <strong><?= $escape($selectedPeriod->code . ' — ' . $selectedPeriod->name) ?></strong> (<?= $escape($selectedPeriod->status->value === 'ACTIVE' ? 'Activo' : 'Inactivo') ?>)</p><?php endif; ?>
 
+<?php if ($studentStatusFilterAvailable): ?>
+<section class="app-form-section" aria-labelledby="report-student-status-heading">
+    <h2 class="h4" id="report-student-status-heading">Estado actual del estudiante</h2>
+    <p class="text-body-secondary">El estado corresponde a la situación actual del estudiante, incluso al consultar un período histórico.</p>
+    <form method="get" action="<?= $escape($reportPath) ?>">
+        <input type="hidden" name="academic_period_id" value="<?= $escape($selectedPeriodId) ?>">
+<?php foreach ($selectedGradeSections as $selectedGradeSection): ?>
+        <input type="hidden" name="grade_section[]" value="<?= $escape($selectedGradeSection) ?>">
+<?php endforeach; ?>
+        <fieldset>
+            <legend class="visually-hidden">Selecciona el estado actual de los estudiantes</legend>
+            <div class="d-flex flex-column flex-sm-row gap-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="student_status" id="student_status_active" value="active"<?= $selectedStudentStatus === 'active' ? ' checked' : '' ?>>
+                    <label class="form-check-label" for="student_status_active">Solo activos</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="student_status" id="student_status_all" value="all"<?= $selectedStudentStatus === 'all' ? ' checked' : '' ?>>
+                    <label class="form-check-label" for="student_status_all">Todos (activos e inactivos)</label>
+                </div>
+            </div>
+        </fieldset>
+        <button class="btn btn-outline-primary mt-3" type="submit">Aplicar estado</button>
+    </form>
+</section>
+<?php endif; ?>
+
 <section class="app-form-section" aria-labelledby="report-grade-section-heading">
     <div class="d-flex flex-column flex-md-row justify-content-between gap-2 align-items-md-start">
         <div>
@@ -88,6 +119,7 @@ $inspectionActivePeriodOnly = ($inspectionActivePeriodOnly ?? false) === true;
     <?php else: ?>
     <form class="mt-3" method="get" action="<?= $escape($reportPath) ?>">
         <?php if (!$inspectionActivePeriodOnly): ?><input type="hidden" name="academic_period_id" value="<?= $escape($selectedPeriodId) ?>"><?php endif; ?>
+        <?php if ($studentStatusFilterAvailable && $studentStatusExplicit): ?><input type="hidden" name="student_status" value="<?= $escape($selectedStudentStatus) ?>"><?php endif; ?>
         <fieldset>
             <legend class="visually-hidden">Combinaciones de grado y paralelo</legend>
             <div class="row g-2">

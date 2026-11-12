@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Enrollment\Application\Reporting\Dto;
 
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\ReportingStudentStatusFilter;
 
 final readonly class EnrollmentReportingContext
 {
@@ -13,6 +14,7 @@ final readonly class EnrollmentReportingContext
         public ReportingAcademicPeriod $academicPeriod,
         public array $gradeSectionOptions,
         public ReportingGradeSectionFilter $gradeSectionFilter,
+        public ReportingStudentStatusFilter $studentStatusFilter,
     ) {
     }
 }

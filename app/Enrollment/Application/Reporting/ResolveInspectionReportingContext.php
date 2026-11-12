@@ -31,7 +31,11 @@ final readonly class ResolveInspectionReportingContext
             throw new InvalidArgumentException('The requested AcademicPeriod is not the ACTIVE AcademicPeriod.');
         }
 
-        $context = $this->resolveReportingContext->handle($active->id, $requestedGradeSections);
+        $context = $this->resolveReportingContext->handle(
+            $active->id,
+            $requestedGradeSections,
+            ReportingStudentStatusFilter::Active,
+        );
         if ($context->academicPeriod->status !== AcademicPeriodStatus::Active) {
             throw new RuntimeException('The operational reporting context is not ACTIVE.');
         }
