@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests;
 
 use App\Family\Application\GetFamily;
+use App\Family\Application\ChangeFamilyStatus;
 use App\Family\Domain\FamilyRepository;
 use App\Family\Domain\FamilyStatus;
 use App\Family\Http\FamilyAdministrationMiddleware;
@@ -80,7 +81,10 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         ] as $route) {
             assertSameValue(true, str_contains($routes, $route));
         }
-        assertSameValue(28, substr_count($routes, '], $familyMiddleware);'));
+        foreach (["post('/families/activate'", "post('/families/deactivate'"] as $route) {
+            assertSameValue(true, str_contains($routes, $route));
+        }
+        assertSameValue(30, substr_count($routes, '], $familyMiddleware);'));
         assertSameValue(false, str_contains($routes, '/families/delete'));
         assertSameValue(false, method_exists(FamilyController::class, 'delete'));
 
@@ -122,6 +126,51 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         assertSameValue('', $controller->show());
         assertSameValue(302, http_response_code());
         deliveryAssertContains('identificador válido de familia', $controller->index());
+    });
+
+    $runner->add('Family status actions enforce CSRF preserve memberships and use PRG', function (): void {
+        [$controller, $environment, $session] = familyDeliveryController();
+        $familyId = $environment->familyId;
+        $beforeRepresentativeCount = count($environment->families
+            ->findById(new \App\Family\Domain\ValueObject\FamilyId($familyId))?->representatives() ?? []);
+
+        deliveryRequest('POST', '/families/deactivate', [
+            '_csrf_token' => 'invalid',
+            'family_id' => (string) $familyId,
+        ]);
+        assertSameValue('', $controller->deactivate());
+        assertSameValue(303, http_response_code());
+        assertSameValue(FamilyStatus::Active, $environment->families
+            ->findById(new \App\Family\Domain\ValueObject\FamilyId($familyId))?->status());
+        deliveryRequest('GET', '/families/show?id=' . $familyId, ['id' => (string) $familyId]);
+        deliveryAssertContains('El formulario caducó. Inténtalo de nuevo.', $controller->show());
+
+        deliveryRequest('POST', '/families/deactivate', [
+            '_csrf_token' => 'delivery-csrf',
+            'family_id' => (string) $familyId,
+        ]);
+        assertSameValue('', $controller->deactivate());
+        assertSameValue(303, http_response_code());
+        $inactive = $environment->families
+            ->findById(new \App\Family\Domain\ValueObject\FamilyId($familyId));
+        assertSameValue(FamilyStatus::Inactive, $inactive?->status());
+        assertSameValue($beforeRepresentativeCount, count($inactive?->representatives() ?? []));
+        deliveryRequest('GET', '/families/show?id=' . $familyId, ['id' => (string) $familyId]);
+        deliveryAssertContains('La familia fue desactivada.', $controller->show());
+
+        deliveryRequest('POST', '/families/activate', [
+            '_csrf_token' => 'delivery-csrf',
+            'family_id' => (string) $familyId,
+        ]);
+        assertSameValue('', $controller->activate());
+        assertSameValue(FamilyStatus::Active, $environment->families
+            ->findById(new \App\Family\Domain\ValueObject\FamilyId($familyId))?->status());
+        $session->put('_flash_family_error', '<fallo seguro>');
+        deliveryRequest('GET', '/families/show?id=' . $familyId, ['id' => (string) $familyId]);
+        $feedback = $controller->show();
+        deliveryAssertContains('La familia fue activada.', $feedback);
+        deliveryAssertContains('&lt;fallo seguro&gt;', $feedback);
+        assertSameValue(false, str_contains($feedback, '<fallo seguro>'));
     });
 
     $runner->add('Representative and Family form is composite catalog-backed and escaped', function (): void {
@@ -428,13 +477,15 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
             \App\Person\Http\PersonFormOptionsProvider::class,
             FamilyFormOptionsProvider::class,
             \App\Family\Http\FamilyMemberLabelsProvider::class,
+            \App\Family\Application\Discovery\SearchFamilies::class,
+            ChangeFamilyStatus::class,
         ], $dependencies);
         foreach (['PDO', 'SELECT ', 'INSERT ', 'UPDATE ', 'DELETE ', 'beginTransaction', 'new Person', 'new Student', 'new Family'] as $forbidden) {
             assertSameValue(false, str_contains($controller, $forbidden));
         }
         assertSameValue(1, substr_count($controller, '$this->createRepresentativeFamily->handle('));
         assertSameValue(1, substr_count($controller, '$this->createStudentInFamily->handle('));
-        assertSameValue(false, str_contains($controller, 'catch (Throwable'));
+        assertSameValue(2, substr_count($controller, 'catch (Throwable'));
         assertSameValue(false, str_contains($controller, 'catch (RuntimeException'));
 
         $views = '';
@@ -448,7 +499,7 @@ function registerFamilyDeliveryTests(TestRunner $runner): void
         assertSameValue(false, str_contains($views, 'RepresentativeStudent'));
         assertSameValue(false, str_contains($views, 'name="username"'));
         assertSameValue(false, str_contains($views, 'name="password"'));
-        assertSameValue(20, substr_count($views, 'name="_csrf_token"'));
+        assertSameValue(22, substr_count($views, 'name="_csrf_token"'));
     });
 }
 
@@ -498,6 +549,15 @@ function familyDeliveryController(
                     );
                 }
             },
+            administrativeFamilySearch(new class implements \App\Family\Application\Discovery\FamilyDiscoveryQuery {
+                public function search(
+                    \App\Family\Application\Discovery\FamilyDirectoryCriteria $criteria,
+                    ?int $academicPeriodId,
+                ): array {
+                    return [];
+                }
+            }),
+            new ChangeFamilyStatus(new ImmediateTransactionManager(), $familyRepository),
         ),
         $environment,
         $session,

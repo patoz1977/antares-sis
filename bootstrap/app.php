@@ -169,6 +169,7 @@ use App\Family\Application\AssignAuthorizedPickup;
 use App\Family\Application\AssignEmergencyContact;
 use App\Family\Application\AssignRepresentativeAddress;
 use App\Family\Application\AssignStudentAddress;
+use App\Family\Application\ChangeFamilyStatus;
 use App\Family\Application\CreateFamily;
 use App\Family\Application\Discovery\FamilyDiscoveryQuery;
 use App\Family\Application\Discovery\SearchFamilies;
@@ -527,6 +528,7 @@ $container->singleton(GetPhysicalDepartureReport::class, GetPhysicalDepartureRep
 $container->singleton(FamilyRepository::class, PdoFamilyRepository::class);
 $container->singleton(FamilyDiscoveryQuery::class, PdoFamilyDiscoveryQuery::class);
 $container->singleton(SearchFamilies::class, SearchFamilies::class);
+$container->singleton(ChangeFamilyStatus::class, ChangeFamilyStatus::class);
 $container->singleton(FamilyCodeGenerator::class, RandomFamilyCodeGenerator::class);
 $container->singleton(RelationshipTypeLookup::class, PdoRelationshipTypeLookup::class);
 $container->singleton(DocumentTypeLookup::class, PdoDocumentTypeLookup::class);

@@ -67,7 +67,7 @@ function registerFamilyContextAuthorizationTests(TestRunner $runner): void
         assertSameValue(0, $fixture['families']->saveCalls());
     });
 
-    $runner->add('Authorized Families preserve exact stable identities names and Family status semantics', function (): void {
+    $runner->add('Authorized Families preserve identities and exclude inactive Family roots', function (): void {
         $fixture = familyContextAuthorizationFixture();
         $fixture['families']->seed(familyContextFamily(30, 'Thirty', [33]));
         $fixture['families']->seed(familyContextFamily(
@@ -81,12 +81,12 @@ function registerFamilyContextAuthorizationTests(TestRunner $runner): void
 
         $authorized = $fixture['get']->handle();
 
-        assertSameValue([10, 30], array_map(
+        assertSameValue([30], array_map(
             static fn (AuthorizedFamily $family): int => $family->familyId,
             $authorized?->families ?? [],
         ));
         assertSameValue(
-            ['Inactive Family Still Authorized', 'Thirty'],
+            ['Thirty'],
             array_map(
                 static fn (AuthorizedFamily $family): string => $family->displayName,
                 $authorized?->families ?? [],
@@ -227,6 +227,29 @@ function registerFamilyContextAuthorizationTests(TestRunner $runner): void
         assertSameValue(20, $access?->context?->familyId);
         assertSameValue(false, $access?->requiresSelection);
         assertSameValue(20, $fixture['session']->get('representative_family_context_id'));
+    });
+
+    $runner->add('Inactive Family loses Portal access while another active Family remains selectable', function (): void {
+        $fixture = familyContextAuthorizationFixture();
+        $fixture['families']->seed(familyContextFamily(10, 'Deactivate A', [33]));
+        $fixture['families']->seed(familyContextFamily(20, 'Remaining B', [33]));
+        $fixture['select']->handle(10);
+
+        $family = $fixture['families']->findById(new FamilyId(10));
+        $family?->deactivate();
+        if ($family === null) {
+            throw new \RuntimeException('Family fixture was not found.');
+        }
+        $fixture['families']->save($family);
+
+        $access = $fixture['resolve']->handle();
+        assertSameValue([20], familyContextAuthorizedIds($access));
+        assertSameValue(20, $access?->context?->familyId);
+        assertSameValue(20, $fixture['session']->get('representative_family_context_id'));
+        assertSameValue(null, $fixture['families']->findActiveByRepresentativeAndFamilyForUpdate(
+            new FamilyRepresentativeId(33),
+            new FamilyId(10),
+        ));
     });
 
     $runner->add('Stale selected membership requires selection when multiple Families remain', function (): void {

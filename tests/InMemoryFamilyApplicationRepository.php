@@ -184,6 +184,9 @@ final class InMemoryFamilyApplicationRepository implements FamilyRepository
         if ($family === null) {
             return null;
         }
+        if (!$family->isActive()) {
+            return null;
+        }
         foreach ($family->activeRepresentatives() as $membership) {
             if ($membership->representativeId()->equals($representativeId)) {
                 return $family;

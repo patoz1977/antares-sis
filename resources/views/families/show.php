@@ -12,11 +12,26 @@ $timestamp = static fn (DateTimeImmutable $value): string => $value->format(Date
         <p class="text-body-secondary mb-0">Consulta las personas asociadas y administra los recursos de esta familia.</p>
     </div>
     <div class="app-action-group">
+        <?php if ($family->status === \App\Family\Domain\FamilyStatus::Active): ?>
+        <form method="post" action="/families/deactivate">
+            <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
+            <input type="hidden" name="family_id" value="<?= $escape($family->id) ?>">
+            <button class="btn btn-outline-danger" type="submit">Desactivar familia</button>
+        </form>
+        <?php else: ?>
+        <form method="post" action="/families/activate">
+            <input type="hidden" name="_csrf_token" value="<?= $escape($csrfToken ?? '') ?>">
+            <input type="hidden" name="family_id" value="<?= $escape($family->id) ?>">
+            <button class="btn btn-outline-success" type="submit">Activar familia</button>
+        </form>
+        <?php endif; ?>
         <a class="btn btn-primary" href="/families/students/create?family_id=<?= $escape($family->id) ?>">Agregar estudiante</a>
         <a class="btn btn-outline-primary" href="/families/resources?family_id=<?= $escape($family->id) ?>">Administrar recursos</a>
         <a class="btn btn-outline-secondary" href="/families">Volver</a>
     </div>
 </header>
+
+<?php require dirname(__DIR__) . '/components/feedback.php'; ?>
 
 <section class="app-data-card" aria-labelledby="family-identity-heading">
     <h2 class="h4" id="family-identity-heading">Identidad familiar</h2>

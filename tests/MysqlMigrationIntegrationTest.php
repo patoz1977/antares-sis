@@ -9299,10 +9299,19 @@ try {
         $getAuthorizedFamilies,
         $familyContextSession,
     );
+    $inactiveFamilyAccess = $resolveFamilyContext->handle();
+    assertIntegration(
+        $inactiveFamilyAccess !== null
+        && $inactiveFamilyAccess->authorizedFamilies === []
+        && $inactiveFamilyAccess->context === null
+        && !$inactiveFamilyAccess->requiresSelection,
+        'Inactive Family unexpectedly remained authorized in the Representative Portal.'
+    );
+    $phase4FamilyA->activate();
+    $phase4FamilyA = $familyRepository->save($phase4FamilyA);
     $singleFamilyAccess = $resolveFamilyContext->handle();
     assertIntegration(
-        $singleFamilyAccess !== null
-        && count($singleFamilyAccess->authorizedFamilies) === 1
+        count($singleFamilyAccess?->authorizedFamilies ?? []) === 1
         && $singleFamilyAccess->authorizedFamilies[0]->familyId === $phase4FamilyAId->value()
         && $singleFamilyAccess->authorizedFamilies[0]->displayName === 'E007 Phase 4 Family A'
         && $singleFamilyAccess->context?->familyId === $phase4FamilyAId->value()
@@ -10315,6 +10324,105 @@ try {
         && $physicalOptionStatuses[$operationalPeriodCId] === 'INACTIVE',
         'E009 administrator AcademicPeriod provider did not expose exact lifecycle states.'
     );
+
+    $beforeLifecycle = $familyRepository->findActiveByStudentId(
+        new FamilyStudentReference($generatedStudentId->value()),
+    );
+    $directoryFamilyId = $beforeLifecycle?->id();
+    assertIntegration(
+        $beforeLifecycle !== null && $directoryFamilyId !== null,
+        'Current Family lifecycle physical fixture was not found.',
+    );
+    $familyLifecycle = new \App\Family\Application\ChangeFamilyStatus(
+        new PdoTransactionManager($managerA),
+        $familyRepository,
+    );
+    assertIntegration(
+        $familyLifecycle->handle($directoryFamilyId->value(), FamilyStatus::Active),
+        'MariaDB Family lifecycle did not establish the active directory fixture.',
+    );
+    $beforeLifecycle = $familyRepository->findById($directoryFamilyId);
+    assertIntegration(
+        $beforeLifecycle?->status() === FamilyStatus::Active,
+        'MariaDB Family lifecycle did not persist the active directory fixture.',
+    );
+    $familySearch = new \App\Family\Application\Discovery\FamilyDiscoveryCriteria(
+        'family_code',
+        $beforeLifecycle->familyCode()->value(),
+    );
+    $familyDirectory = new \App\Family\Infrastructure\Persistence\PdoFamilyDiscoveryQuery($managerA);
+    $activeDirectory = $familyDirectory->search(
+        new \App\Family\Application\Discovery\FamilyDirectoryCriteria(
+            \App\Family\Application\Discovery\FamilyDirectoryStatus::Active,
+            $familySearch,
+        ),
+        $operationalPeriodBId,
+    );
+    $directoryFamily = null;
+    foreach ($activeDirectory as $row) {
+        assertIntegration($row->status === 'ACTIVE', 'Active Family directory exposed an inactive Family.');
+        if ($row->familyId === $directoryFamilyId->value()) {
+            $directoryFamily = $row;
+        }
+    }
+    assertIntegration(
+        $directoryFamily !== null
+        && $directoryFamily->primaryRepresentative !== null
+        && count($directoryFamily->students) === 1
+        && $directoryFamily->students[0]->studentId === $generatedStudentId->value(),
+        sprintf(
+            'MariaDB Family directory did not preserve one current Family row with its batch-loaded members '
+            . '(row=%s primary=%s students=%s expectedStudent=%d actualStudents=%s).',
+            $directoryFamily === null ? 'missing' : 'present',
+            $directoryFamily?->primaryRepresentative === null ? 'missing' : 'present',
+            $directoryFamily === null ? 'n/a' : (string) count($directoryFamily->students),
+            $generatedStudentId->value(),
+            $directoryFamily === null
+                ? 'n/a'
+                : implode(',', array_map(static fn ($student): string => (string) $student->studentId, $directoryFamily->students)),
+        )
+    );
+
+    $representativeMembershipCount = count($beforeLifecycle->representatives());
+    $studentMembershipCount = count($beforeLifecycle->students());
+    assertIntegration(
+        $familyLifecycle->handle($directoryFamilyId->value(), FamilyStatus::Inactive),
+        'MariaDB Family lifecycle did not deactivate the active Family.'
+    );
+    $inactiveDirectory = $familyDirectory->search(
+        new \App\Family\Application\Discovery\FamilyDirectoryCriteria(
+            \App\Family\Application\Discovery\FamilyDirectoryStatus::Inactive,
+            $familySearch,
+        ),
+        $operationalPeriodBId,
+    );
+    assertIntegration(
+        in_array($directoryFamilyId->value(), array_column($inactiveDirectory, 'familyId'), true)
+        && !in_array(
+            $directoryFamilyId->value(),
+            array_column($familyDirectory->search(
+                new \App\Family\Application\Discovery\FamilyDirectoryCriteria(
+                    \App\Family\Application\Discovery\FamilyDirectoryStatus::Active,
+                    $familySearch,
+                ),
+                $operationalPeriodBId,
+            ), 'familyId'),
+            true,
+        ),
+        'MariaDB Family directory status filters did not reflect deactivation.'
+    );
+    assertIntegration(
+        $familyLifecycle->handle($directoryFamilyId->value(), FamilyStatus::Active),
+        'MariaDB Family lifecycle did not reactivate the Family.'
+    );
+    $afterLifecycle = $familyRepository->findById($directoryFamilyId);
+    assertIntegration(
+        $afterLifecycle?->status() === FamilyStatus::Active
+        && count($afterLifecycle->representatives()) === $representativeMembershipCount
+        && count($afterLifecycle->students()) === $studentMembershipCount,
+        'MariaDB Family lifecycle changed memberships while restoring access eligibility.'
+    );
+    echo "PASS MySQL Family directory batching filters and transactional lifecycle\n";
 
     if ($generatedStudentId === null
         || $secondStudentId === null

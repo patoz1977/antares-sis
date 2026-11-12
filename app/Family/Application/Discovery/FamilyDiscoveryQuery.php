@@ -9,5 +9,5 @@ use App\Family\Application\Discovery\Dto\FamilyDiscoveryRow;
 interface FamilyDiscoveryQuery
 {
     /** @return list<FamilyDiscoveryRow> Up to 31 ordered rows. */
-    public function search(FamilyDiscoveryCriteria $criteria): array;
+    public function search(FamilyDirectoryCriteria $criteria, ?int $academicPeriodId): array;
 }

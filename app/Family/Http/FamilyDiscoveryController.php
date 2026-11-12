@@ -7,6 +7,8 @@ namespace App\Family\Http;
 use App\Controllers\Controller;
 use App\Family\Application\Discovery\Dto\FamilyDiscoveryResult;
 use App\Family\Application\Discovery\Exception\InvalidFamilyDiscoveryCriteria;
+use App\Family\Application\Discovery\FamilyDirectoryCriteria;
+use App\Family\Application\Discovery\FamilyDirectoryStatus;
 use App\Family\Application\Discovery\FamilyDiscoveryCriteria;
 use App\Family\Application\Discovery\SearchFamilies;
 use App\IdentityAccess\Application\Contract\CsrfTokenManager;
@@ -27,27 +29,53 @@ final class FamilyDiscoveryController extends Controller
         $input = (new Request())->input();
         $field = $this->scalar($input, 'criterion');
         $value = $this->scalar($input, 'value');
+        $status = $this->scalar($input, 'status');
 
         if (!$this->csrf->isValid($this->scalar($input, '_csrf_token'))) {
-            return $this->viewResult($field, $value, ['No se pudo verificar la solicitud.'], null, 422);
+            return $this->viewResult(
+                $field,
+                $value,
+                $status,
+                ['No se pudo verificar la solicitud.'],
+                null,
+                422,
+            );
         }
 
         try {
-            $criteria = new FamilyDiscoveryCriteria($field, $value);
-            $result = $this->searchFamilies->handle($criteria);
+            $criteria = $value === '' ? null : new FamilyDiscoveryCriteria($field, $value);
+            $directoryStatus = FamilyDirectoryStatus::fromInput($status);
+            $result = $this->searchFamilies->handle(new FamilyDirectoryCriteria(
+                $directoryStatus,
+                $criteria,
+            ));
         } catch (InvalidFamilyDiscoveryCriteria $exception) {
-            return $this->viewResult($field, $value, [$exception->getMessage()], null, 422);
+            return $this->viewResult($field, $value, $status, [$exception->getMessage()], null, 422);
         } catch (Throwable) {
-            return $this->viewResult('', '', ['No se pudo completar la búsqueda. Inténtalo de nuevo.'], null, 500);
+            return $this->viewResult(
+                '',
+                '',
+                FamilyDirectoryStatus::Active->value,
+                ['No se pudo completar la búsqueda. Inténtalo de nuevo.'],
+                null,
+                500,
+            );
         }
 
-        return $this->viewResult($criteria->field->value, $criteria->value, [], $result);
+        return $this->viewResult(
+            $criteria?->field->value ?? $field,
+            $criteria?->value ?? '',
+            $directoryStatus->value,
+            [],
+            $result,
+        );
     }
 
     /** @param list<string> $errors */
     private function viewResult(
         string $criterion,
         string $value,
+        string $statusFilter,
         array $errors,
         ?FamilyDiscoveryResult $result,
         int $status = 200,
@@ -61,6 +89,7 @@ final class FamilyDiscoveryController extends Controller
             'csrfToken' => $this->csrf->token(),
             'criterion' => $criterion,
             'searchValue' => $value,
+            'directoryStatus' => $statusFilter,
             'searchErrors' => $errors,
             'searchResult' => $result,
         ]);
