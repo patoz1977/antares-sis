@@ -29,6 +29,7 @@ use App\Enrollment\Application\Reporting\GetStudentMedicalReport;
 use App\Enrollment\Application\Reporting\GetStudentRepresentativeDirectory;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingPeriod;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\ReportingStudentStatusFilter;
 use App\Enrollment\Application\Reporting\PhysicalDepartureReportQuery;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingContext;
 use App\Enrollment\Application\Reporting\ResolveInspectionReportingContext;
@@ -223,6 +224,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
         $fixture = e013ReportingFixture();
         $query = [
             'academic_period_id' => '8',
+            'student_status' => 'all',
             'grade_section' => ['EGB_1:A', 'EGB_2:B', 'EGB_1:A'],
         ];
         foreach ([
@@ -235,6 +237,7 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
             e013ReportingRequest('/reports/enrollments/' . $method, $query);
             $fixture['controller']->{$method}();
             assertSameValue(['EGB_1:A', 'EGB_2:B'], $fixture[$fixtureKey]->lastFilter?->keys());
+            assertSameValue(ReportingStudentStatusFilter::All, $fixture[$fixtureKey]->lastStudentStatusFilter);
 
             $csvMethod = $method . 'Csv';
             e013ReportingRequest('/reports/enrollments/' . $method . '/csv', $query);
@@ -242,7 +245,69 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
             assertSameValue(200, http_response_code());
             assertSameValue('efbbbf', bin2hex(substr($csv, 0, 3)));
             assertSameValue(['EGB_1:A', 'EGB_2:B'], $fixture[$fixtureKey]->lastFilter?->keys());
+            assertSameValue(ReportingStudentStatusFilter::All, $fixture[$fixtureKey]->lastStudentStatusFilter);
         }
+    });
+
+    $runner->add('Reporting Delivery applies report-specific Student status defaults and preserves explicit selection', function (): void {
+        $fixture = e013ReportingFixture();
+
+        e013ReportingRequest('/reports/enrollments/summary', ['academic_period_id' => '8']);
+        $summaryHtml = $fixture['controller']->summary();
+        assertSameValue(ReportingStudentStatusFilter::All, $fixture['summary']->lastStudentStatusFilter);
+        e013Contains('value="all" checked', $summaryHtml);
+        assertSameValue(false, str_contains($summaryHtml, 'student_status=all'));
+
+        e013ReportingRequest('/reports/enrollments/students', ['academic_period_id' => '8']);
+        $studentsHtml = $fixture['controller']->students();
+        assertSameValue(ReportingStudentStatusFilter::Active, $fixture['students']->lastStudentStatusFilter);
+        e013Contains('value="active" checked', $studentsHtml);
+        assertSameValue(false, str_contains($studentsHtml, 'student_status=active'));
+
+        $query = [
+            'academic_period_id' => '8',
+            'student_status' => 'all',
+            'grade_section' => ['EGB_1:A'],
+        ];
+        e013ReportingRequest('/reports/enrollments/students', $query);
+        $html = $fixture['controller']->students();
+        assertSameValue(ReportingStudentStatusFilter::All, $fixture['students']->lastStudentStatusFilter);
+        e013Contains('value="all" checked', $html);
+        e013Contains('name="student_status" value="all"', $html);
+        e013Contains('academic_period_id=8&amp;student_status=all', $html);
+        e013Contains('grade_section%5B0%5D=EGB_1%3AA', $html);
+        e013Contains('href="/reports/enrollments/inspection"', $html);
+        assertSameValue(false, str_contains($html, '/reports/enrollments/inspection?'));
+
+        e013ReportingRequest('/reports/enrollments/students/csv', $query);
+        $fixture['controller']->studentsCsv();
+        assertSameValue(ReportingStudentStatusFilter::All, $fixture['students']->lastStudentStatusFilter);
+        assertSameValue(['EGB_1:A'], $fixture['students']->lastFilter?->keys());
+    });
+
+    $runner->add('Reporting Delivery rejects malformed Student status and keeps Inspection outside the filter', function (): void {
+        $fixture = e013ReportingFixture();
+        foreach (['', 'ACTIVE', ' all', 'unknown', ['all'], ['active', 'all']] as $status) {
+            e013ReportingRequest('/reports/enrollments/students', [
+                'academic_period_id' => '8',
+                'student_status' => $status,
+            ]);
+            $html = $fixture['controller']->students();
+            assertSameValue(400, http_response_code());
+            e013Contains('Selecciona un estado actual de estudiante válido.', $html);
+            assertSameValue(false, str_contains($html, 'SQLSTATE'));
+        }
+
+        e013ReportingRequest('/reports/enrollments/inspection', ['student_status' => 'all']);
+        $html = $fixture['controller']->inspection();
+        assertSameValue(400, http_response_code());
+        assertSameValue(0, $fixture['physicalDeparture']->calls);
+        assertSameValue(false, str_contains($html, 'student_status'));
+
+        e013ReportingRequest('/reports/enrollments/inspection/csv', ['student_status' => 'active']);
+        $fixture['controller']->inspectionCsv();
+        assertSameValue(400, http_response_code());
+        assertSameValue(0, $fixture['physicalDeparture']->calls);
     });
 
     $runner->add('Phase 5 inspection HTML uses ACTIVE context one Student row complete pickups escaping and no historical selector', function (): void {
@@ -459,7 +524,8 @@ function registerEnrollmentReportingDeliveryTests(TestRunner $runner): void
             "Content-Type: text/csv; charset=UTF-8",
             'Content-Disposition: attachment; filename=',
             'Cache-Control: no-store',
-            '$load($context->academicPeriod->id, $context->gradeSectionFilter);',
+            '$dataset = $load(',
+            '$context->studentStatusFilter,',
             '$content = $write($dataset);',
         ] as $expected) {
             e013Contains($expected, $source);
@@ -523,6 +589,7 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
     )];
     $summary = new class($summaryRows) implements EnrollmentSummaryQuery {
         public ?int $lastAcademicPeriodId = null;
+        public ?ReportingStudentStatusFilter $lastStudentStatusFilter = null;
         public function __construct(public array $rows)
         {
         }
@@ -530,10 +597,12 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         public function fetch(
             int $academicPeriodId,
             ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+            ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::All,
         ): array
         {
             $this->lastAcademicPeriodId = $academicPeriodId;
             $this->lastFilter = $gradeSectionFilter;
+            $this->lastStudentStatusFilter = $studentStatusFilter;
 
             return $this->rows;
         }
@@ -551,6 +620,7 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
     $students = new class($studentRows) implements StudentEnrollmentListQuery {
         public int $calls = 0;
         public ?int $lastAcademicPeriodId = null;
+        public ?ReportingStudentStatusFilter $lastStudentStatusFilter = null;
         public function __construct(public array $rows)
         {
         }
@@ -558,11 +628,13 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         public function fetch(
             int $academicPeriodId,
             ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+            ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::Active,
         ): array
         {
             ++$this->calls;
             $this->lastAcademicPeriodId = $academicPeriodId;
             $this->lastFilter = $gradeSectionFilter;
+            $this->lastStudentStatusFilter = $studentStatusFilter;
 
             return $this->rows;
         }
@@ -608,6 +680,7 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
     )];
     $directory = new class($directoryRows) implements StudentRepresentativeDirectoryQuery {
         public ?int $lastAcademicPeriodId = null;
+        public ?ReportingStudentStatusFilter $lastStudentStatusFilter = null;
         public function __construct(public array $rows)
         {
         }
@@ -615,10 +688,12 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         public function fetch(
             int $academicPeriodId,
             ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+            ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::Active,
         ): array
         {
             $this->lastAcademicPeriodId = $academicPeriodId;
             $this->lastFilter = $gradeSectionFilter;
+            $this->lastStudentStatusFilter = $studentStatusFilter;
 
             return $this->rows;
         }
@@ -629,6 +704,7 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
     )];
     $billing = new class($billingRows) implements StudentBillingReportQuery {
         public ?int $lastAcademicPeriodId = null;
+        public ?ReportingStudentStatusFilter $lastStudentStatusFilter = null;
         public function __construct(public array $rows)
         {
         }
@@ -636,10 +712,12 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         public function fetch(
             int $academicPeriodId,
             ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+            ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::Active,
         ): array
         {
             $this->lastAcademicPeriodId = $academicPeriodId;
             $this->lastFilter = $gradeSectionFilter;
+            $this->lastStudentStatusFilter = $studentStatusFilter;
 
             return $this->rows;
         }
@@ -651,6 +729,7 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
     )];
     $medical = new class($medicalRows) implements StudentMedicalReportQuery {
         public ?int $lastAcademicPeriodId = null;
+        public ?ReportingStudentStatusFilter $lastStudentStatusFilter = null;
         public function __construct(public array $rows)
         {
         }
@@ -658,10 +737,12 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         public function fetch(
             int $academicPeriodId,
             ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+            ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::Active,
         ): array
         {
             $this->lastAcademicPeriodId = $academicPeriodId;
             $this->lastFilter = $gradeSectionFilter;
+            $this->lastStudentStatusFilter = $studentStatusFilter;
 
             return $this->rows;
         }
@@ -683,10 +764,12 @@ function e013ReportingFixture(?int $activeId = 8, bool $multipleActive = false, 
         ],
     )];
     $physicalDeparture = new class($physicalDepartureRows) implements PhysicalDepartureReportQuery {
+        public int $calls = 0;
         public ?ReportingGradeSectionFilter $lastFilter = null;
         public function __construct(public array $rows) {}
         public function fetch(int $academicPeriodId, ?ReportingGradeSectionFilter $gradeSectionFilter = null): array
         {
+            ++$this->calls;
             $this->lastFilter = $gradeSectionFilter;
             return $this->rows;
         }

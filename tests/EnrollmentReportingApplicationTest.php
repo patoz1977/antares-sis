@@ -17,14 +17,17 @@ use App\Enrollment\Application\Reporting\Dto\ReportingAcademicPeriod;
 use App\Enrollment\Application\Reporting\Dto\StudentEnrollmentReportRow;
 use App\Enrollment\Application\Reporting\Dto\StudentRepresentativeDirectoryRow;
 use App\Enrollment\Application\Reporting\EnrollmentReportingStatus;
+use App\Enrollment\Application\Reporting\EnrollmentSummaryQuery;
 use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingPeriodNotFound;
 use App\Enrollment\Application\Reporting\Exception\EnrollmentReportingSelectionInvalid;
 use App\Enrollment\Application\Reporting\GradeSectionReportingQuery;
 use App\Enrollment\Application\Reporting\GetEnrollmentReportingPeriods;
+use App\Enrollment\Application\Reporting\GetEnrollmentSummaryReport;
 use App\Enrollment\Application\Reporting\GetPhysicalDepartureReport;
 use App\Enrollment\Application\Reporting\GetStudentEnrollmentReport;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingPeriod;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\ReportingStudentStatusFilter;
 use App\Enrollment\Application\Reporting\PhysicalDepartureReportQuery;
 use App\Enrollment\Application\Reporting\ResolveEnrollmentReportingContext;
 use App\Enrollment\Application\Reporting\ResolveInspectionReportingContext;
@@ -141,13 +144,17 @@ function registerEnrollmentReportingApplicationTests(TestRunner $runner): void
 
             public ?ReportingGradeSectionFilter $filter = null;
 
+            public ?ReportingStudentStatusFilter $studentStatusFilter = null;
+
             public function fetch(
                 int $academicPeriodId,
                 ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+                ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::Active,
             ): array
             {
                 $this->academicPeriodId = $academicPeriodId;
                 $this->filter = $gradeSectionFilter;
+                $this->studentStatusFilter = $studentStatusFilter;
 
                 return [new StudentEnrollmentReportRow(
                     1, null, null, null, null, 'Surname', 'Name', EnrollmentReportingStatus::NotStarted,
@@ -163,8 +170,40 @@ function registerEnrollmentReportingApplicationTests(TestRunner $runner): void
         assertSameValue('NOT STARTED', $service->handle(7)[0]->status->value);
         assertSameValue(7, $query->academicPeriodId);
         assertSameValue(true, $query->filter?->isAll());
+        assertSameValue(ReportingStudentStatusFilter::Active, $query->studentStatusFilter);
         academicPeriodAssertThrows(static fn (): mixed => $service->handle(8), EnrollmentReportingPeriodNotFound::class);
         assertSameValue(7, $query->academicPeriodId);
+    });
+
+    $runner->add('Reporting Student status criterion preserves report-specific defaults and exact inclusion', function (): void {
+        assertSameValue(true, ReportingStudentStatusFilter::Active->includes(true));
+        assertSameValue(false, ReportingStudentStatusFilter::Active->includes(false));
+        assertSameValue(true, ReportingStudentStatusFilter::All->includes(true));
+        assertSameValue(true, ReportingStudentStatusFilter::All->includes(false));
+
+        $query = new class implements EnrollmentSummaryQuery {
+            public ?ReportingStudentStatusFilter $filter = null;
+            public function fetch(
+                int $academicPeriodId,
+                ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+                ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::All,
+            ): array {
+                $this->filter = $studentStatusFilter;
+
+                return [];
+            }
+        };
+        $service = new GetEnrollmentSummaryReport(
+            new ResolveEnrollmentReportingPeriod(new InMemoryAcademicPeriodRepository([
+                academicPeriodFixture(8, AcademicPeriodStatus::Active),
+            ])),
+            $query,
+        );
+
+        $service->handle(8);
+        assertSameValue(ReportingStudentStatusFilter::All, $query->filter);
+        $service->handle(8, null, ReportingStudentStatusFilter::Active);
+        assertSameValue(ReportingStudentStatusFilter::Active, $query->filter);
     });
 
     $runner->add('Reporting Application resolves actual period options and normalizes duplicate multi-selection', function (): void {
@@ -202,6 +241,9 @@ function registerEnrollmentReportingApplicationTests(TestRunner $runner): void
         assertSameValue(['EGB_2:B', 'EGB_1:A'], $selected->gradeSectionFilter->keys());
         assertSameValue(8, $selected->gradeSectionFilter->academicPeriodId);
         assertSameValue(8, $query->academicPeriodId);
+
+        $allStudents = $resolver->handle(8, null, ReportingStudentStatusFilter::All);
+        assertSameValue(ReportingStudentStatusFilter::All, $allStudents->studentStatusFilter);
     });
 
     $runner->add('Reporting Application rejects malformed unknown incomplete and wrong-period Grade/Section selections', function (): void {
@@ -231,6 +273,7 @@ function registerEnrollmentReportingApplicationTests(TestRunner $runner): void
             public function fetch(
                 int $academicPeriodId,
                 ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+                ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::Active,
             ): array {
                 ++$this->calls;
 
