@@ -12,5 +12,6 @@ interface StudentEnrollmentListQuery
     public function fetch(
         int $academicPeriodId,
         ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+        ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::Active,
     ): array;
 }

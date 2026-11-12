@@ -8,6 +8,7 @@ use App\Enrollment\Application\Reporting\Dto\DirectoryRepresentative;
 use App\Enrollment\Application\Reporting\Dto\StudentRepresentativeDirectoryRow;
 use App\Enrollment\Application\Reporting\StudentRepresentativeDirectoryQuery;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\ReportingStudentStatusFilter;
 use App\Family\Domain\ValueObject\Address;
 use RuntimeException;
 
@@ -17,6 +18,7 @@ final class PdoStudentRepresentativeDirectoryQuery extends PdoEnrollmentReportin
     public function fetch(
         int $academicPeriodId,
         ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+        ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::Active,
     ): array
     {
         $this->positiveInt($academicPeriodId, 'AcademicPeriod identity');
@@ -25,6 +27,12 @@ final class PdoStudentRepresentativeDirectoryQuery extends PdoEnrollmentReportin
             'e',
             $academicPeriodId,
             $gradeSectionFilter,
+            $parameters,
+        );
+        $studentStatusPredicate = $this->studentStatusPredicate(
+            'student_status_type',
+            'student_status',
+            $studentStatusFilter,
             $parameters,
         );
         $rows = $this->rows(
@@ -66,7 +74,7 @@ final class PdoStudentRepresentativeDirectoryQuery extends PdoEnrollmentReportin
             . 'LEFT JOIN family_addresses fa ON fa.id = saa.family_address_id '
             . 'LEFT JOIN statuses address_status ON address_status.id = fa.status_id '
             . 'LEFT JOIN status_types address_status_type ON address_status_type.id = address_status.status_type_id '
-            . 'WHERE ' . $gradeSectionPredicate . ' '
+            . 'WHERE ' . $gradeSectionPredicate . ' AND ' . $studentStatusPredicate . ' '
             . 'ORDER BY CASE WHEN g.id IS NULL THEN 1 ELSE 0 END, g.sort_order, g.id, '
             . 'CASE WHEN sec.id IS NULL THEN 1 ELSE 0 END, sec.name, sec.id, '
             . 'sp.first_surname, sp.second_surname, sp.first_name, sp.middle_name, s.id',
@@ -110,7 +118,7 @@ final class PdoStudentRepresentativeDirectoryQuery extends PdoEnrollmentReportin
             $currentFamilyId = $this->currentFamily($row);
             $address = $this->address($row, $currentFamilyId);
 
-            if (!$active) {
+            if (!$studentStatusFilter->includes($active)) {
                 continue;
             }
             if ($currentFamilyId !== null) {

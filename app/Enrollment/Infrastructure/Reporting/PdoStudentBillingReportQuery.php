@@ -7,6 +7,7 @@ namespace App\Enrollment\Infrastructure\Reporting;
 use App\Enrollment\Application\Reporting\Dto\StudentBillingReportRow;
 use App\Enrollment\Application\Reporting\StudentBillingReportQuery;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\ReportingStudentStatusFilter;
 use RuntimeException;
 
 final class PdoStudentBillingReportQuery extends PdoEnrollmentReportingQuery implements StudentBillingReportQuery
@@ -14,6 +15,7 @@ final class PdoStudentBillingReportQuery extends PdoEnrollmentReportingQuery imp
     public function fetch(
         int $academicPeriodId,
         ?ReportingGradeSectionFilter $gradeSectionFilter = null,
+        ReportingStudentStatusFilter $studentStatusFilter = ReportingStudentStatusFilter::Active,
     ): array
     {
         $this->positiveInt($academicPeriodId, 'AcademicPeriod identity');
@@ -22,6 +24,12 @@ final class PdoStudentBillingReportQuery extends PdoEnrollmentReportingQuery imp
             'e',
             $academicPeriodId,
             $gradeSectionFilter,
+            $parameters,
+        );
+        $studentStatusPredicate = $this->studentStatusPredicate(
+            'student_status_type',
+            'student_status',
+            $studentStatusFilter,
             $parameters,
         );
         $rows = $this->rows(
@@ -49,7 +57,7 @@ final class PdoStudentBillingReportQuery extends PdoEnrollmentReportingQuery imp
             . 'LEFT JOIN sections sec ON sec.id = e.section_id '
             . 'LEFT JOIN document_types billing_document_type '
             . 'ON billing_document_type.id = e.billing_identification_type_id '
-            . 'WHERE ' . $gradeSectionPredicate . ' '
+            . 'WHERE ' . $gradeSectionPredicate . ' AND ' . $studentStatusPredicate . ' '
             . 'ORDER BY CASE WHEN g.id IS NULL THEN 1 ELSE 0 END, g.sort_order, g.id, '
             . 'CASE WHEN sec.id IS NULL THEN 1 ELSE 0 END, sec.name, sec.id, '
             . 'p.first_surname, p.second_surname, p.first_name, p.middle_name, s.id',
@@ -76,7 +84,7 @@ final class PdoStudentBillingReportQuery extends PdoEnrollmentReportingQuery imp
             if (($billing === null) !== ($identificationType === null)) {
                 throw new RuntimeException('Billing report returned an incomplete DocumentType projection.');
             }
-            if (!$active) {
+            if (!$studentStatusFilter->includes($active)) {
                 continue;
             }
 

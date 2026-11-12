@@ -6,6 +6,7 @@ namespace Tests;
 
 use App\Enrollment\Application\Reporting\EnrollmentReportingStatus;
 use App\Enrollment\Application\Reporting\ReportingGradeSectionFilter;
+use App\Enrollment\Application\Reporting\ReportingStudentStatusFilter;
 use App\Enrollment\Infrastructure\Reporting\PdoAcademicPeriodReportingQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoEnrollmentSummaryQuery;
 use App\Enrollment\Infrastructure\Reporting\PdoGradeSectionReportingQuery;
@@ -43,6 +44,89 @@ function registerEnrollmentReportingPersistenceTests(TestRunner $runner): void
             array_map(static fn ($row): string => $row->status->value, $rows),
         );
         assertSameValue(false, property_exists($rows[0], 'familyId'));
+    });
+
+    $runner->add('Reporting PDO Student status filter includes ACTIVE and INACTIVE with and without selected-period Enrollment', function (): void {
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec("INSERT INTO persons VALUES (7,1,'STU-7','Name7',NULL,'Surname7',NULL,NULL,NULL,NULL)");
+        $pdo->exec('INSERT INTO students VALUES (7,7,2)');
+
+        foreach ([
+            new PdoStudentEnrollmentListQuery($manager),
+            new PdoStudentRepresentativeDirectoryQuery($manager),
+            new PdoStudentBillingReportQuery($manager),
+            new PdoStudentMedicalReportQuery($manager),
+        ] as $query) {
+            $activeIds = array_column($query->fetch(101), 'studentId');
+            $allRows = $query->fetch(101, null, ReportingStudentStatusFilter::All);
+            $allIds = array_column($allRows, 'studentId');
+            assertSameValue(false, in_array(6, $activeIds, true));
+            assertSameValue(false, in_array(7, $activeIds, true));
+            assertSameValue(true, in_array(6, $allIds, true));
+            assertSameValue(true, in_array(7, $allIds, true));
+            $notStarted = array_values(array_filter(
+                $allRows,
+                static fn ($row): bool => $row->studentId === 7,
+            ));
+            assertSameValue(EnrollmentReportingStatus::NotStarted, $notStarted[0]->status);
+        }
+    });
+
+    $runner->add('Reporting PDO applies current Student status before Summary aggregation and to historical periods', function (): void {
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $query = new PdoEnrollmentSummaryQuery($manager);
+        $all = $query->fetch(101, null, ReportingStudentStatusFilter::All);
+        $active = $query->fetch(101, null, ReportingStudentStatusFilter::Active);
+        assertSameValue(5, array_sum(array_column($all, 'count')));
+        assertSameValue(4, array_sum(array_column($active, 'count')));
+
+        $option = (new PdoGradeSectionReportingQuery($manager))->findForAcademicPeriod(101)[1];
+        $gradeFilter = ReportingGradeSectionFilter::selected(101, [$option]);
+        assertSameValue(1, array_sum(array_column(
+            $query->fetch(101, $gradeFilter, ReportingStudentStatusFilter::All),
+            'count',
+        )));
+
+        $pdo->exec('UPDATE students SET status_id = 2 WHERE id = 2');
+        assertSameValue(0, array_sum(array_column(
+            $query->fetch(100, null, ReportingStudentStatusFilter::Active),
+            'count',
+        )));
+        assertSameValue(1, array_sum(array_column(
+            $query->fetch(100, null, ReportingStudentStatusFilter::All),
+            'count',
+        )));
+    });
+
+    $runner->add('Directory Billing and Medical retain approved current and annual data for INACTIVE Students under All', function (): void {
+        [$manager, $pdo] = enrollmentReportingFixture();
+        $pdo->exec('UPDATE students SET status_id = 2 WHERE id IN (2, 3)');
+
+        $directory = new PdoStudentRepresentativeDirectoryQuery($manager);
+        assertSameValue(false, in_array(2, array_column($directory->fetch(101), 'studentId'), true));
+        $directoryRow = directoryStudentRow(
+            $directory->fetch(101, null, ReportingStudentStatusFilter::All),
+            2,
+        );
+        assertSameValue('0990000000', $directoryRow->representative1?->mobilePhone);
+        assertSameValue('Current Street 10, Cross Street, Current Sector, Current reference', $directoryRow->studentAddress);
+
+        $billing = new PdoStudentBillingReportQuery($manager);
+        assertSameValue(false, in_array(3, array_column($billing->fetch(101), 'studentId'), true));
+        $billingRows = array_values(array_filter(
+            $billing->fetch(101, null, ReportingStudentStatusFilter::All),
+            static fn ($row): bool => $row->studentId === 3,
+        ));
+        assertSameValue('Billing Three', $billingRows[0]->legalName);
+
+        $medical = new PdoStudentMedicalReportQuery($manager);
+        assertSameValue(false, in_array(3, array_column($medical->fetch(101), 'studentId'), true));
+        $medicalRows = array_values(array_filter(
+            $medical->fetch(101, null, ReportingStudentStatusFilter::All),
+            static fn ($row): bool => $row->studentId === 3,
+        ));
+        assertSameValue('Condition', $medicalRows[0]->medicalConditionDetail);
+        assertSameValue('Observation', $medicalRows[0]->observations);
     });
 
     $runner->add('Reporting PDO options are distinct complete actual period pairs in authoritative order', function (): void {

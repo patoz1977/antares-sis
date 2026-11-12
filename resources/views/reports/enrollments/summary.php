@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 $reportPageTitle = 'Resumen de matrículas';
-$reportPageDescription = 'Totales por estado, grado y sección.';
+$reportPageDescription = $selectedStudentStatus === 'active'
+    ? 'Totales de matrículas de estudiantes actualmente activos, por estado, grado y sección.'
+    : 'Totales de matrículas de estudiantes activos e inactivos, por estado, grado y sección.';
 $reportCsvPath = '/reports/enrollments/summary/csv';
 include __DIR__ . '/_navigation.php';
 ?>
